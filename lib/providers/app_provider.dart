@@ -14,6 +14,7 @@ class AppProvider extends ChangeNotifier {
   // Getters
   bool get isFirstTime => _isFirstTime;
   bool get isAnonymousMode => _isAnonymousMode;
+  bool get isAnonymous => _isAnonymousMode;
   bool get notificationsEnabled => _notificationsEnabled;
   String get language => _language;
   bool get isOnline => _isOnline;
@@ -36,12 +37,20 @@ class AppProvider extends ChangeNotifier {
     await prefs.setBool('isAnonymous', value);
   }
 
+  Future<void> setAnonymous(bool value) async {
+    await setAnonymousMode(value);
+  }
+
   Future<void> setNotifications(bool value) async {
     _notificationsEnabled = value;
     notifyListeners();
     
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('notifications', value);
+  }
+
+  Future<void> setNotificationsEnabled(bool value) async {
+    await setNotifications(value);
   }
 
   Future<void> setLanguage(String value) async {

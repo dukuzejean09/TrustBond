@@ -18,32 +18,32 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   final List<OnboardingItem> _items = [
     OnboardingItem(
-      icon: Icons.report_problem_rounded,
-      title: 'Report Incidents Easily',
+      icon: Icons.shield_rounded,
+      title: 'Report Incidents Securely',
       description:
-          'Quickly report any crime or suspicious activity in your community with just a few taps.',
-      color: const Color(0xFF1E3A5F),
+          'Quickly report any crime or suspicious activity in your community with confidence and security.',
+      color: const Color(0xFF0D1B4C),  // RNP Navy
     ),
     OnboardingItem(
-      icon: Icons.security_rounded,
-      title: 'Anonymous Protection',
+      icon: Icons.visibility_off_rounded,
+      title: 'Stay Anonymous',
       description:
-          'Your identity is protected. Report anonymously without fear of retaliation.',
-      color: const Color(0xFF4CAF50),
+          'Your identity is fully protected. Report anonymously without fear of retaliation.',
+      color: const Color(0xFFFFB800),  // RNP Gold
     ),
     OnboardingItem(
-      icon: Icons.camera_alt_rounded,
+      icon: Icons.photo_camera_rounded,
       title: 'Capture Evidence',
       description:
-          'Take photos, videos, or audio recordings to support your report with evidence.',
-      color: const Color(0xFFFF9800),
+          'Take photos, videos, or audio recordings to support your report with solid evidence.',
+      color: const Color(0xFF1E3A6E),  // Navy Light
     ),
     OnboardingItem(
-      icon: Icons.track_changes_rounded,
-      title: 'Track Report Status',
+      icon: Icons.timeline_rounded,
+      title: 'Track Your Reports',
       description:
           'Stay updated on the progress of your reports from submission to resolution.',
-      color: const Color(0xFF2196F3),
+      color: const Color(0xFF17A2B8),  // Teal info
     ),
   ];
 
@@ -82,13 +82,17 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             Align(
               alignment: Alignment.topRight,
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 child: TextButton(
                   onPressed: _getStarted,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  ),
                   child: const Text(
                     'Skip',
                     style: TextStyle(
-                      fontSize: 16,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w600,
                       color: AppTheme.textSecondary,
                     ),
                   ),
@@ -110,14 +114,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             ),
             // Page indicator
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
+              padding: const EdgeInsets.symmetric(vertical: 28),
               child: SmoothPageIndicator(
                 controller: _pageController,
                 count: _items.length,
                 effect: const WormEffect(
-                  dotHeight: 10,
-                  dotWidth: 10,
-                  spacing: 12,
+                  dotHeight: 12,
+                  dotWidth: 12,
+                  spacing: 14,
                   activeDotColor: AppTheme.primaryColor,
                   dotColor: AppTheme.dividerColor,
                 ),
@@ -169,55 +173,56 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   Widget _buildPage(OnboardingItem item) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 32),
+      padding: const EdgeInsets.symmetric(horizontal: 36),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Icon container
           Container(
-            width: 160,
-            height: 160,
+            width: 180,
+            height: 180,
             decoration: BoxDecoration(
               color: item.color.withOpacity(0.1),
               shape: BoxShape.circle,
             ),
             child: Center(
               child: Container(
-                width: 120,
-                height: 120,
+                width: 135,
+                height: 135,
                 decoration: BoxDecoration(
                   color: item.color.withOpacity(0.2),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   item.icon,
-                  size: 60,
+                  size: 70,
                   color: item.color,
                 ),
               ),
             ),
           ),
-          const SizedBox(height: 48),
+          const SizedBox(height: 52),
           // Title
           Text(
             item.title,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 26,
+              fontSize: 28,
               fontWeight: FontWeight.bold,
               color: AppTheme.textPrimary,
               height: 1.3,
+              letterSpacing: 0.3,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 20),
           // Description
           Text(
             item.description,
             textAlign: TextAlign.center,
             style: const TextStyle(
-              fontSize: 16,
+              fontSize: 17,
               color: AppTheme.textSecondary,
-              height: 1.5,
+              height: 1.6,
             ),
           ),
         ],

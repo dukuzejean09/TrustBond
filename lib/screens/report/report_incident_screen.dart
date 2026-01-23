@@ -160,35 +160,39 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
         ],
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Auto-captured info
             Container(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: AppTheme.infoColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppTheme.infoColor.withOpacity(0.3)),
+                color: AppTheme.infoColor.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(
+                  color: AppTheme.infoColor.withOpacity(0.25),
+                  width: 1.5,
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      const Icon(Icons.info_outline, color: AppTheme.infoColor, size: 20),
-                      const SizedBox(width: 8),
+                      const Icon(Icons.info_outline, color: AppTheme.infoColor, size: 24),
+                      const SizedBox(width: 10),
                       Text(
                         'Auto-captured Information',
                         style: TextStyle(
-                          fontWeight: FontWeight.w600,
-                          color: AppTheme.infoColor.withOpacity(0.8),
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.infoColor,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
                   _AutoInfoRow(
                     icon: Icons.location_on,
                     label: 'Location',
@@ -197,7 +201,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                         : 'Detecting...',
                     onTap: _confirmLocation,
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   _AutoInfoRow(
                     icon: Icons.calendar_today,
                     label: 'Date',
@@ -214,7 +218,7 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                       }
                     },
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   _AutoInfoRow(
                     icon: Icons.access_time,
                     label: 'Time',
@@ -236,30 +240,38 @@ class _ReportIncidentScreenState extends State<ReportIncidentScreen> {
                 ],
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
 
             // Incident Type Selection
             Text(
               'Incident Type *',
-              style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                fontWeight: FontWeight.w600,
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w700,
               ),
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             InkWell(
               onTap: _selectIncidentType,
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               child: Container(
-                padding: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(
                     color: reportProvider.selectedIncidentType != null
                         ? reportProvider.selectedIncidentType!.color
                         : AppTheme.dividerColor,
-                    width: reportProvider.selectedIncidentType != null ? 2 : 1,
+                    width: reportProvider.selectedIncidentType != null ? 2.5 : 1.5,
                   ),
+                  boxShadow: [
+                    if (reportProvider.selectedIncidentType != null)
+                      BoxShadow(
+                        color: reportProvider.selectedIncidentType!.color.withOpacity(0.15),
+                        blurRadius: 12,
+                        offset: const Offset(0, 4),
+                      ),
+                  ],
                 ),
                 child: Row(
                   children: [
@@ -552,31 +564,33 @@ class _AutoInfoRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(10),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
         child: Row(
           children: [
-            Icon(icon, size: 18, color: AppTheme.textSecondary),
-            const SizedBox(width: 8),
+            Icon(icon, size: 22, color: AppTheme.primaryColor.withOpacity(0.8)),
+            const SizedBox(width: 12),
             Text(
               '$label: ',
               style: const TextStyle(
                 color: AppTheme.textSecondary,
-                fontSize: 14,
+                fontSize: 15,
+                fontWeight: FontWeight.w500,
               ),
             ),
             Expanded(
               child: Text(
                 value,
                 style: const TextStyle(
-                  fontWeight: FontWeight.w500,
-                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 15,
+                  color: AppTheme.textPrimary,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const Icon(Icons.edit, size: 16, color: AppTheme.textSecondary),
+            const Icon(Icons.edit, size: 20, color: AppTheme.primaryColor),
           ],
         ),
       ),
@@ -601,27 +615,35 @@ class _EvidenceButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(16),
           border: count > 0
-              ? Border.all(color: AppTheme.primaryColor, width: 2)
-              : null,
+              ? Border.all(color: AppTheme.primaryColor, width: 2.5)
+              : Border.all(color: AppTheme.dividerColor, width: 1.5),
+          boxShadow: [
+            if (count > 0)
+              BoxShadow(
+                color: AppTheme.primaryColor.withOpacity(0.12),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+          ],
         ),
         child: Column(
           children: [
             Stack(
               children: [
-                Icon(icon, size: 28, color: AppTheme.primaryColor),
+                Icon(icon, size: 34, color: AppTheme.primaryColor),
                 if (count > 0)
                   Positioned(
-                    right: -4,
-                    top: -4,
+                    right: -6,
+                    top: -6,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
+                      padding: const EdgeInsets.all(6),
                       decoration: const BoxDecoration(
                         color: AppTheme.accentColor,
                         shape: BoxShape.circle,
@@ -630,7 +652,7 @@ class _EvidenceButton extends StatelessWidget {
                         count.toString(),
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 10,
+                          fontSize: 12,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
@@ -638,7 +660,7 @@ class _EvidenceButton extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text(
               label,
               style: const TextStyle(

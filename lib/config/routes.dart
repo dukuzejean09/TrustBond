@@ -49,7 +49,7 @@ class AppRoutes {
       location: (context) => const LocationScreen(),
       evidence: (context) => const EvidenceScreen(),
       reviewReport: (context) => const ReviewScreen(),
-      success: (context) => const SuccessScreen(),
+      success: (context) => const SuccessScreen(reportId: ''),
       myReports: (context) => const MyReportsScreen(),
       reportDetails: (context) => const ReportDetailsScreen(),
       communityAlerts: (context) => const CommunityAlertsScreen(),

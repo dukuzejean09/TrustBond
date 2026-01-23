@@ -22,52 +22,129 @@ class HomeScreen extends StatelessWidget {
             // App Bar
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.fromLTRB(24, 24, 24, 20),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Crime Report',
-                          style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
                         Row(
                           children: [
-                            Icon(
-                              appProvider.isGpsActive
-                                  ? Icons.location_on
-                                  : Icons.location_off,
-                              size: 16,
-                              color: appProvider.isGpsActive
-                                  ? AppTheme.successColor
-                                  : AppTheme.textSecondary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              appProvider.isGpsActive ? 'GPS Active' : 'GPS Inactive',
-                              style: Theme.of(context).textTheme.bodySmall,
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF0D1B4C),
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(
+                                  color: const Color(0xFFFFB800),
+                                  width: 2,
+                                ),
+                              ),
+                              child: const Icon(
+                                Icons.local_police_rounded,
+                                color: Color(0xFFFFB800),
+                                size: 22,
+                              ),
                             ),
                             const SizedBox(width: 12),
-                            Icon(
-                              appProvider.isOnline
-                                  ? Icons.wifi
-                                  : Icons.wifi_off,
-                              size: 16,
-                              color: appProvider.isOnline
-                                  ? AppTheme.successColor
-                                  : AppTheme.textSecondary,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              appProvider.isOnline ? 'Online' : 'Offline',
-                              style: Theme.of(context).textTheme.bodySmall,
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      'Trust',
+                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFF0D1B4C),
+                                      ),
+                                    ),
+                                    Text(
+                                      'Bond',
+                                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        color: const Color(0xFFFFB800),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const Text(
+                                  'Rwanda National Police',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF5A6A85),
+                                    letterSpacing: 0.5,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: appProvider.isGpsActive
+                                      ? AppTheme.successColor
+                                      : AppTheme.errorColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                appProvider.isGpsActive ? 'GPS' : 'No GPS',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF5A6A85),
+                                ),
+                              ),
+                              Container(
+                                width: 1,
+                                height: 14,
+                                margin: const EdgeInsets.symmetric(horizontal: 10),
+                                color: AppTheme.dividerColor,
+                              ),
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: BoxDecoration(
+                                  color: appProvider.isOnline
+                                      ? AppTheme.successColor
+                                      : AppTheme.errorColor,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                appProvider.isOnline ? 'Online' : 'Offline',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF5A6A85),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -85,18 +162,20 @@ class HomeScreen extends StatelessWidget {
                                   ),
                                 );
                               },
-                              icon: const Icon(Icons.notifications_outlined),
+                              icon: const Icon(Icons.notifications_outlined, size: 26),
                               style: IconButton.styleFrom(
                                 backgroundColor: Colors.white,
-                                padding: const EdgeInsets.all(12),
+                                padding: const EdgeInsets.all(14),
+                                elevation: 2,
+                                shadowColor: Colors.black.withOpacity(0.1),
                               ),
                             ),
                             Positioned(
-                              right: 8,
-                              top: 8,
+                              right: 10,
+                              top: 10,
                               child: Container(
-                                width: 10,
-                                height: 10,
+                                width: 12,
+                                height: 12,
                                 decoration: const BoxDecoration(
                                   color: AppTheme.accentColor,
                                   shape: BoxShape.circle,
@@ -105,16 +184,18 @@ class HomeScreen extends StatelessWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(width: 8),
+                        const SizedBox(width: 12),
                         // Settings button
                         IconButton(
                           onPressed: () {
                             Navigator.pushNamed(context, AppRoutes.settings);
                           },
-                          icon: const Icon(Icons.settings_outlined),
+                          icon: const Icon(Icons.settings_outlined, size: 26),
                           style: IconButton.styleFrom(
                             backgroundColor: Colors.white,
-                            padding: const EdgeInsets.all(12),
+                            padding: const EdgeInsets.all(14),
+                            elevation: 2,
+                            shadowColor: Colors.black.withOpacity(0.1),
                           ),
                         ),
                       ],
@@ -126,7 +207,7 @@ class HomeScreen extends StatelessWidget {
             // Main Report Button
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: InkWell(
                   onTap: () {
                     Navigator.pushNamed(context, AppRoutes.reportIncident);
@@ -136,16 +217,24 @@ class HomeScreen extends StatelessWidget {
                     padding: const EdgeInsets.all(24),
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(
-                        colors: [AppTheme.accentColor, Color(0xFFFF8E8E)],
+                        colors: [
+                          Color(0xFF0D1B4C),  // RNP Dark Navy
+                          Color(0xFF1E3A6E),  // RNP Navy
+                        ],
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
                       borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: const Color(0xFFFFB800).withOpacity(0.3),
+                        width: 1,
+                      ),
                       boxShadow: [
                         BoxShadow(
-                          color: AppTheme.accentColor.withOpacity(0.3),
-                          blurRadius: 15,
-                          offset: const Offset(0, 8),
+                          color: const Color(0xFF0D1B4C).withOpacity(0.4),
+                          blurRadius: 20,
+                          offset: const Offset(0, 10),
+                          spreadRadius: 0,
                         ),
                       ],
                     ),
@@ -154,13 +243,20 @@ class HomeScreen extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.all(16),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: const Color(0xFFFFB800),
                             borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFFB800).withOpacity(0.3),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
                           child: const Icon(
-                            Icons.emergency,
-                            size: 40,
-                            color: Colors.white,
+                            Icons.add_alert_rounded,
+                            size: 36,
+                            color: Color(0xFF0D1B4C),
                           ),
                         ),
                         const SizedBox(width: 20),
@@ -169,27 +265,38 @@ class HomeScreen extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               const Text(
-                                '🚨 Report Incident',
+                                'Report an Incident',
                                 style: TextStyle(
-                                  fontSize: 22,
+                                  fontSize: 20,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
+                                  letterSpacing: 0.3,
                                 ),
                               ),
-                              const SizedBox(height: 4),
+                              const SizedBox(height: 6),
                               Text(
-                                'Tap to report a crime or suspicious activity',
+                                'Submit crime or suspicious activity to RNP',
                                 style: TextStyle(
                                   fontSize: 14,
-                                  color: Colors.white.withOpacity(0.9),
+                                  color: Colors.white.withOpacity(0.85),
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
                                 ),
                               ),
                             ],
                           ),
                         ),
-                        const Icon(
-                          Icons.arrow_forward_ios,
-                          color: Colors.white,
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            Icons.arrow_forward_rounded,
+                            color: Color(0xFFFFB800),
+                            size: 24,
+                          ),
                         ),
                       ],
                     ),
@@ -197,19 +304,21 @@ class HomeScreen extends StatelessWidget {
                 ),
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            const SliverToBoxAdapter(child: SizedBox(height: 28)),
             // Quick Actions
             SliverToBoxAdapter(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
+                padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       'Quick Actions',
-                      style: Theme.of(context).textTheme.titleLarge,
+                      style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 18),
                     Row(
                       children: [
                         Expanded(
@@ -437,43 +546,77 @@ class _QuickActionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(20),
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: color.withOpacity(0.15),
+            width: 1,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 10,
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+              spreadRadius: 0,
+            ),
+            BoxShadow(
+              color: color.withOpacity(0.08),
+              blurRadius: 15,
               offset: const Offset(0, 4),
+              spreadRadius: -2,
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        color.withOpacity(0.15),
+                        color.withOpacity(0.08),
+                      ],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: color, size: 28),
+                ),
+                Icon(
+                  Icons.arrow_forward_rounded,
+                  color: color.withOpacity(0.5),
+                  size: 20,
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 18),
             Text(
               title,
-              style: const TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppTheme.textPrimary,
+                letterSpacing: 0.1,
               ),
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 6),
             Text(
               subtitle,
-              style: Theme.of(context).textTheme.bodySmall,
+              style: TextStyle(
+                fontSize: 13,
+                height: 1.4,
+                color: AppTheme.textSecondary,
+              ),
             ),
           ],
         ),

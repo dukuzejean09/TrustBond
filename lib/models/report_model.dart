@@ -61,15 +61,15 @@ class ReportModel {
   Color get statusColor {
     switch (status) {
       case ReportStatus.draft:
-        return Colors.grey;
+        return const Color(0xFF6C757D);   // Gray
       case ReportStatus.submitted:
-        return const Color(0xFF2196F3);
+        return const Color(0xFF1E88E5);   // Blue
       case ReportStatus.underReview:
-        return const Color(0xFFFF9800);
+        return const Color(0xFFFFB800);   // RNP Gold
       case ReportStatus.verified:
-        return const Color(0xFF4CAF50);
+        return const Color(0xFF28A745);   // Green
       case ReportStatus.closed:
-        return const Color(0xFF9E9E9E);
+        return const Color(0xFF17A2B8);   // Teal
     }
   }
 

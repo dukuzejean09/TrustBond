@@ -18,12 +18,13 @@ class SettingsScreen extends StatelessWidget {
         title: const Text('Settings'),
       ),
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Privacy Section
             _SectionHeader(title: 'Privacy'),
+            const SizedBox(height: 8),
             _SettingsTile(
               icon: Icons.visibility_off,
               title: 'Anonymous Mode Default',
@@ -34,7 +35,7 @@ class SettingsScreen extends StatelessWidget {
                 activeColor: AppTheme.primaryColor,
               ),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 28),
 
             // Appearance Section
             _SectionHeader(title: 'Appearance'),
@@ -430,13 +431,13 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 4),
       child: Text(
         title,
         style: TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w600,
-          color: AppTheme.primaryColor.withOpacity(0.8),
+          fontSize: 16,
+          fontWeight: FontWeight.w700,
+          color: AppTheme.primaryColor,
           letterSpacing: 0.5,
         ),
       ),
@@ -462,25 +463,37 @@ class _SettingsTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Card(
-      margin: const EdgeInsets.only(bottom: 8),
+      margin: const EdgeInsets.only(bottom: 10),
+      elevation: 1,
+      shadowColor: Colors.black.withOpacity(0.06),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         leading: Container(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: AppTheme.primaryColor.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(8),
+            color: AppTheme.primaryColor.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(12),
           ),
-          child: Icon(icon, color: AppTheme.primaryColor, size: 20),
+          child: Icon(icon, color: AppTheme.primaryColor, size: 24),
         ),
         title: Text(
           title,
-          style: const TextStyle(fontWeight: FontWeight.w500),
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            fontSize: 16,
+          ),
         ),
-        subtitle: Text(
-          subtitle,
-          style: const TextStyle(fontSize: 12),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: Text(
+            subtitle,
+            style: const TextStyle(
+              fontSize: 14,
+              color: AppTheme.textSecondary,
+            ),
+          ),
         ),
-        trailing: trailing ?? const Icon(Icons.chevron_right),
+        trailing: trailing ?? const Icon(Icons.chevron_right, size: 24),
         onTap: onTap,
       ),
     );
@@ -501,9 +514,16 @@ class _LanguageOption extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ListTile(
-      title: Text(title),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      title: Text(
+        title,
+        style: TextStyle(
+          fontSize: 16,
+          fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+        ),
+      ),
       trailing: isSelected
-          ? const Icon(Icons.check, color: AppTheme.primaryColor)
+          ? const Icon(Icons.check, color: AppTheme.primaryColor, size: 26)
           : null,
       onTap: onTap,
     );
