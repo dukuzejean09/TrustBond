@@ -25,6 +25,7 @@ class ReportModel {
   final DateTime submittedAt;
   final DateTime? updatedAt;
   final String? responseMessage;
+  final String? trackingCode;  // For tracking anonymous reports
 
   ReportModel({
     required this.id,
@@ -41,6 +42,7 @@ class ReportModel {
     required this.submittedAt,
     this.updatedAt,
     this.responseMessage,
+    this.trackingCode,
   });
 
   String get statusLabel {

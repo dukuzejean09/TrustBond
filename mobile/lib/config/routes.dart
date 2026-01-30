@@ -11,6 +11,7 @@ import '../screens/report/review_screen.dart';
 import '../screens/report/success_screen.dart';
 import '../screens/my_reports/my_reports_screen.dart';
 import '../screens/my_reports/report_details_screen.dart';
+import '../screens/my_reports/track_report_screen.dart';
 import '../screens/alerts/community_alerts_screen.dart';
 import '../screens/notifications/notifications_screen.dart';
 import '../screens/help/help_screen.dart';
@@ -31,6 +32,7 @@ class AppRoutes {
   static const String success = '/success';
   static const String myReports = '/my-reports';
   static const String reportDetails = '/report-details';
+  static const String trackReport = '/track-report';
   static const String communityAlerts = '/community-alerts';
   static const String notifications = '/notifications';
   static const String help = '/help';
@@ -58,6 +60,7 @@ class AppRoutes {
       settings: (context) => const SettingsScreen(),
       profile: (context) => const ProfileScreen(),
       offlineReports: (context) => const OfflineReportsScreen(),
+      trackReport: (context) => const TrackReportScreen(),
     };
   }
 }

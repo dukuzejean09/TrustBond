@@ -6,6 +6,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/theme.dart';
 import 'config/routes.dart';
 import 'providers/app_provider.dart';
+import 'providers/alert_provider.dart';
+import 'providers/auth_provider.dart';
 import 'providers/report_provider.dart';
 import 'providers/theme_provider.dart';
 import 'screens/splash_screen.dart';
@@ -29,7 +31,9 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider(isDarkMode)),
         ChangeNotifierProvider(create: (_) => AppProvider(isFirstTime)),
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => ReportProvider()),
+        ChangeNotifierProvider(create: (_) => AlertProvider()),
       ],
       child: const CrimeReportApp(),
     ),

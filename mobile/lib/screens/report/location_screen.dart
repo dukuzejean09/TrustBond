@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../config/theme.dart';
 import '../../providers/report_provider.dart';
+import '../../services/location_service.dart';
 
 class LocationScreen extends StatefulWidget {
   const LocationScreen({super.key});
@@ -11,34 +13,192 @@ class LocationScreen extends StatefulWidget {
 }
 
 class _LocationScreenState extends State<LocationScreen> {
+  final LocationService _locationService = LocationService();
   bool _isLoading = false;
-  double _latitude = -1.9403;
-  double _longitude = 29.8739;
-  String _address = 'Kigali, Rwanda';
+  bool _hasError = false;
+  String _errorMessage = '';
+  double _latitude = -1.4999; // Musanze center
+  double _longitude = 29.6349;
+  String _address = 'Musanze, Northern Province';
+  String _district = 'Musanze';
+  double? _accuracy;
+  bool _isInRwanda = true;
 
   @override
   void initState() {
     super.initState();
+    _initializeLocation();
+  }
+
+  Future<void> _initializeLocation() async {
     final reportProvider = context.read<ReportProvider>();
     if (reportProvider.latitude != null) {
-      _latitude = reportProvider.latitude!;
-      _longitude = reportProvider.longitude!;
-      _address = reportProvider.address;
+      setState(() {
+        _latitude = reportProvider.latitude!;
+        _longitude = reportProvider.longitude!;
+        _address = reportProvider.address;
+      });
+    } else {
+      // Auto-detect location on first load
+      await _detectLocation();
     }
   }
 
-  Future<void> _redetectLocation() async {
-    setState(() => _isLoading = true);
-    
-    // Simulate GPS detection
-    await Future.delayed(const Duration(seconds: 2));
-    
+  Future<void> _detectLocation() async {
     setState(() {
-      _latitude = -1.9403 + (DateTime.now().millisecond / 10000);
-      _longitude = 29.8739 + (DateTime.now().millisecond / 10000);
-      _address = 'KN 5 Rd, Nyarugenge, Kigali';
-      _isLoading = false;
+      _isLoading = true;
+      _hasError = false;
     });
+
+    try {
+      // Check permissions
+      final status = await _locationService.checkPermissions();
+      
+      if (status == LocationPermissionStatus.serviceDisabled) {
+        _showLocationServiceDialog();
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = 'Location services are disabled';
+        });
+        return;
+      }
+      
+      if (status == LocationPermissionStatus.denied) {
+        final granted = await _locationService.requestPermission();
+        if (!granted) {
+          setState(() {
+            _isLoading = false;
+            _hasError = true;
+            _errorMessage = 'Location permission denied';
+          });
+          return;
+        }
+      }
+      
+      if (status == LocationPermissionStatus.deniedForever) {
+        _showPermissionSettingsDialog();
+        setState(() {
+          _isLoading = false;
+          _hasError = true;
+          _errorMessage = 'Location permission permanently denied';
+        });
+        return;
+      }
+
+      // Get current position
+      final position = await _locationService.getCurrentPosition();
+      
+      // Validate location is in Rwanda
+      _isInRwanda = _locationService.isInRwanda(
+        position.latitude,
+        position.longitude,
+      );
+      
+      // Get address
+      final address = await _locationService.getAddressFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+      
+      // Get district
+      final district = _locationService.getDistrictFromCoordinates(
+        position.latitude,
+        position.longitude,
+      );
+
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _address = address;
+        _district = district;
+        _accuracy = position.accuracy;
+        _isLoading = false;
+      });
+
+      if (!_isInRwanda) {
+        _showLocationWarning();
+      }
+
+    } on LocationException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = e.message;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _hasError = true;
+        _errorMessage = 'Failed to detect location';
+      });
+    }
+  }
+
+  void _showLocationServiceDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Location Services Disabled'),
+        content: const Text(
+          'Please enable location services to detect your current location accurately.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _locationService.openLocationSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showPermissionSettingsDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Permission Required'),
+        content: const Text(
+          'Location permission is required to detect your position. Please enable it in app settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _locationService.openAppSettings();
+            },
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLocationWarning() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Text(
+          'Location appears to be outside Rwanda. Please verify.',
+        ),
+        backgroundColor: AppTheme.warningColor,
+        action: SnackBarAction(
+          label: 'OK',
+          textColor: Colors.white,
+          onPressed: () {},
+        ),
+      ),
+    );
   }
 
   void _confirmLocation() {
@@ -150,14 +310,20 @@ class _LocationScreenState extends State<LocationScreen> {
                         color: Colors.black87,
                         borderRadius: BorderRadius.circular(20),
                       ),
-                      child: const Row(
+                      child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.touch_app, color: Colors.white, size: 16),
-                          SizedBox(width: 8),
+                          Icon(
+                            _isInRwanda ? Icons.check_circle : Icons.warning,
+                            color: _isInRwanda ? Colors.green : Colors.orange,
+                            size: 16,
+                          ),
+                          const SizedBox(width: 8),
                           Text(
-                            'Drag pin to adjust location',
-                            style: TextStyle(color: Colors.white, fontSize: 12),
+                            _isInRwanda 
+                              ? 'Location: $_district' 
+                              : 'Outside Rwanda boundaries',
+                            style: const TextStyle(color: Colors.white, fontSize: 12),
                           ),
                         ],
                       ),
@@ -168,19 +334,50 @@ class _LocationScreenState extends State<LocationScreen> {
                 Positioned(
                   top: 16,
                   right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.gps_fixed,
-                      color: AppTheme.successColor,
-                      size: 20,
+                  child: GestureDetector(
+                    onTap: _detectLocation,
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        _hasError ? Icons.gps_off : Icons.gps_fixed,
+                        color: _hasError ? AppTheme.errorColor : AppTheme.successColor,
+                        size: 20,
+                      ),
                     ),
                   ),
                 ),
+                // Accuracy indicator
+                if (_accuracy != null)
+                  Positioned(
+                    bottom: 16,
+                    left: 16,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.precision_manufacturing,
+                            size: 14,
+                            color: _accuracy! < 50 ? AppTheme.successColor : AppTheme.warningColor,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '±${_accuracy!.toStringAsFixed(0)}m',
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -316,7 +513,7 @@ class _LocationScreenState extends State<LocationScreen> {
                     children: [
                       Expanded(
                         child: OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _redetectLocation,
+                          onPressed: _isLoading ? null : _detectLocation,
                           icon: const Icon(Icons.my_location),
                           label: const Text('Re-detect'),
                           style: OutlinedButton.styleFrom(
@@ -338,6 +535,19 @@ class _LocationScreenState extends State<LocationScreen> {
                       ),
                     ],
                   ),
+                  // Error message
+                  if (_hasError)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Text(
+                        _errorMessage,
+                        style: const TextStyle(
+                          color: AppTheme.errorColor,
+                          fontSize: 12,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
                 ],
               ),
             ),

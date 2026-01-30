@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../config/theme.dart';
 import '../../models/alert_model.dart';
+import '../../providers/alert_provider.dart';
 
 class CommunityAlertsScreen extends StatefulWidget {
   const CommunityAlertsScreen({super.key});
@@ -14,31 +16,13 @@ class _CommunityAlertsScreenState extends State<CommunityAlertsScreen> {
   String _filterCategory = 'all';
   String _sortBy = 'recent';
 
-  List<AlertModel> get _filteredAlerts {
-    List<AlertModel> alerts = MockAlerts.getAlerts();
-
-    // Filter by distance
-    if (_filterDistance != 'all') {
-      final maxDistance = double.parse(_filterDistance);
-      alerts = alerts.where((a) => a.distance <= maxDistance).toList();
-    }
-
-    // Filter by category
-    if (_filterCategory != 'all') {
-      alerts = alerts.where((a) => a.type.name == _filterCategory).toList();
-    }
-
-    // Sort
-    switch (_sortBy) {
-      case 'recent':
-        alerts.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-        break;
-      case 'distance':
-        alerts.sort((a, b) => a.distance.compareTo(b.distance));
-        break;
-    }
-
-    return alerts;
+  @override
+  void initState() {
+    super.initState();
+    // Refresh alerts when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<AlertProvider>().fetchAlerts();
+    });
   }
 
   @override
@@ -48,76 +32,118 @@ class _CommunityAlertsScreenState extends State<CommunityAlertsScreen> {
         title: const Text('Community Alerts'),
         actions: [
           IconButton(
+            onPressed: () => context.read<AlertProvider>().fetchAlerts(),
+            icon: const Icon(Icons.refresh),
+          ),
+          IconButton(
             onPressed: _showFilterSheet,
             icon: const Icon(Icons.filter_list),
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Quick filters
-          Container(
-            padding: const EdgeInsets.all(16),
-            color: Colors.white,
-            child: Column(
-              children: [
-                // Distance filter
-                SizedBox(
-                  height: 40,
-                  child: ListView(
-                    scrollDirection: Axis.horizontal,
-                    children: [
-                      _QuickFilterChip(
-                        label: 'All Distances',
-                        isSelected: _filterDistance == 'all',
-                        onTap: () => setState(() => _filterDistance = 'all'),
-                      ),
-                      _QuickFilterChip(
-                        label: '< 1 km',
-                        isSelected: _filterDistance == '1',
-                        onTap: () => setState(() => _filterDistance = '1'),
-                      ),
-                      _QuickFilterChip(
-                        label: '< 3 km',
-                        isSelected: _filterDistance == '3',
-                        onTap: () => setState(() => _filterDistance = '3'),
-                      ),
-                      _QuickFilterChip(
-                        label: '< 5 km',
-                        isSelected: _filterDistance == '5',
-                        onTap: () => setState(() => _filterDistance = '5'),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+      body: Consumer<AlertProvider>(
+        builder: (context, alertProvider, child) {
+          if (alertProvider.isLoading) {
+            return const Center(child: CircularProgressIndicator());
+          }
 
-          // Alerts list
-          Expanded(
-            child: _filteredAlerts.isEmpty
-                ? Center(
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.notifications_off_outlined,
-                          size: 80,
-                          color: AppTheme.textSecondary.withOpacity(0.5),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          'No alerts found',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w600,
-                            color: AppTheme.textSecondary,
+          if (alertProvider.error != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.error_outline,
+                    size: 64,
+                    color: Colors.red.withOpacity(0.5),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    alertProvider.error!,
+                    style: const TextStyle(color: AppTheme.textSecondary),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: () => alertProvider.fetchAlerts(),
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          final filteredAlerts = alertProvider.getFilteredAlerts(
+            filterDistance: _filterDistance,
+            filterCategory: _filterCategory,
+            sortBy: _sortBy,
+          );
+
+          return Column(
+            children: [
+              // Quick filters
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.white,
+                child: Column(
+                  children: [
+                    // Distance filter
+                    SizedBox(
+                      height: 40,
+                      child: ListView(
+                        scrollDirection: Axis.horizontal,
+                        children: [
+                          _QuickFilterChip(
+                            label: 'All Distances',
+                            isSelected: _filterDistance == 'all',
+                            onTap: () => setState(() => _filterDistance = 'all'),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          'Try adjusting your filters',
+                          _QuickFilterChip(
+                            label: '< 1 km',
+                            isSelected: _filterDistance == '1',
+                            onTap: () => setState(() => _filterDistance = '1'),
+                          ),
+                          _QuickFilterChip(
+                            label: '< 3 km',
+                            isSelected: _filterDistance == '3',
+                            onTap: () => setState(() => _filterDistance = '3'),
+                          ),
+                          _QuickFilterChip(
+                            label: '< 5 km',
+                            isSelected: _filterDistance == '5',
+                            onTap: () => setState(() => _filterDistance = '5'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              // Alerts list
+              Expanded(
+                child: filteredAlerts.isEmpty
+                    ? Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.notifications_off_outlined,
+                              size: 80,
+                              color: AppTheme.textSecondary.withOpacity(0.5),
+                            ),
+                            const SizedBox(height: 16),
+                            const Text(
+                              'No alerts found',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.textSecondary,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            const Text(
+                              'Try adjusting your filters',
                           style: TextStyle(color: AppTheme.textLight),
                         ),
                       ],
@@ -125,17 +151,19 @@ class _CommunityAlertsScreenState extends State<CommunityAlertsScreen> {
                   )
                 : ListView.builder(
                     padding: const EdgeInsets.all(16),
-                    itemCount: _filteredAlerts.length,
+                    itemCount: filteredAlerts.length,
                     itemBuilder: (context, index) {
-                      final alert = _filteredAlerts[index];
+                      final alert = filteredAlerts[index];
                       return _AlertCard(
                         alert: alert,
                         onTap: () => _showAlertDetails(alert),
                       );
                     },
                   ),
-          ),
-        ],
+              ),
+            ],
+          );
+        },
       ),
     );
   }

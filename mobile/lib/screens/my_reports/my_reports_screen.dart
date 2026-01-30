@@ -19,6 +19,15 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
   String _sortBy = 'date_desc';
 
   @override
+  void initState() {
+    super.initState();
+    // Fetch reports when screen loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<ReportProvider>().fetchMyReports();
+    });
+  }
+
+  @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
@@ -79,6 +88,11 @@ class _MyReportsScreenState extends State<MyReportsScreen> {
       appBar: AppBar(
         title: const Text('My Reports'),
         actions: [
+          IconButton(
+            onPressed: () => Navigator.pushNamed(context, '/track-report'),
+            icon: const Icon(Icons.track_changes),
+            tooltip: 'Track Report',
+          ),
           IconButton(
             onPressed: () => _showSortDialog(),
             icon: const Icon(Icons.sort),

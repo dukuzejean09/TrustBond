@@ -313,6 +313,16 @@ class IncidentType {
     color: Color(0xFF795548),
   );
 
+  // Other (catch-all category)
+  static const other = IncidentType(
+    id: 'other',
+    name: 'Other',
+    description: 'Other incident type',
+    icon: Icons.help_outline,
+    category: IncidentCategory.suspiciousActivity,
+    color: Color(0xFF9E9E9E),
+  );
+
   // Get all types
   static List<IncidentType> get allTypes => [
     assault, threats, harassment, domesticDisturbance, childAbuse,
@@ -322,6 +332,7 @@ class IncidentType {
     noiseDisturbance, streetFights, publicNuisance, illegalGatherings,
     recklessDriving, illegalParking, brokenTrafficLight, roadObstruction,
     brokenStreetlight, waterLeak, openManhole, wasteDumping, strayAnimals,
+    other,
   ];
 
   // Get by category

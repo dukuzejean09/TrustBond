@@ -385,14 +385,26 @@ class ReviewScreen extends StatelessWidget {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton.icon(
-                    onPressed: () {
-                      final report = reportProvider.submitReport();
-                      Navigator.pushReplacement(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SuccessScreen(reportId: report.id),
-                        ),
-                      );
+                    onPressed: () async {
+                      final report = await reportProvider.submitReport();
+                      if (report != null && context.mounted) {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => SuccessScreen(
+                              reportId: report.id,
+                              trackingCode: report.trackingCode,
+                            ),
+                          ),
+                        );
+                      } else if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(reportProvider.error ?? 'Failed to submit report'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
                     },
                     icon: const Icon(Icons.send),
                     label: const Text('Submit Report'),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/api_service.dart';
 
 class AppProvider extends ChangeNotifier {
   bool _isFirstTime;
@@ -8,6 +9,12 @@ class AppProvider extends ChangeNotifier {
   String _language = 'en';
   bool _isOnline = true;
   bool _isGpsActive = false;
+  
+  // Public stats from API
+  Map<String, dynamic>? _publicStats;
+  List<Map<String, dynamic>>? _emergencyContacts;
+  Map<String, dynamic>? _appConfig;
+  bool _isLoadingStats = false;
 
   AppProvider(this._isFirstTime);
 
@@ -19,6 +26,10 @@ class AppProvider extends ChangeNotifier {
   String get language => _language;
   bool get isOnline => _isOnline;
   bool get isGpsActive => _isGpsActive;
+  Map<String, dynamic>? get publicStats => _publicStats;
+  List<Map<String, dynamic>>? get emergencyContacts => _emergencyContacts;
+  Map<String, dynamic>? get appConfig => _appConfig;
+  bool get isLoadingStats => _isLoadingStats;
 
   // Setters
   Future<void> setFirstTimeComplete() async {
@@ -77,5 +88,69 @@ class AppProvider extends ChangeNotifier {
     _notificationsEnabled = prefs.getBool('notifications') ?? true;
     _language = prefs.getString('language') ?? 'en';
     notifyListeners();
+  }
+
+  /// Check API connectivity
+  Future<bool> checkConnectivity() async {
+    final result = await ApiService.checkHealth();
+    _isOnline = result['success'] == true;
+    notifyListeners();
+    return _isOnline;
+  }
+
+  /// Load public stats from API
+  Future<void> loadPublicStats() async {
+    _isLoadingStats = true;
+    notifyListeners();
+
+    try {
+      final result = await ApiService.getPublicStats();
+      if (result['success'] == true) {
+        _publicStats = result['data']['stats'];
+        _isOnline = true;
+      }
+    } catch (e) {
+      debugPrint('Failed to load stats: $e');
+    }
+
+    _isLoadingStats = false;
+    notifyListeners();
+  }
+
+  /// Load emergency contacts from API
+  Future<void> loadEmergencyContacts() async {
+    try {
+      final result = await ApiService.getEmergencyContacts();
+      if (result['success'] == true) {
+        _emergencyContacts = List<Map<String, dynamic>>.from(
+          result['data']['contacts'],
+        );
+      }
+    } catch (e) {
+      debugPrint('Failed to load emergency contacts: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Load app config from API
+  Future<void> loadAppConfig() async {
+    try {
+      final result = await ApiService.getAppConfig();
+      if (result['success'] == true) {
+        _appConfig = result['data']['config'];
+      }
+    } catch (e) {
+      debugPrint('Failed to load app config: $e');
+    }
+    notifyListeners();
+  }
+
+  /// Initialize all data from API
+  Future<void> initializeFromApi() async {
+    await Future.wait([
+      loadPublicStats(),
+      loadEmergencyContacts(),
+      loadAppConfig(),
+    ]);
   }
 }

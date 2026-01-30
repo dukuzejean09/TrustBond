@@ -1,0 +1,904 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrustBond - Data Flow Diagrams</title>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+      }
+      .container {
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+      header {
+        text-align: center;
+        color: white;
+        padding: 40px 20px;
+        margin-bottom: 30px;
+      }
+      header h1 {
+        font-size: 2.5em;
+        margin-bottom: 10px;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+      }
+      header p {
+        font-size: 1.2em;
+        opacity: 0.9;
+      }
+      .diagram-section {
+        background: white;
+        border-radius: 15px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+      .diagram-section h2 {
+        color: #4a90e2;
+        border-bottom: 3px solid #4a90e2;
+        padding-bottom: 10px;
+        margin-bottom: 20px;
+        font-size: 1.8em;
+      }
+      .diagram-section h3 {
+        color: #666;
+        margin: 20px 0 15px 0;
+        font-size: 1.3em;
+      }
+      .diagram-section p {
+        color: #555;
+        line-height: 1.6;
+        margin-bottom: 15px;
+      }
+      .diagram-section ul {
+        color: #555;
+        margin-left: 25px;
+        margin-bottom: 20px;
+      }
+      .diagram-section li {
+        margin-bottom: 8px;
+        line-height: 1.5;
+      }
+      .mermaid {
+        background: #f8f9fa;
+        padding: 20px;
+        border-radius: 10px;
+        margin: 20px 0;
+        overflow-x: auto;
+        display: flex;
+        justify-content: center;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 20px 0;
+      }
+      th,
+      td {
+        border: 1px solid #ddd;
+        padding: 12px;
+        text-align: left;
+      }
+      th {
+        background: #4a90e2;
+        color: white;
+      }
+      tr:nth-child(even) {
+        background: #f8f9fa;
+      }
+      .nav-menu {
+        background: rgba(255, 255, 255, 0.95);
+        padding: 15px;
+        border-radius: 10px;
+        margin-bottom: 30px;
+        position: sticky;
+        top: 10px;
+        z-index: 100;
+        box-shadow: 0 5px 20px rgba(0, 0, 0, 0.15);
+      }
+      .nav-menu h3 {
+        color: #4a90e2;
+        margin-bottom: 10px;
+      }
+      .nav-menu a {
+        display: inline-block;
+        color: #4a90e2;
+        text-decoration: none;
+        padding: 8px 15px;
+        margin: 5px;
+        background: #e8f4fd;
+        border-radius: 20px;
+        font-size: 0.9em;
+        transition: all 0.3s ease;
+      }
+      .nav-menu a:hover {
+        background: #4a90e2;
+        color: white;
+      }
+      .legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        margin: 20px 0;
+        padding: 15px;
+        background: #f0f0f0;
+        border-radius: 8px;
+      }
+      .legend-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .legend-color {
+        width: 25px;
+        height: 25px;
+        border-radius: 5px;
+      }
+      footer {
+        text-align: center;
+        color: white;
+        padding: 30px;
+        opacity: 0.9;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>TrustBond</h1>
+        <p>Privacy-Preserving Anonymous Community Incident Reporting System</p>
+        <p>Data Flow Diagrams Documentation</p>
+      </header>
+
+      <nav class="nav-menu">
+        <h3>Quick Navigation</h3>
+        <a href="#context">Context Diagram</a>
+        <a href="#level1">Level 1 DFD</a>
+        <a href="#report-submission">Report Submission</a>
+        <a href="#verification">Verification Engine</a>
+        <a href="#hotspot">Hotspot Detection</a>
+        <a href="#police-dashboard">Police Dashboard</a>
+        <a href="#public-map">Public Safety Map</a>
+        <a href="#architecture">System Architecture</a>
+        <a href="#privacy">Privacy Flow</a>
+        <a href="#dictionary">Data Dictionary</a>
+      </nav>
+
+      <!-- Context Diagram -->
+      <section id="context" class="diagram-section">
+        <h2>1. Context Diagram (Level 0 DFD)</h2>
+        <p>
+          The context diagram shows the TrustBond system as a single process and
+          its interactions with external entities.
+        </p>
+
+        <pre class="mermaid">
+flowchart TB
+    Citizen(["Citizen/Reporter"])
+    Police(["Police Authority"])
+    PublicUser(["Public User"])
+    
+    System["TrustBond System
+    Privacy-Preserving
+    Incident Reporting Platform"]
+    
+    Citizen -->|"Anonymous Incident Report
+    GPS, Timestamp, Evidence"| System
+    System -->|"Report Submission Confirmation"| Citizen
+    
+    System -->|"Trusted Incidents
+    Hotspot Alerts
+    Delayed Reports"| Police
+    Police -->|"Response Actions
+    Report Review"| System
+    
+    System -->|"Anonymized Safety Trends
+    Hotspot Locations"| PublicUser
+    PublicUser -->|"View Community Safety Data"| System
+    
+    style System fill:#4A90E2,stroke:#2E5C8A,stroke-width:3px,color:#fff
+    style Citizen fill:#90EE90,stroke:#2E7D32,stroke-width:2px
+    style Police fill:#FFB347,stroke:#D2691E,stroke-width:2px
+    style PublicUser fill:#DDA0DD,stroke:#8B008B,stroke-width:2px
+            </pre
+        >
+
+        <h3>External Entities:</h3>
+        <ul>
+          <li>
+            <strong>Citizen/Reporter</strong>: Submits anonymous incident
+            reports with evidence
+          </li>
+          <li>
+            <strong>Police Authority</strong>: Reviews trusted reports, monitors
+            hotspots, coordinates responses
+          </li>
+          <li>
+            <strong>Public User</strong>: Views anonymized community safety
+            trends and hotspots
+          </li>
+        </ul>
+      </section>
+
+      <!-- Level 1 DFD -->
+      <section id="level1" class="diagram-section">
+        <h2>2. Level 1 DFD - Major System Processes</h2>
+        <p>
+          This diagram breaks down the TrustBond system into its major
+          functional processes.
+        </p>
+
+        <pre class="mermaid">
+flowchart TB
+    Citizen(["Citizen"])
+    Police(["Police Authority"])
+    PublicUser(["Public User"])
+    
+    P1["1.0 Incident Report Submission"]
+    P2["2.0 Evidence Capture and Validation"]
+    P3["3.0 Report Verification and Trust Classification"]
+    P4["4.0 Hotspot Detection and Analysis"]
+    P5["5.0 Police Dashboard Management"]
+    P6["6.0 Public Safety Map Presentation"]
+    
+    D1[("Report Database")]
+    D2[("Evidence Storage")]
+    D3[("Trust Scores DB")]
+    D4[("Hotspot Data")]
+    
+    Citizen -->|"Report Details, GPS, Timestamp"| P1
+    P1 -->|"Report Data"| P2
+    P2 -->|"Photo/Video Evidence"| P2
+    
+    P1 -->|"Incident Report"| D1
+    P2 -->|"Validated Evidence"| D2
+    P2 -->|"Report + Evidence"| P3
+    
+    P3 -->|"Motion Analysis, Spatial-Temporal Check"| P3
+    P3 -->|"Trust Classification: Trusted/Delayed/Fake"| D3
+    D1 -->|"Report Data"| P3
+    D2 -->|"Evidence Data"| P3
+    
+    D3 -->|"Trusted Reports"| P4
+    P4 -->|"DBSCAN Clustering"| P4
+    P4 -->|"Hotspot Clusters"| D4
+    
+    D1 -->|"Trusted Incidents"| P5
+    D3 -->|"Trust Scores"| P5
+    D4 -->|"Hotspot Data"| P5
+    P5 -->|"Incident Details, Hotspot Alerts"| Police
+    Police -->|"Response Actions"| P5
+    
+    D1 -->|"Anonymized Reports"| P6
+    D4 -->|"Public Hotspot Data"| P6
+    P6 -->|"Safety Trends, Hotspot Map"| PublicUser
+    
+    P1 -->|"Confirmation"| Citizen
+    
+    style P1 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style P2 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style P3 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style P4 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style P5 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style P6 fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style D1 fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+    style D2 fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+    style D3 fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+    style D4 fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+            </pre
+        >
+
+        <h3>Major Processes:</h3>
+        <ul>
+          <li>
+            <strong>1.0 Incident Report Submission</strong>: Captures anonymous
+            report with GPS and timestamp
+          </li>
+          <li>
+            <strong>2.0 Evidence Capture and Validation</strong>: Handles
+            photo/video evidence collection
+          </li>
+          <li>
+            <strong>3.0 Report Verification and Trust Classification</strong>:
+            Verifies authenticity and assigns trust scores
+          </li>
+          <li>
+            <strong>4.0 Hotspot Detection and Analysis</strong>: Uses DBSCAN
+            clustering on trusted reports
+          </li>
+          <li>
+            <strong>5.0 Police Dashboard Management</strong>: Provides
+            operational interface for police
+          </li>
+          <li>
+            <strong>6.0 Public Safety Map Presentation</strong>: Displays
+            anonymized trends to public
+          </li>
+        </ul>
+      </section>
+
+      <!-- Report Submission Level 2 -->
+      <section id="report-submission" class="diagram-section">
+        <h2>
+          3. Level 2 DFD - Report Submission and Evidence Capture (Process 1.0
+          and 2.0)
+        </h2>
+        <p>
+          Detailed breakdown of how reports are submitted and evidence is
+          captured.
+        </p>
+
+        <pre class="mermaid">
+flowchart TB
+    Citizen(["Citizen"])
+    
+    P11["1.1 Collect Report Details"]
+    P12["1.2 Capture GPS Location"]
+    P13["1.3 Generate Timestamp"]
+    P14["1.4 Assign Anonymous Report ID"]
+    
+    P21["2.1 Capture Photo/Video Evidence"]
+    P22["2.2 Extract Metadata from Evidence"]
+    P23["2.3 Encrypt and Store Evidence"]
+    
+    D1[("Report Database")]
+    D2[("Evidence Storage")]
+    TempData[("Temporary Report Data")]
+    
+    Citizen -->|"Incident Type, Description, Location"| P11
+    P11 -->|"Report Details"| TempData
+    
+    Citizen -->|"Enable GPS"| P12
+    P12 -->|"Coordinates"| TempData
+    
+    P13 -->|"ISO Timestamp"| TempData
+    
+    TempData -->|"Combined Data"| P14
+    P14 -->|"Anonymous Report"| D1
+    P14 -->|"Confirmation + ID"| Citizen
+    
+    Citizen -->|"Capture Media"| P21
+    P21 -->|"Raw Evidence"| P22
+    P22 -->|"Evidence + Metadata"| P23
+    P23 -->|"Encrypted Evidence"| D2
+    D1 -->|"Report ID"| P23
+    
+    style P11 fill:#FFDAB9,stroke:#CD853F,stroke-width:2px
+    style P12 fill:#FFDAB9,stroke:#CD853F,stroke-width:2px
+    style P13 fill:#FFDAB9,stroke:#CD853F,stroke-width:2px
+    style P14 fill:#FFDAB9,stroke:#CD853F,stroke-width:2px
+    style P21 fill:#FFE4E1,stroke:#DC143C,stroke-width:2px
+    style P22 fill:#FFE4E1,stroke:#DC143C,stroke-width:2px
+    style P23 fill:#FFE4E1,stroke:#DC143C,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- Verification Level 2 -->
+      <section id="verification" class="diagram-section">
+        <h2>
+          4. Level 2 DFD - Report Verification and Trust Classification (Process
+          3.0)
+        </h2>
+        <p>Detailed breakdown of the rule-based verification engine.</p>
+
+        <pre class="mermaid">
+flowchart TB
+    D1[("Report Database")]
+    D2[("Evidence Storage")]
+    
+    P31["3.1 Motion Sensor Analysis"]
+    P32["3.2 Spatial-Temporal Consistency Check"]
+    P33["3.3 Evidence Authenticity Check"]
+    P34["3.4 Calculate Trust Score"]
+    P35["3.5 Classify Report Trust Level"]
+    
+    D3[("Trust Scores DB")]
+    RulesDB[("Verification Rules")]
+    
+    D1 -->|"Report Data"| P31
+    D2 -->|"Motion Metadata"| P31
+    P31 -->|"Motion Score"| P34
+    
+    D1 -->|"GPS + Timestamp"| P32
+    D1 -->|"Historical Data"| P32
+    RulesDB -->|"Validation Rules"| P32
+    P32 -->|"Consistency Score"| P34
+    
+    D2 -->|"Evidence Metadata"| P33
+    P33 -->|"Authenticity Score"| P34
+    
+    P34 -->|"Aggregate Score"| P35
+    RulesDB -->|"Classification Thresholds"| P35
+    
+    P35 -->|"Trust Level: Trusted/Delayed/Fake"| D3
+    D3 -->|"Update Report Status"| D1
+    
+    style P31 fill:#E0FFE0,stroke:#228B22,stroke-width:2px
+    style P32 fill:#E0FFE0,stroke:#228B22,stroke-width:2px
+    style P33 fill:#E0FFE0,stroke:#228B22,stroke-width:2px
+    style P34 fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+    style P35 fill:#FFE4B5,stroke:#FF8C00,stroke-width:2px
+            </pre
+        >
+
+        <h3>Verification Components:</h3>
+        <ul>
+          <li>
+            <strong>Motion Sensor Analysis</strong>: Analyzes
+            accelerometer/gyroscope data from evidence capture
+          </li>
+          <li>
+            <strong>Spatial-Temporal Consistency</strong>: Checks if GPS,
+            timestamp, and location are consistent
+          </li>
+          <li>
+            <strong>Evidence Authenticity</strong>: Validates EXIF data and
+            checks for manipulation
+          </li>
+          <li>
+            <strong>Trust Score Calculation</strong>: Aggregates individual
+            scores
+          </li>
+          <li>
+            <strong>Classification</strong>: Categorizes as Trusted (high
+            score), Delayed (medium), or Fake (low)
+          </li>
+        </ul>
+      </section>
+
+      <!-- Hotspot Detection Level 2 -->
+      <section id="hotspot" class="diagram-section">
+        <h2>5. Level 2 DFD - Hotspot Detection and Analysis (Process 4.0)</h2>
+        <p>
+          Detailed breakdown of the DBSCAN clustering for hotspot detection.
+        </p>
+
+        <pre class="mermaid">
+flowchart TB
+    D3[("Trust Scores DB")]
+    
+    P41["4.1 Filter Trusted Reports"]
+    P42["4.2 Extract Spatial Coordinates"]
+    P43["4.3 Apply DBSCAN Clustering"]
+    P44["4.4 Identify Density Clusters"]
+    P45["4.5 Calculate Hotspot Statistics"]
+    P46["4.6 Generate Hotspot Boundaries"]
+    
+    D4[("Hotspot Data")]
+    ParamsDB[("Clustering Parameters")]
+    
+    D3 -->|"All Reports"| P41
+    P41 -->|"Trusted Reports Only"| P42
+    
+    P42 -->|"GPS Coordinates + Weights"| P43
+    ParamsDB -->|"Epsilon, MinPts"| P43
+    
+    P43 -->|"Distance Matrix"| P44
+    P44 -->|"Core Points, Border Points, Noise"| P45
+    
+    P45 -->|"Incident Count, Severity Level, Time Range"| P46
+    
+    P46 -->|"Hotspot Clusters, Geographic Bounds, Metadata"| D4
+    
+    style P41 fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+    style P42 fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+    style P43 fill:#FFE4E1,stroke:#DC143C,stroke-width:2px
+    style P44 fill:#FFE4E1,stroke:#DC143C,stroke-width:2px
+    style P45 fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+    style P46 fill:#E6E6FA,stroke:#483D8B,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- Police Dashboard Level 2 -->
+      <section id="police-dashboard" class="diagram-section">
+        <h2>6. Level 2 DFD - Police Dashboard Management (Process 5.0)</h2>
+        <p>Detailed breakdown of the police operational dashboard.</p>
+
+        <pre class="mermaid">
+flowchart TB
+    Police(["Police Authority"])
+    
+    P51["5.1 Display Trusted Incidents"]
+    P52["5.2 Visualize Hotspot Map"]
+    P53["5.3 Review Delayed Reports"]
+    P54["5.4 Generate Analytics"]
+    P55["5.5 Manage Response Actions"]
+    
+    D1[("Report Database")]
+    D3[("Trust Scores DB")]
+    D4[("Hotspot Data")]
+    D5[("Response Log")]
+    
+    D1 -->|"Incident Details"| P51
+    D3 -->|"Trust Status"| P51
+    P51 -->|"Trusted Incident List"| Police
+    
+    D4 -->|"Hotspot Locations"| P52
+    D4 -->|"Cluster Statistics"| P52
+    P52 -->|"Interactive Map"| Police
+    
+    D1 -->|"Delayed Reports"| P53
+    D3 -->|"Trust Scores"| P53
+    P53 -->|"Reports for Review"| Police
+    Police -->|"Manual Verification"| P53
+    P53 -->|"Status Update"| D3
+    
+    D1 -->|"Historical Data"| P54
+    D4 -->|"Trend Data"| P54
+    P54 -->|"Charts and Statistics, Trend Analysis"| Police
+    
+    Police -->|"Dispatch Team, Mark Resolved, Add Notes"| P55
+    P55 -->|"Action Records"| D5
+    P55 -->|"Update Status"| D1
+    
+    style P51 fill:#FFE4B5,stroke:#DAA520,stroke-width:2px
+    style P52 fill:#FFE4B5,stroke:#DAA520,stroke-width:2px
+    style P53 fill:#FFE4B5,stroke:#DAA520,stroke-width:2px
+    style P54 fill:#FFE4B5,stroke:#DAA520,stroke-width:2px
+    style P55 fill:#FFE4B5,stroke:#DAA520,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- Public Safety Map Level 2 -->
+      <section id="public-map" class="diagram-section">
+        <h2>7. Level 2 DFD - Public Safety Map Presentation (Process 6.0)</h2>
+        <p>Detailed breakdown of the public-facing community safety map.</p>
+
+        <pre class="mermaid">
+flowchart TB
+    PublicUser(["Public User"])
+    
+    P61["6.1 Anonymize Report Data"]
+    P62["6.2 Aggregate Incident Statistics"]
+    P63["6.3 Prepare Public Hotspot View"]
+    P64["6.4 Generate Safety Trend Visualizations"]
+    P65["6.5 Display Community Safety Map"]
+    
+    D1[("Report Database")]
+    D4[("Hotspot Data")]
+    AnonymizedCache[("Anonymized Data Cache")]
+    
+    D1 -->|"Trusted Reports"| P61
+    P61 -->|"Anonymized Data"| AnonymizedCache
+    
+    AnonymizedCache -->|"Sanitized Reports"| P62
+    P62 -->|"Incident Counts by Type and Area"| P63
+    
+    D4 -->|"Public Hotspots"| P63
+    P63 -->|"Cluster Locations, Severity Levels"| P65
+    
+    AnonymizedCache -->|"Historical Trends"| P64
+    P64 -->|"Time Series Charts"| P65
+    
+    P65 -->|"Interactive Map, Safety Statistics"| PublicUser
+    PublicUser -->|"Filter by Type/Date"| P65
+    
+    style P61 fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+    style P62 fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+    style P63 fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+    style P64 fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+    style P65 fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- System Architecture -->
+      <section id="architecture" class="diagram-section">
+        <h2>8. System Architecture Data Flow</h2>
+        <p>
+          High-level architectural view showing the complete data flow through
+          system components.
+        </p>
+
+        <pre class="mermaid">
+flowchart TB
+    subgraph MobileApp["Mobile Application Layer"]
+        UI["User Interface"]
+        GPS["GPS Module"]
+        Camera["Camera Module"]
+        Sensors["Motion Sensors"]
+    end
+    
+    subgraph Backend["Backend Server Layer"]
+        API["REST API Gateway"]
+        Auth["Authentication Service"]
+        ReportService["Report Service"]
+        VerificationEngine["Verification Engine"]
+        ClusteringService["DBSCAN Clustering Service"]
+    end
+    
+    subgraph DataLayer["Data Storage Layer"]
+        PostgreSQL[("PostgreSQL Report DB")]
+        MongoDB[("MongoDB Evidence Store")]
+        Redis[("Redis Cache")]
+    end
+    
+    subgraph AnalyticsLayer["Analytics and Presentation Layer"]
+        PoliceWeb["Police Dashboard Web App"]
+        PublicWeb["Public Safety Map Web App"]
+        Analytics["Analytics Engine"]
+    end
+    
+    UI -->|"Report Submission"| API
+    GPS -->|"Coordinates"| API
+    Camera -->|"Media Files"| API
+    Sensors -->|"Motion Data"| API
+    
+    API -->|"Validate"| Auth
+    API -->|"Store Report"| ReportService
+    ReportService -->|"Save"| PostgreSQL
+    ReportService -->|"Save Evidence"| MongoDB
+    
+    PostgreSQL -->|"Fetch Unverified"| VerificationEngine
+    MongoDB -->|"Fetch Metadata"| VerificationEngine
+    VerificationEngine -->|"Update Trust Score"| PostgreSQL
+    VerificationEngine -->|"Cache Results"| Redis
+    
+    PostgreSQL -->|"Trusted Reports"| ClusteringService
+    ClusteringService -->|"Hotspots"| PostgreSQL
+    ClusteringService -->|"Cache"| Redis
+    
+    PostgreSQL -->|"Query Data"| Analytics
+    Analytics -->|"Serve"| PoliceWeb
+    Analytics -->|"Serve Anonymized"| PublicWeb
+    
+    Redis -->|"Fast Access"| PoliceWeb
+    Redis -->|"Fast Access"| PublicWeb
+    
+    style MobileApp fill:#90EE90,stroke:#2E7D32,stroke-width:2px
+    style Backend fill:#87CEEB,stroke:#2E5C8A,stroke-width:2px
+    style DataLayer fill:#FFB347,stroke:#D2691E,stroke-width:2px
+    style AnalyticsLayer fill:#DDA0DD,stroke:#8B008B,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- Privacy Flow -->
+      <section id="privacy" class="diagram-section">
+        <h2>9. Privacy-Preserving Data Flow</h2>
+        <p>
+          Specialized diagram showing how anonymity is maintained throughout the
+          system.
+        </p>
+
+        <pre class="mermaid">
+flowchart LR
+    subgraph CitizenSide["Citizen Side - Anonymous"]
+        C["Citizen Device"]
+        NoAuth["No Authentication Required"]
+        TempID["Temporary Session ID"]
+    end
+    
+    subgraph Submission["Anonymous Submission"]
+        Encrypt["End-to-End Encryption"]
+        StripPII["Strip Personal Identifiable Info"]
+        GenID["Generate Anonymous Report ID"]
+    end
+    
+    subgraph Processing["Secure Processing"]
+        IsolatedDB[("Isolated Report Storage")]
+        NoLinking["No User Linking"]
+        SecureEvidence[("Encrypted Evidence Vault")]
+    end
+    
+    subgraph Output["Public Output"]
+        Aggregate["Aggregate and Generalize"]
+        Anonymize["Remove Exact Coordinates"]
+        PublicView["Public Safety Map - Anonymized View"]
+    end
+    
+    C -->|"No Registration"| NoAuth
+    NoAuth -->|"Generate"| TempID
+    TempID -->|"Report"| Encrypt
+    
+    Encrypt --> StripPII
+    StripPII --> GenID
+    GenID --> IsolatedDB
+    GenID --> SecureEvidence
+    
+    IsolatedDB --> NoLinking
+    IsolatedDB --> Aggregate
+    Aggregate --> Anonymize
+    Anonymize --> PublicView
+    
+    style CitizenSide fill:#90EE90,stroke:#2E7D32,stroke-width:2px
+    style Submission fill:#FFE4B5,stroke:#8B4513,stroke-width:2px
+    style Processing fill:#E6F3FF,stroke:#0066CC,stroke-width:2px
+    style Output fill:#E0FFFF,stroke:#008B8B,stroke-width:2px
+            </pre
+        >
+      </section>
+
+      <!-- Data Dictionary -->
+      <section id="dictionary" class="diagram-section">
+        <h2>10. Data Dictionary</h2>
+
+        <h3>Data Stores</h3>
+        <table>
+          <tr>
+            <th>Store ID</th>
+            <th>Name</th>
+            <th>Description</th>
+            <th>Data Elements</th>
+          </tr>
+          <tr>
+            <td>D1</td>
+            <td>Report Database</td>
+            <td>Stores all incident reports</td>
+            <td>
+              report_id, incident_type, description, gps_coordinates, timestamp,
+              status, trust_level
+            </td>
+          </tr>
+          <tr>
+            <td>D2</td>
+            <td>Evidence Storage</td>
+            <td>Stores encrypted photo/video evidence</td>
+            <td>
+              evidence_id, report_id, media_file, metadata, exif_data,
+              encryption_key
+            </td>
+          </tr>
+          <tr>
+            <td>D3</td>
+            <td>Trust Scores DB</td>
+            <td>Stores trust evaluation results</td>
+            <td>
+              report_id, motion_score, consistency_score, authenticity_score,
+              aggregate_trust_score, classification
+            </td>
+          </tr>
+          <tr>
+            <td>D4</td>
+            <td>Hotspot Data</td>
+            <td>Stores detected incident clusters</td>
+            <td>
+              hotspot_id, center_coordinates, boundary_polygon, incident_count,
+              severity_level, time_range
+            </td>
+          </tr>
+          <tr>
+            <td>D5</td>
+            <td>Response Log</td>
+            <td>Stores police action records</td>
+            <td>
+              action_id, report_id, officer_id, action_type, timestamp, notes
+            </td>
+          </tr>
+        </table>
+
+        <h3>Data Flows</h3>
+        <table>
+          <tr>
+            <th>Flow Name</th>
+            <th>Source</th>
+            <th>Destination</th>
+            <th>Data Elements</th>
+          </tr>
+          <tr>
+            <td>Anonymous Incident Report</td>
+            <td>Citizen</td>
+            <td>Incident Report Submission</td>
+            <td>incident_type, description, gps_coordinates, timestamp</td>
+          </tr>
+          <tr>
+            <td>Photo/Video Evidence</td>
+            <td>Citizen</td>
+            <td>Evidence Capture</td>
+            <td>image_file, video_file, capture_timestamp</td>
+          </tr>
+          <tr>
+            <td>Trust Classification</td>
+            <td>Verification Engine</td>
+            <td>Trust Scores DB</td>
+            <td>trust_level (Trusted/Delayed/Fake), scores</td>
+          </tr>
+          <tr>
+            <td>Hotspot Clusters</td>
+            <td>Hotspot Detection</td>
+            <td>Hotspot Data</td>
+            <td>cluster_coordinates, incident_density, boundaries</td>
+          </tr>
+          <tr>
+            <td>Trusted Incidents</td>
+            <td>Report Database</td>
+            <td>Police Dashboard</td>
+            <td>verified_reports, locations, details</td>
+          </tr>
+          <tr>
+            <td>Anonymized Trends</td>
+            <td>Report Database</td>
+            <td>Public Safety Map</td>
+            <td>aggregated_statistics, generalized_locations</td>
+          </tr>
+        </table>
+      </section>
+
+      <!-- Summary -->
+      <section class="diagram-section">
+        <h2>Summary</h2>
+        <p>
+          These data flow diagrams illustrate the TrustBond system's
+          architecture across multiple abstraction levels:
+        </p>
+        <ul>
+          <li>
+            <strong>Context Diagram</strong>: Shows the system's interaction
+            with external entities (citizens, police, public users)
+          </li>
+          <li>
+            <strong>Level 1 DFD</strong>: Breaks down the system into 6 major
+            processes with data stores
+          </li>
+          <li>
+            <strong>Level 2 DFDs</strong>: Provide detailed views of each major
+            process
+          </li>
+          <li>
+            <strong>Architectural View</strong>: Shows the technical
+            infrastructure and layer interactions
+          </li>
+          <li>
+            <strong>Privacy Flow</strong>: Demonstrates how anonymity is
+            preserved throughout the data lifecycle
+          </li>
+        </ul>
+
+        <h3>Core Features Illustrated:</h3>
+        <div class="legend">
+          <div class="legend-item">
+            <div class="legend-color" style="background: #90ee90"></div>
+            <span>Privacy Preservation - Anonymous submission</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #ffe4b5"></div>
+            <span>Data Credibility - Rule-based verification</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #e6e6fa"></div>
+            <span>Actionable Insights - DBSCAN clustering</span>
+          </div>
+          <div class="legend-item">
+            <div class="legend-color" style="background: #e0ffff"></div>
+            <span>Multi-stakeholder Access - Visibility controls</span>
+          </div>
+        </div>
+      </section>
+
+      <footer>
+        <p>
+          TrustBond - Privacy-Preserving Anonymous Community Incident Reporting
+          System for Rwanda
+        </p>
+        <p>Final Year Project Documentation - Data Flow Diagrams</p>
+        <p>2026</p>
+      </footer>
+    </div>
+
+    <script>
+      mermaid.initialize({
+        startOnLoad: true,
+        theme: "default",
+        flowchart: {
+          useMaxWidth: true,
+          htmlLabels: true,
+          curve: "basis",
+        },
+        securityLevel: "loose",
+      });
+    </script>
+  </body>
+</html>

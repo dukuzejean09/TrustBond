@@ -8,6 +8,9 @@ class NotificationModel {
   final DateTime createdAt;
   final bool isRead;
   final String? reportId;
+  final String? alertType; // For police alerts: emergency, warning, info, security, etc.
+  final bool isNationwide;
+  final String? district;
 
   NotificationModel({
     required this.id,
@@ -17,7 +20,47 @@ class NotificationModel {
     required this.createdAt,
     this.isRead = false,
     this.reportId,
+    this.alertType,
+    this.isNationwide = false,
+    this.district,
   });
+
+  /// Create a notification from a backend alert
+  factory NotificationModel.fromAlert(Map<String, dynamic> json) {
+    NotificationType notifType;
+    switch (json['alertType']) {
+      case 'emergency':
+        notifType = NotificationType.alert;
+        break;
+      case 'warning':
+        notifType = NotificationType.alert;
+        break;
+      case 'security':
+        notifType = NotificationType.alert;
+        break;
+      case 'info':
+        notifType = NotificationType.announcement;
+        break;
+      case 'community':
+        notifType = NotificationType.announcement;
+        break;
+      default:
+        notifType = NotificationType.announcement;
+    }
+
+    return NotificationModel(
+      id: 'ALERT_${json['id']}',
+      title: json['title'] ?? 'Police Alert',
+      message: json['message'] ?? '',
+      type: notifType,
+      createdAt: json['createdAt'] != null 
+          ? DateTime.parse(json['createdAt'])
+          : DateTime.now(),
+      alertType: json['alertType'],
+      isNationwide: json['isNationwide'] ?? false,
+      district: json['district'],
+    );
+  }
 
   Color get typeColor {
     switch (type) {
@@ -45,6 +88,71 @@ class NotificationModel {
     }
   }
 
+  /// Get alert-specific icon based on alertType
+  IconData get alertIcon {
+    switch (alertType) {
+      case 'emergency':
+        return Icons.emergency;
+      case 'warning':
+        return Icons.warning_amber;
+      case 'security':
+        return Icons.security;
+      case 'info':
+        return Icons.info_outline;
+      case 'weather':
+        return Icons.cloud;
+      case 'traffic':
+        return Icons.traffic;
+      case 'community':
+        return Icons.people;
+      default:
+        return typeIcon;
+    }
+  }
+
+  /// Get alert-specific color based on alertType
+  Color get alertColor {
+    switch (alertType) {
+      case 'emergency':
+        return const Color(0xFFD32F2F);
+      case 'warning':
+        return const Color(0xFFFF9800);
+      case 'security':
+        return const Color(0xFF9C27B0);
+      case 'info':
+        return const Color(0xFF2196F3);
+      case 'weather':
+        return const Color(0xFF00BCD4);
+      case 'traffic':
+        return const Color(0xFF607D8B);
+      case 'community':
+        return const Color(0xFF4CAF50);
+      default:
+        return typeColor;
+    }
+  }
+
+  String get alertTypeLabel {
+    switch (alertType) {
+      case 'emergency':
+        return '🚨 EMERGENCY';
+      case 'warning':
+        return '⚠️ WARNING';
+      case 'security':
+        return '🛡️ SECURITY';
+      case 'info':
+        return 'ℹ️ INFO';
+      case 'weather':
+        return '🌤️ WEATHER';
+      case 'traffic':
+        return '🚗 TRAFFIC';
+      case 'community':
+        return '👥 COMMUNITY';
+      default:
+        return 'ALERT';
+    }
+  }
+
   String get timeAgo {
     final now = DateTime.now();
     final difference = now.difference(createdAt);
@@ -66,52 +174,4 @@ enum NotificationType {
   alert,
   announcement,
   reminder,
-}
-
-// Mock notifications data
-class MockNotifications {
-  static List<NotificationModel> getNotifications() {
-    return [
-      NotificationModel(
-        id: 'NOT001',
-        title: 'Report Status Updated',
-        message: 'Your report #RPT001 is now under review by the authorities.',
-        type: NotificationType.statusUpdate,
-        createdAt: DateTime.now().subtract(const Duration(hours: 1)),
-        reportId: 'RPT001',
-      ),
-      NotificationModel(
-        id: 'NOT002',
-        title: 'Safety Alert',
-        message: 'A theft incident was reported in your area. Stay vigilant.',
-        type: NotificationType.alert,
-        createdAt: DateTime.now().subtract(const Duration(hours: 3)),
-      ),
-      NotificationModel(
-        id: 'NOT003',
-        title: 'Report Verified',
-        message: 'Your report #RPT002 has been verified. Thank you for your contribution.',
-        type: NotificationType.statusUpdate,
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        reportId: 'RPT002',
-        isRead: true,
-      ),
-      NotificationModel(
-        id: 'NOT004',
-        title: 'Community Update',
-        message: 'New safety measures implemented in Kigali city center.',
-        type: NotificationType.announcement,
-        createdAt: DateTime.now().subtract(const Duration(days: 2)),
-        isRead: true,
-      ),
-      NotificationModel(
-        id: 'NOT005',
-        title: 'Offline Report Reminder',
-        message: 'You have 1 saved report. Submit when connected to the internet.',
-        type: NotificationType.reminder,
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        isRead: true,
-      ),
-    ];
-  }
 }

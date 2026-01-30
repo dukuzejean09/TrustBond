@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../../config/theme.dart';
 import '../../config/routes.dart';
 
 class SuccessScreen extends StatefulWidget {
   final String reportId;
+  final String? trackingCode;
 
-  const SuccessScreen({super.key, required this.reportId});
+  const SuccessScreen({
+    super.key, 
+    required this.reportId,
+    this.trackingCode,
+  });
 
   @override
   State<SuccessScreen> createState() => _SuccessScreenState();
@@ -154,13 +160,68 @@ class _SuccessScreenState extends State<SuccessScreen>
                               letterSpacing: 1,
                             ),
                           ),
+                          if (widget.trackingCode != null) ...[
+                            const SizedBox(height: 16),
+                            const Divider(),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(
+                                  Icons.track_changes,
+                                  color: AppTheme.accentColor,
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Tracking Code',
+                                  style: TextStyle(
+                                    color: AppTheme.textSecondary,
+                                    fontSize: 14,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text(
+                                  widget.trackingCode!,
+                                  style: const TextStyle(
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppTheme.accentColor,
+                                    letterSpacing: 2,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                IconButton(
+                                  icon: const Icon(Icons.copy, size: 20),
+                                  color: AppTheme.textSecondary,
+                                  onPressed: () {
+                                    Clipboard.setData(ClipboardData(text: widget.trackingCode!));
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Tracking code copied to clipboard'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
                           const SizedBox(height: 8),
-                          const Text(
-                            'Save this ID to track your report status',
-                            style: TextStyle(
+                          Text(
+                            widget.trackingCode != null 
+                                ? 'Save this tracking code to check your report status'
+                                : 'Save this ID to track your report status',
+                            style: const TextStyle(
                               color: AppTheme.textSecondary,
                               fontSize: 12,
                             ),
+                            textAlign: TextAlign.center,
                           ),
                         ],
                       ),

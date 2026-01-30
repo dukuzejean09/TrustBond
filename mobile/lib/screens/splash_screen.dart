@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../config/theme.dart';
+import '../providers/alert_provider.dart';
 import '../providers/app_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/report_provider.dart';
 import 'onboarding_screen.dart';
 import 'main_navigation.dart';
@@ -42,14 +44,35 @@ class _SplashScreenState extends State<SplashScreen>
     );
 
     _controller.forward();
-    _navigateToNext();
+    
+    // Use post-frame callback to avoid calling setState during build
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _navigateToNext();
+    });
   }
 
   Future<void> _navigateToNext() async {
-    // Load mock data
-    context.read<ReportProvider>().loadMockData();
+    // Initialize all app data in parallel
+    try {
+      final appProvider = context.read<AppProvider>();
+      final authProvider = context.read<AuthProvider>();
+      final alertProvider = context.read<AlertProvider>();
+      
+      // Initialize in parallel for faster loading
+      await Future.wait([
+        authProvider.initialize(),
+        appProvider.initializeFromApi(),
+        alertProvider.fetchAlerts().catchError((e) {
+          debugPrint('Failed to fetch alerts: $e');
+        }),
+        appProvider.loadSettings(),
+      ]);
+    } catch (e) {
+      // Ignore errors during initialization - app works offline too
+      debugPrint('Initialization error: $e');
+    }
     
-    await Future.delayed(const Duration(seconds: 3));
+    await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
 
     final isFirstTime = context.read<AppProvider>().isFirstTime;

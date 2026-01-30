@@ -351,12 +351,12 @@ class HomeScreen extends StatelessWidget {
                       children: [
                         Expanded(
                           child: _QuickActionCard(
-                            icon: Icons.help_outline,
-                            title: 'Help',
-                            subtitle: 'FAQ & Support',
-                            color: AppTheme.infoColor,
+                            icon: Icons.track_changes,
+                            title: 'Track Report',
+                            subtitle: 'Check status',
+                            color: AppTheme.successColor,
                             onTap: () {
-                              Navigator.pushNamed(context, AppRoutes.help);
+                              Navigator.pushNamed(context, AppRoutes.trackReport);
                             },
                           ),
                         ),

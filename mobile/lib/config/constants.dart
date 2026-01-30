@@ -1,7 +1,23 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
+
 class AppConstants {
   // App Info
   static const String appName = 'Crime Report';
   static const String appVersion = '1.0.0';
+  
+  // API Configuration
+  // For Web: 'http://localhost:5000/api'
+  // For Android emulator: 'http://10.0.2.2:5000/api'
+  // For iOS simulator: 'http://localhost:5000/api'
+  // For physical device: use your machine's IP, e.g., 'http://192.168.1.x:5000/api'
+  // For production: 'https://api.trustbond.rw/api'
+  static String get apiBaseUrl {
+    if (kIsWeb) {
+      return 'http://localhost:5000/api';
+    }
+    // Android emulator uses 10.0.2.2 to access host machine's localhost
+    return 'http://10.0.2.2:5000/api';
+  }
   
   // Storage Keys
   static const String keyIsFirstTime = 'isFirstTime';
@@ -11,6 +27,7 @@ class AppConstants {
   static const String keyNotifications = 'notifications';
   static const String keyOfflineReports = 'offlineReports';
   static const String keyUserProfile = 'userProfile';
+  static const String keyAuthToken = 'authToken';
   
   // Default Values
   static const bool defaultAnonymous = true;
