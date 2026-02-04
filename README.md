@@ -1,197 +1,55 @@
-# TrustBond - Crime Reporting System
+# TrustBond Literature Review - Gap Analysis
 
-A comprehensive crime reporting system for the **Rwanda National Police (RNP)** that enables citizens to report incidents and law enforcement to manage cases efficiently.
+## Summary Table of Related Studies
 
-![RNP Colors](https://img.shields.io/badge/Theme-RNP%20Official-0D1B4C?style=flat-square)
-![Flutter](https://img.shields.io/badge/Mobile-Flutter-02569B?style=flat-square&logo=flutter)
-![Node.js](https://img.shields.io/badge/Backend-Node.js-339933?style=flat-square&logo=node.js)
-
----
-
-## 🏗️ Project Structure
-
-```
-TrustBond/
-├── mobile/          # Flutter mobile app for citizens
-├── dashboard/       # Flutter web app for law enforcement
-├── backend/         # Node.js/Express REST API
-└── README.md
-```
-
----
-
-## 📱 Mobile App (Citizens)
-
-A Flutter-based mobile application for citizens to:
-
-- Report crimes and incidents
-- Upload evidence (photos, videos, audio)
-- Track report status
-- Receive alerts and notifications
-- Access emergency contacts
-
-### Setup
-
-```bash
-cd mobile
-flutter pub get
-flutter run
-```
-
-### Features
-
-- 🔐 Secure authentication
-- 📍 GPS location capture
-- 📷 Evidence upload
-- 📊 Report tracking
-- 🔔 Push notifications
-- 🌐 Offline support
-- 🔒 Anonymous reporting
+| #   | Paper Title                                                                     | Authors (Year)                      | Key Contributions                                                                                                                                                              | Gap Found (Related to TrustBond)                                                                                                                                                                                                                                                                    |
+| --- | ------------------------------------------------------------------------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | **CROWDSAFE: Crowd Sourcing of Crime Incidents and Safe Routing**               | Shah, S., et al. (2011)             | Foundational mobile platform for crowdsourcing crime incidents; real-time reporting; safe routing recommendations based on aggregated crime data                               | Lacks trust scoring mechanism, hybrid verification system, and trust-weighted spatial clustering. Does not incorporate ML-based authenticity classification or pseudonymous device identification to protect reporter privacy while tracking behavioral patterns.                                   |
+| 2   | **E-REPORT MO: A Crime Reporting Mobile Application**                           | Mangrobang, M. & Genove, F. (2023)  | Mobile-based crime reporting for Philippines; interactive GIS mapping; citizens submit reports with location data; view incidents on interactive map                           | Does not implement automated credibility assessment through ML classification (e.g., Random Forest), lacks device-based trust scoring, and treats all reports equally without trust-weighted hotspot detection. Missing unified case management for duplicate report consolidation.                 |
+| 3   | **ReACT_OCRS: An AI-Driven Anonymous Online Reporting System**                  | Mahmoud, A., et al. (2025)          | Integrates AI with language models for report processing; enhances report analysis; preserves user privacy; focuses on NLP                                                     | Lacks geospatial analytics (trust-weighted DBSCAN clustering), device trust scoring mechanisms, and behavioral pattern analysis for credibility assessment. Does not integrate GPS anomaly detection, timestamp validation, or evidence quality analysis as part of a hybrid verification pipeline. |
+| 4   | **Real-Time Crime Management System for Southwestern Nigeria**                  | Akinyede, R., et al. (2022)         | African context crime management; mobile application for Nigeria; addresses regional crime challenges                                                                          | Missing pseudonymous device identification for anonymous reporting, lacks ML-based authenticity classification, and does not implement trust-weighted clustering for hotspot detection. No hybrid verification combining rule-based validation with AI-assisted anomaly detection.                  |
+| 5   | **Technology in Community Policing in Ghana**                                   | Nweke, E. & Francis, O. (2024)      | Examines technology adoption in African police services; documents barriers including digital literacy variations and trust deficits; culturally appropriate design importance | Provides diagnostic insights but does not propose a technical solution integrating privacy-preserving reporting, automated trust scoring, or intelligent verification systems tailored to address the documented trust deficits and digital literacy challenges.                                    |
+| 6   | **Privacy-Preserving Tools and Technologies: Government Adoption**              | Prabowo, H., et al. (2025)          | Reviews Privacy-Enhancing Technologies (PETs); examines government adoption challenges; emphasizes balance between privacy protection and abuse detection                      | Theoretical framework without practical implementation of a hybrid system that balances anonymity with accountability. Does not demonstrate integration of pseudonymous identification with trust scoring and ML-based abuse detection in a real-world community policing context.                  |
+| 7   | **Establishing Trust in Crowdsourced Data**                                     | Gheyas, I., et al. (2025)           | Frameworks for automated trust evaluation; preserves anonymity; evaluates trust through reporting patterns, temporal consistency, and historical accuracy metrics              | Presents trust evaluation framework but lacks integration with geospatial clustering algorithms (trust-weighted DBSCAN), unified case management for duplicate reports, and a complete system architecture combining trust scoring with crime hotspot detection for law enforcement.                |
+| 8   | **A Scalable Multi-Density Clustering Approach for City Hotspots**              | Cesario, E., et al. (2024)          | Clustering methodology for urban environments; handles varying population densities; suitable for national-scale deployment                                                    | Does not incorporate trust weights into the clustering algorithm—treats all data points equally regardless of credibility. Lacks integration with report verification systems and trust scoring mechanisms to filter low-credibility reports before hotspot generation.                             |
+| 9   | **Density Peaks Clustering Based on Neighborhood Radius and Membership Degree** | Li, F., et al. (2024)               | Introduces membership degree in clustering; identifies clusters based on reliability of contributing data points; maps to trust score concept                                  | Theoretical clustering advancement but not applied to crime reporting or community safety contexts. Does not integrate with anonymous reporting systems, ML-based credibility classification, or law enforcement dashboards for actionable intelligence.                                            |
+| 10  | **Crime Hotspot Detection and Future Crime Prediction Using Machine Learning**  | Hossain, M., et al. (2025)          | Integrates hotspot detection with predictive ML models; validates citizen-generated data for predictive analytics                                                              | Relies on assumed data verification without implementing an automated hybrid verification pipeline. Lacks pseudonymous device identification, trust scoring based on reporter history, and trust-weighted clustering to ensure hotspot accuracy from crowdsourced reports.                          |
+| 11  | **Digital Mystery: Enhanced Active Citizens' Participation Through ICT**        | Kumwenda, S., et al. (2023)         | Examines ICT for community policing participation; user-centered design; culturally appropriate interfaces                                                                     | Focuses on participation enhancement without addressing report credibility verification, trust scoring, or the challenge of false/duplicate submissions. Does not propose technical mechanisms to convert increased participation into reliable, actionable intelligence.                           |
+| 12  | **Citizen Reporting as E-Participation in Smart Cities**                        | Kopackova, H. & Libalova, P. (2019) | Digital reporting as electronic participation; best practices for ease of use; transparent data handling                                                                       | Emphasizes transparency and usability but lacks mechanisms for preserving reporter anonymity while maintaining accountability. Does not address trust scoring, ML-based verification, or the integration of credibility assessment with geospatial analytics.                                       |
+| 13  | **Community Policing Design: SIGCHI Research**                                  | Palma Borda, C., et al. (2025)      | Evidence-based UI guidelines; supports citizens and law enforcement; accessibility across digital literacy levels                                                              | UI/UX guidelines without backend intelligence for report verification. Does not address the technical challenge of automated trust assessment, duplicate detection, or trust-weighted hotspot visualization in the proposed interface designs.                                                      |
+| 14  | **Anonymous Reporting System as an Effort to Improve Community Safety**         | Irmayanti, R., et al. (2025)        | Documents anonymity increases reporting rates (2-3x higher); identifies challenge of maintaining data quality without identity                                                 | Identifies the anonymity-quality tradeoff but does not propose a solution. Lacks implementation of pseudonymous identification for behavioral tracking, hybrid verification systems, or ML-based credibility scoring to maintain data quality while preserving anonymity.                           |
+| 15  | **Crime Prediction Model Using Classification Methods**                         | Supraja, K., et al. (2024)          | Compares classification algorithms (Random Forest, Logistic Regression); crime prediction; balances accuracy with explainability                                               | Applies ML to crime prediction but not to report authenticity classification. Does not integrate classification with anonymous reporting systems, device trust scoring, or trust-weighted spatial clustering for verified hotspot detection.                                                        |
 
 ---
 
-## 💻 Dashboard (Law Enforcement)
+## Gap Categories Summary
 
-A Flutter web application for police officers and administrators to:
-
-- View and manage reports
-- Assign cases to officers
-- Track investigation progress
-- Generate analytics and reports
-- Manage alerts and notifications
-
-### Setup
-
-```bash
-cd dashboard
-flutter pub get
-flutter run -d chrome
-```
-
-### Features
-
-- 📊 Real-time analytics dashboard
-- 📋 Case management system
-- 👮 Officer assignment
-- 🗺️ Geographic mapping
-- 📈 Statistics and reports
-- 👥 User management
+| Gap Category                                  | Papers with this Gap          | TrustBond's Solution                                                                                                                            |
+| --------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| **No Trust Scoring Mechanism**                | 1, 2, 3, 4, 5, 10, 11, 12, 13 | Implements numerical trust scores (0-100) based on historical accuracy, spatial-temporal consistency, evidence quality, and behavioral patterns |
+| **No ML-based Authenticity Classification**   | 1, 2, 4, 5, 7, 9, 14, 15      | Random Forest model for report credibility classification                                                                                       |
+| **No Privacy-Preserving Anonymous Reporting** | 4, 6, 12                      | Pseudonymous device identification that tracks behavior while protecting identity                                                               |
+| **No Trust-Weighted Clustering**              | 1, 2, 3, 7, 8, 10, 15         | Trust-weighted DBSCAN algorithm that prioritizes high-credibility reports in hotspot detection                                                  |
+| **No Hybrid Verification System**             | 1, 2, 3, 4, 10                | Combines rule-based validation (GPS, timestamp, duplicate checks) with AI-assisted verification and ML classification                           |
+| **No Unified Case Management**                | 2, 7                          | Automatically merges duplicate reports into consolidated cases                                                                                  |
+| **No Geospatial Analytics Integration**       | 3, 6, 9, 12                   | PostGIS integration with trust-weighted spatial clustering and visualization                                                                    |
+| **Theoretical Only (No Implementation)**      | 5, 6, 9, 13                   | Complete system with mobile app, web dashboard, and backend services                                                                            |
 
 ---
 
-## ⚙️ Backend API
+## How TrustBond Addresses All Identified Gaps
 
-Node.js/Express REST API with MongoDB database.
-
-### Setup
-
-```bash
-cd backend
-npm install
-cp .env.example .env
-# Edit .env with your configuration
-npm run dev
-```
-
-### Environment Variables
-
-| Variable         | Description                 |
-| ---------------- | --------------------------- |
-| `PORT`           | Server port (default: 5000) |
-| `MONGODB_URI`    | MongoDB connection string   |
-| `JWT_SECRET`     | Secret key for JWT tokens   |
-| `JWT_EXPIRES_IN` | Token expiration time       |
-
-### API Endpoints
-
-#### Authentication
-
-| Method | Endpoint                    | Description          |
-| ------ | --------------------------- | -------------------- |
-| POST   | `/api/auth/register`        | Register new citizen |
-| POST   | `/api/auth/login`           | Citizen login        |
-| POST   | `/api/auth/dashboard/login` | Officer login        |
-
-#### Reports
-
-| Method | Endpoint                    | Description         |
-| ------ | --------------------------- | ------------------- |
-| POST   | `/api/reports`              | Submit new report   |
-| GET    | `/api/reports/my-reports`   | Get user's reports  |
-| GET    | `/api/reports/:id`          | Get report details  |
-| GET    | `/api/reports/track/:id`    | Track report status |
-| POST   | `/api/reports/:id/evidence` | Upload evidence     |
-
-#### Dashboard (Officers)
-
-| Method | Endpoint                            | Description     |
-| ------ | ----------------------------------- | --------------- |
-| GET    | `/api/dashboard/stats`              | Get statistics  |
-| GET    | `/api/dashboard/reports`            | Get all reports |
-| PATCH  | `/api/dashboard/reports/:id/status` | Update status   |
-| PATCH  | `/api/dashboard/reports/:id/assign` | Assign officer  |
-
-#### Alerts
-
-| Method | Endpoint      | Description          |
-| ------ | ------------- | -------------------- |
-| GET    | `/api/alerts` | Get active alerts    |
-| POST   | `/api/alerts` | Create alert (admin) |
+| TrustBond Component                    | Gaps Addressed                                                                                 |
+| -------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| **Pseudonymous Device Identification** | Enables anonymous reporting while tracking behavioral patterns for trust evaluation            |
+| **Hybrid Verification System**         | Rule-based validation + AI-assisted checks (GPS anomaly, timestamp, image quality, duplicates) |
+| **Random Forest ML Model**             | Classifies report authenticity based on behavioral and historical patterns                     |
+| **Device Trust Scoring**               | Transparent rule-based mechanism evaluating reporter reliability                               |
+| **Trust-Weighted DBSCAN**              | Hotspot detection prioritizing high-credibility reports                                        |
+| **Unified Case Management**            | Merges multiple reports of same incident into single case                                      |
+| **Dual Interface Design**              | Mobile app (citizens) + Web dashboard (police) with cultural appropriateness                   |
+| **Rwanda-Specific Context**            | Addresses local trust deficits, digital literacy variations, and community policing culture    |
 
 ---
 
-## 🎨 Brand Guidelines
-
-### Colors
-
-| Color        | Hex       | Usage                 |
-| ------------ | --------- | --------------------- |
-| Primary Navy | `#0D1B4C` | Primary brand color   |
-| Accent Gold  | `#FFB800` | Accent and highlights |
-| Light Navy   | `#1E3A6E` | Secondary elements    |
-| Dark Navy    | `#081230` | Dark backgrounds      |
-
-### Status Colors
-
-| Status      | Color  | Hex       |
-| ----------- | ------ | --------- |
-| Pending     | Orange | `#FF9800` |
-| In Progress | Blue   | `#2196F3` |
-| Resolved    | Green  | `#4CAF50` |
-| Rejected    | Red    | `#F44336` |
-
----
-
-## 🔒 Security Features
-
-- JWT-based authentication
-- Role-based access control (RBAC)
-- Rate limiting
-- Input validation
-- Helmet security headers
-- CORS configuration
-- Password hashing (bcrypt)
-
----
-
-## 👥 User Roles
-
-| Role          | Access Level                       |
-| ------------- | ---------------------------------- |
-| `citizen`     | Submit reports, track status       |
-| `officer`     | View assigned cases, update status |
-| `supervisor`  | Assign officers, manage team       |
-| `admin`       | Full system access                 |
-| `super_admin` | System configuration               |
-
----
-
-## 📝 License
-
-© 2024 Rwanda National Police. All rights reserved.
-
----
-
-## 🤝 Support
-
-For technical support, contact the RNP IT Department.
+_Generated for TrustBond Final Year Project - February 2026_
