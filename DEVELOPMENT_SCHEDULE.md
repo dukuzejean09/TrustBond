@@ -27,9 +27,9 @@
 
 **Goal:** Establish the entire development environment and data layer.
 
-- [ ] Initialize Git repository with branching strategy (`main`, `develop`, `feature/*`)
-- [ ] Set up Python virtual environment, install FastAPI, Uvicorn, SQLAlchemy, Alembic
-- [ ] Design and implement PostgreSQL database schema with PostGIS extension (14 tables):
+- [x] Initialize Git repository with branching strategy (`main`, `develop`, `feature/*`)
+- [x] Set up Python virtual environment, install FastAPI, Uvicorn, SQLAlchemy, Alembic
+- [x] Design and implement PostgreSQL database schema with PostGIS extension (14 tables):
   - `devices` — anonymous reporter devices (device_hash, device_trust_score, total/trusted/flagged reports)
   - `incident_types` — incident categories (type_name, severity_weight, is_active)
   - `reports` — raw incident submissions (GPS, motion_level, movement_speed, was_stationary, rule_status, is_flagged, feature_vector JSONB, ai_ready)
@@ -44,10 +44,10 @@
   - `report_assignments` — case handling workflow (status, priority, assigned/completed timestamps)
   - `notifications` — system alerts (type: report/hotspot/assignment/system, related_entity_type/id)
   - `audit_logs` — security & accountability (actor_type, action_type, entity_type, ip_address, success)
-- [ ] Write Alembic migration scripts
-- [ ] Set up Docker Compose for local PostgreSQL + PostGIS
+- [x] Write Alembic migration scripts
+- [x] Set up Docker Compose for local PostgreSQL + PostGIS
 - [ ] Configure Cloudinary account and test media upload/retrieval
-- [ ] Set up project folder structure for backend:
+- [x] Set up project folder structure for backend:
   ```
   backend/
   ├── app/
@@ -128,6 +128,7 @@
   - Hamming distance comparison against existing report images
   - Flag duplicate media submissions
 - [ ] Device trust formula (updates `devices.device_trust_score` using `devices` columns):
+
   ```
   device_trust_score = (
       base_score

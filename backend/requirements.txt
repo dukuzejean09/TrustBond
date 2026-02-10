@@ -1,0 +1,37 @@
+# ── Core ──────────────────────────────────────────────────
+fastapi==0.115.*
+uvicorn[standard]==0.34.*
+pydantic==2.*
+pydantic-settings==2.*
+python-dotenv==1.*
+
+# ── Database ──────────────────────────────────────────────
+sqlalchemy==2.*
+psycopg2-binary==2.*
+alembic==1.*
+geoalchemy2==0.*
+
+# ── Auth & Security ──────────────────────────────────────
+PyJWT==2.*
+passlib[bcrypt]==1.*
+python-multipart==0.*
+
+# ── Cloudinary ────────────────────────────────────────────
+cloudinary==1.*
+
+# ── ML & Image Processing ────────────────────────────────
+scikit-learn==1.*
+joblib==1.*
+numpy==1.*
+pandas==2.*
+opencv-python-headless==4.*
+imagehash==4.*
+Pillow==10.*
+
+# ── Background Tasks ─────────────────────────────────────
+celery[redis]==5.*
+redis==5.*
+
+# ── Testing ───────────────────────────────────────────────
+pytest==8.*
+httpx==0.*
