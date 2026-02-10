@@ -1,3 +1,5 @@
+**Incident covered by my system**
+
 INSERT INTO incident_types (type_name, description, severity_weight) VALUES
     ('Theft',               'Stealing of property',                          0.70),
     ('Vandalism',           'Deliberate destruction of property',            0.50),
