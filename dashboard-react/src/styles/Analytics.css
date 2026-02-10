@@ -1,0 +1,360 @@
+/* ============================
+   TrustBond Analytics Page
+   Rwanda National Police Theme
+   ============================ */
+
+.analytics-page {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.analytics-page.loading {
+  min-height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.analytics-page .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border-color);
+  border-top-color: var(--primary-navy);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Stats Grid */
+.analytics-page .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  margin-bottom: 28px;
+}
+
+/* Charts Grid */
+.analytics-page .charts-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.analytics-page .chart-card {
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.analytics-page .chart-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 20px 24px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-light);
+}
+
+.analytics-page .chart-card h3 i {
+  color: var(--accent-gold);
+  font-size: 18px;
+}
+
+.analytics-page .chart-container {
+  height: 300px;
+  padding: 20px 24px;
+  position: relative;
+}
+
+/* ============================
+   Performance Section
+   ============================ */
+.performance-section {
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  margin-bottom: 28px;
+}
+
+.performance-section h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 20px 24px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-light);
+}
+
+.performance-section h3 i {
+  color: var(--accent-gold);
+}
+
+.performance-section .section-body {
+  padding: 24px;
+}
+
+/* Officer Cards */
+.officer-cards {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 16px;
+}
+
+.officer-card {
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  padding: 24px 20px;
+  text-align: center;
+  position: relative;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-color);
+}
+
+.officer-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-lg);
+}
+
+.officer-card.rank-1 {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4a 100%);
+  border-color: transparent;
+}
+
+.officer-card.rank-2 {
+  background: linear-gradient(135deg, #e5e7eb 0%, #f3f4f6 100%);
+  border-color: transparent;
+}
+
+.officer-card.rank-3 {
+  background: linear-gradient(135deg, #f5deb3 0%, #deb887 100%);
+  border-color: transparent;
+}
+
+.officer-card .rank-badge {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--primary-navy);
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.officer-card .avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-navy), var(--light-navy));
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 auto 16px;
+}
+
+.officer-card.rank-1 .avatar {
+  background: var(--primary-navy);
+  box-shadow: 0 4px 15px rgba(13, 27, 76, 0.3);
+}
+
+.officer-card .name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.officer-card .stats {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.officer-card .score {
+  margin-top: 12px;
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--primary-navy);
+}
+
+.officer-card.rank-1 .score {
+  color: var(--primary-navy);
+}
+
+/* ============================
+   Top Categories Section
+   ============================ */
+.categories-section {
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+.categories-section h3 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-primary);
+  padding: 20px 24px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-light);
+}
+
+.categories-section h3 i {
+  color: var(--accent-gold);
+}
+
+.category-list {
+  padding: 20px 24px;
+}
+
+.category-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.category-item:last-child {
+  border-bottom: none;
+}
+
+.category-item .rank {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: var(--bg-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.category-item:nth-child(1) .rank {
+  background: linear-gradient(135deg, #ffd700 0%, #ffed4a 100%);
+  color: var(--primary-navy);
+}
+
+.category-item:nth-child(2) .rank {
+  background: linear-gradient(135deg, #e5e7eb 0%, #f3f4f6 100%);
+  color: var(--text-primary);
+}
+
+.category-item:nth-child(3) .rank {
+  background: linear-gradient(135deg, #f5deb3 0%, #deb887 100%);
+  color: var(--text-primary);
+}
+
+.category-item .info {
+  flex: 1;
+}
+
+.category-item .name {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.category-item .progress-bar {
+  height: 6px;
+  background: var(--border-color);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.category-item .progress-bar .fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--primary-navy), var(--accent-gold));
+  border-radius: 3px;
+}
+
+.category-item .count {
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--text-primary);
+}
+
+/* ============================
+   Responsive Styles
+   ============================ */
+@media (max-width: 1400px) {
+  .analytics-page .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .officer-cards {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 1200px) {
+  .analytics-page .charts-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .analytics-page .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .officer-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .analytics-page .chart-container {
+    height: 250px;
+    padding: 16px;
+  }
+}
+
+@media (max-width: 480px) {
+  .officer-cards {
+    grid-template-columns: 1fr;
+  }
+}

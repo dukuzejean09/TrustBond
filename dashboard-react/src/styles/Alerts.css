@@ -1,0 +1,241 @@
+/* ============================
+   TrustBond Alerts Page
+   Rwanda National Police Theme
+   ============================ */
+
+.alerts-page {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Page Header */
+.alerts-page .page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.alerts-page .page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Filters */
+.alerts-page .filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.alerts-page .filters select {
+  min-width: 160px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  background: white;
+  font-size: 14px;
+}
+
+/* Severity Indicator */
+.severity-indicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.severity-indicator.low {
+  background: var(--success);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.4);
+}
+
+.severity-indicator.medium {
+  background: var(--warning);
+  box-shadow: 0 0 8px rgba(245, 158, 11, 0.4);
+}
+
+.severity-indicator.high {
+  background: #f97316;
+  box-shadow: 0 0 8px rgba(249, 115, 22, 0.4);
+}
+
+.severity-indicator.critical {
+  background: var(--danger);
+  box-shadow: 0 0 8px rgba(239, 68, 68, 0.4);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+.alert-cell {
+  display: flex;
+  align-items: center;
+}
+
+/* Alerts Table Card */
+.alerts-table-card {
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+/* ============================
+   Alert Detail Modal
+   ============================ */
+.alert-detail .alert-header {
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.alert-detail .alert-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.alert-detail .badges {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.alert-detail .alert-description {
+  padding: 20px;
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  margin-bottom: 24px;
+  line-height: 1.8;
+  font-size: 14px;
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.alert-detail .alert-meta {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+}
+
+.alert-detail .alert-meta div {
+  padding: 16px;
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  font-size: 14px;
+  border: 1px solid var(--border-color);
+}
+
+.alert-detail .alert-meta .label {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+}
+
+.alert-detail .alert-meta .value {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.alert-detail .alert-meta strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Location Map Placeholder */
+.alert-detail .location-section {
+  margin-top: 24px;
+}
+
+.alert-detail .location-section h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.alert-detail .location-section h4 i {
+  color: var(--accent-gold);
+}
+
+.alert-detail .map-placeholder {
+  height: 200px;
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+/* Create Alert Form */
+.create-alert-form .form-group {
+  margin-bottom: 20px;
+}
+
+.create-alert-form textarea {
+  min-height: 120px;
+  resize: vertical;
+}
+
+/* ============================
+   Responsive Styles
+   ============================ */
+@media (max-width: 768px) {
+  .alert-detail .alert-meta {
+    grid-template-columns: 1fr;
+  }
+
+  .alerts-page .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .alerts-page .filters {
+    width: 100%;
+  }
+
+  .alerts-page .filters select {
+    flex: 1;
+    min-width: 0;
+  }
+}

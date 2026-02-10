@@ -1,0 +1,54 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+.dart_tool/
+build/
+*.js.deps
+*.js.map
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Flutter/Dart
+*.log
+.packages
+.pub-cache/
+.pub/
+pubspec.lock
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Android
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/android/app/build/
+dashboard/android/.gradle/
+dashboard/android/local.properties
+dashboard/android/app/build/
+
+# iOS
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/ios/Flutter/ephemeral/
+dashboard/ios/Pods/
+dashboard/ios/.symlinks/
+dashboard/ios/Flutter/ephemeral/
+
+# Web build
+mobile/build/
+dashboard/build/
+
+# Backend
+backend/node_modules/
+backend/uploads/
+backend/.env

@@ -1,0 +1,215 @@
+/* ============================
+   TrustBond Pagination Component
+   Rwanda National Police Theme
+   ============================ */
+
+.pagination-container {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 0;
+  margin-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* Pagination Info */
+.pagination-info {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pagination-info strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Pagination Controls */
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.pagination-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-color);
+  background: white;
+  border-radius: var(--border-radius);
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+  border-color: var(--primary-navy);
+  color: var(--primary-navy);
+  background: rgba(13, 27, 76, 0.05);
+}
+
+.pagination-btn.active {
+  background: var(--primary-navy);
+  border-color: var(--primary-navy);
+  color: white;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Navigation Buttons */
+.pagination-btn.nav {
+  width: auto;
+  padding: 0 14px;
+  gap: 6px;
+}
+
+.pagination-btn.nav i {
+  font-size: 12px;
+}
+
+/* Ellipsis */
+.pagination-ellipsis {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* Per Page Selector */
+.pagination-per-page {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pagination-per-page label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pagination-per-page select {
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: 13px;
+  background: white;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pagination-per-page select:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  box-shadow: 0 0 0 3px rgba(13, 27, 76, 0.1);
+}
+
+/* Compact Pagination */
+.pagination-compact {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pagination-compact .pagination-text {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pagination-compact .pagination-text strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Jump to Page */
+.pagination-jump {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pagination-jump label {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pagination-jump input {
+  width: 60px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: 13px;
+  text-align: center;
+  transition: all 0.2s ease;
+}
+
+.pagination-jump input:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  box-shadow: 0 0 0 3px rgba(13, 27, 76, 0.1);
+}
+
+/* Table Footer Pagination */
+.table-pagination {
+  background: var(--bg-light);
+  padding: 16px 20px;
+  border-radius: 0 0 var(--border-radius-xl) var(--border-radius-xl);
+  margin: -1px;
+}
+
+/* Card Footer Pagination */
+.card-pagination {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  background: white;
+}
+
+/* ============================
+   Responsive Styles
+   ============================ */
+@media (max-width: 768px) {
+  .pagination-container {
+    flex-direction: column;
+    gap: 16px;
+    align-items: stretch;
+    text-align: center;
+  }
+
+  .pagination {
+    justify-content: center;
+  }
+
+  .pagination-per-page {
+    justify-content: center;
+  }
+
+  .pagination-btn.nav span {
+    display: none;
+  }
+
+  .pagination-btn.nav {
+    width: 36px;
+    padding: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .pagination-btn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .pagination-ellipsis {
+    width: 24px;
+  }
+}

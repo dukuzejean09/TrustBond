@@ -1,0 +1,464 @@
+/* ============================
+   TrustBond Login Page
+   Rwanda National Police Theme
+   ============================ */
+
+.login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(
+    135deg,
+    var(--primary-navy) 0%,
+    var(--dark-navy) 100%
+  );
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-page::before {
+  content: "";
+  position: absolute;
+  top: -50%;
+  right: -30%;
+  width: 80%;
+  height: 150%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 184, 0, 0.1) 0%,
+    transparent 70%
+  );
+  animation: pulse 8s ease-in-out infinite;
+}
+
+.login-page::after {
+  content: "";
+  position: absolute;
+  bottom: -50%;
+  left: -30%;
+  width: 80%;
+  height: 150%;
+  background: radial-gradient(
+    circle,
+    rgba(30, 58, 110, 0.3) 0%,
+    transparent 70%
+  );
+  animation: pulse 10s ease-in-out infinite reverse;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  50% {
+    transform: scale(1.1);
+    opacity: 0.8;
+  }
+}
+
+.login-container {
+  display: flex;
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4);
+  overflow: hidden;
+  max-width: 1000px;
+  width: 100%;
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================
+   Branding Section
+   ============================ */
+.login-branding {
+  flex: 1;
+  background: linear-gradient(
+    135deg,
+    var(--primary-navy) 0%,
+    var(--dark-navy) 100%
+  );
+  color: white;
+  padding: 60px 50px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.login-branding::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 100%;
+  height: 100%;
+  background: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffffff' fill-opacity='0.03'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
+}
+
+.login-branding .logo {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 32px;
+  position: relative;
+}
+
+.login-branding .logo-icon {
+  width: 64px;
+  height: 64px;
+  background: var(--accent-gold);
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(255, 184, 0, 0.3);
+}
+
+.login-branding .logo-icon i {
+  font-size: 32px;
+  color: var(--primary-navy);
+}
+
+.login-branding .logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.login-branding .logo-text .trust {
+  font-size: 28px;
+  font-weight: 800;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+.login-branding .logo-text .bond {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  letter-spacing: 0.5px;
+}
+
+.login-branding .logo-text small {
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 500;
+  margin-top: 4px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+
+.login-branding p {
+  font-size: 16px;
+  line-height: 1.8;
+  color: rgba(255, 255, 255, 0.85);
+  margin-bottom: 36px;
+  position: relative;
+}
+
+.login-branding .features {
+  list-style: none;
+  position: relative;
+}
+
+.login-branding .features li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 18px;
+  font-size: 15px;
+  color: rgba(255, 255, 255, 0.9);
+  font-weight: 500;
+}
+
+.login-branding .features li i {
+  width: 24px;
+  height: 24px;
+  background: rgba(255, 184, 0, 0.2);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--accent-gold);
+  font-size: 12px;
+}
+
+/* ============================
+   Form Section
+   ============================ */
+.login-form-section {
+  flex: 1;
+  padding: 60px 50px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  background: white;
+}
+
+.login-form-section h2 {
+  font-size: 32px;
+  font-weight: 800;
+  margin-bottom: 8px;
+  color: var(--text-primary);
+}
+
+.login-form-section .subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 36px;
+  font-size: 15px;
+}
+
+.login-form .form-group {
+  margin-bottom: 24px;
+}
+
+.login-form label {
+  display: block;
+  margin-bottom: 10px;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.login-form .input-group {
+  position: relative;
+}
+
+.login-form .input-group i {
+  position: absolute;
+  left: 16px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-secondary);
+  font-size: 16px;
+}
+
+.login-form .input-group input {
+  padding-left: 48px;
+}
+
+.login-form input {
+  width: 100%;
+  padding: 14px 18px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  font-size: 15px;
+  transition: all 0.3s ease;
+  background: var(--bg-light);
+}
+
+.login-form input:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  background: white;
+  box-shadow: 0 0 0 4px rgba(13, 27, 76, 0.1);
+}
+
+.login-form input::placeholder {
+  color: var(--text-light);
+}
+
+/* Checkbox */
+.login-form .form-options {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.login-form .remember-me {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.login-form .remember-me input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.login-form .remember-me span {
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+
+.login-form .forgot-password {
+  font-size: 14px;
+  color: var(--primary-navy);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.login-form .forgot-password:hover {
+  text-decoration: underline;
+}
+
+/* Login Button */
+.login-form .btn-login {
+  width: 100%;
+  padding: 16px;
+  background: linear-gradient(
+    135deg,
+    var(--primary-navy) 0%,
+    var(--light-navy) 100%
+  );
+  color: white;
+  border: none;
+  border-radius: var(--border-radius-lg);
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 15px rgba(13, 27, 76, 0.3);
+}
+
+.login-form .btn-login:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(13, 27, 76, 0.4);
+}
+
+.login-form .btn-login:active {
+  transform: translateY(0);
+}
+
+.login-form .btn-login:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.login-form .btn-login i {
+  font-size: 16px;
+}
+
+/* Error Message */
+.login-error {
+  background: var(--danger-light);
+  border: 1px solid var(--danger);
+  border-radius: var(--border-radius);
+  padding: 14px 18px;
+  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #b91c1c;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.login-error i {
+  font-size: 18px;
+}
+
+/* Demo Credentials */
+.demo-credentials {
+  margin-top: 28px;
+  padding: 20px;
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.demo-credentials h4 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.demo-credentials h4 i {
+  color: var(--accent-gold);
+}
+
+.demo-credentials p {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.demo-credentials code {
+  background: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: "Monaco", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--primary-navy);
+  border: 1px solid var(--border-color);
+}
+
+/* ============================
+   Responsive Styles
+   ============================ */
+@media (max-width: 900px) {
+  .login-container {
+    flex-direction: column;
+    max-width: 480px;
+  }
+
+  .login-branding {
+    padding: 40px 30px;
+  }
+
+  .login-branding .logo-icon {
+    width: 56px;
+    height: 56px;
+  }
+
+  .login-branding .logo-icon i {
+    font-size: 28px;
+  }
+
+  .login-branding .logo-text .trust,
+  .login-branding .logo-text .bond {
+    font-size: 24px;
+  }
+
+  .login-form-section {
+    padding: 40px 30px;
+  }
+
+  .login-form-section h2 {
+    font-size: 26px;
+  }
+}
+
+@media (max-width: 480px) {
+  .login-page {
+    padding: 16px;
+  }
+
+  .login-branding {
+    padding: 30px 24px;
+  }
+
+  .login-form-section {
+    padding: 30px 24px;
+  }
+
+  .login-form input {
+    padding: 12px 16px;
+  }
+
+  .login-form .input-group input {
+    padding-left: 44px;
+  }
+
+  .demo-credentials {
+    padding: 16px;
+  }
+}

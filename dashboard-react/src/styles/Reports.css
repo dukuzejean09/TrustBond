@@ -1,0 +1,391 @@
+/* ============================
+   TrustBond Reports Page
+   Rwanda National Police Theme
+   ============================ */
+
+.reports-page {
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Page Header */
+.page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.page-header h1 {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+/* Filters Section */
+.reports-page .filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reports-page .filters select {
+  min-width: 160px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  background: white;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.reports-page .filters select:focus {
+  outline: none;
+  border-color: var(--primary-navy);
+  box-shadow: 0 0 0 3px rgba(13, 27, 76, 0.1);
+}
+
+/* Reports Table Card */
+.reports-table-card {
+  background: white;
+  border-radius: var(--border-radius-xl);
+  box-shadow: var(--shadow);
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+}
+
+/* ============================
+   Report Detail Modal
+   ============================ */
+.report-detail .report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.report-detail .report-header h2 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.report-detail .report-number {
+  font-size: 13px;
+  color: var(--text-secondary);
+  font-family: "Monaco", "Menlo", monospace;
+  background: var(--bg-light);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* Detail Grid */
+.report-detail .detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 20px;
+  margin-bottom: 24px;
+}
+
+.report-detail .detail-section {
+  background: var(--bg-light);
+  padding: 20px;
+  border-radius: var(--border-radius-lg);
+  border: 1px solid var(--border-color);
+}
+
+.report-detail .detail-section h4 {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.report-detail .detail-section h4 i {
+  color: var(--accent-gold);
+}
+
+.report-detail .detail-section p {
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.7;
+}
+
+/* Trust Score Circle */
+.report-detail .trust-score {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.report-detail .trust-circle {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 800;
+  margin-top: 8px;
+  position: relative;
+}
+
+.report-detail .trust-circle::before {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  padding: 4px;
+  background: linear-gradient(135deg, currentColor, transparent);
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  opacity: 0.3;
+}
+
+.report-detail .trust-circle.high {
+  background: var(--success-light);
+  color: #047857;
+}
+
+.report-detail .trust-circle.medium {
+  background: var(--warning-light);
+  color: #b45309;
+}
+
+.report-detail .trust-circle.low {
+  background: var(--danger-light);
+  color: #b91c1c;
+}
+
+/* Report Actions */
+.report-detail .report-actions {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  padding: 20px;
+  background: var(--bg-light);
+  border-radius: var(--border-radius-lg);
+  margin-bottom: 20px;
+  border: 1px solid var(--border-color);
+  flex-wrap: wrap;
+}
+
+.report-detail .report-actions .action-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-detail .report-actions label {
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 0;
+  color: var(--text-primary);
+}
+
+.report-detail .report-actions select {
+  width: auto;
+  min-width: 160px;
+  padding: 10px 14px;
+}
+
+/* Privacy Notice */
+.report-detail .privacy-notice {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(13, 27, 76, 0.05);
+  border-radius: var(--border-radius-lg);
+  color: var(--primary-navy);
+  font-size: 13px;
+  font-weight: 500;
+  border-left: 4px solid var(--primary-navy);
+}
+
+.report-detail .privacy-notice i {
+  font-size: 18px;
+  color: var(--accent-gold);
+}
+
+/* Evidence Section */
+.report-detail .evidence-section {
+  margin-top: 24px;
+}
+
+.report-detail .evidence-section h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.report-detail .evidence-section h4 i {
+  color: var(--accent-gold);
+}
+
+.report-detail .evidence-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 12px;
+}
+
+.report-detail .evidence-item {
+  aspect-ratio: 1;
+  border-radius: var(--border-radius);
+  overflow: hidden;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+  border: 2px solid var(--border-color);
+}
+
+.report-detail .evidence-item:hover {
+  transform: scale(1.05);
+  border-color: var(--primary-navy);
+}
+
+.report-detail .evidence-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ============================
+   Assign Officer Modal
+   ============================ */
+.assign-modal .officer-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+}
+
+.assign-modal .officer-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border-color);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.assign-modal .officer-item:last-child {
+  border-bottom: none;
+}
+
+.assign-modal .officer-item:hover {
+  background: var(--bg-light);
+}
+
+.assign-modal .officer-item.selected {
+  background: rgba(13, 27, 76, 0.05);
+  border-left: 3px solid var(--accent-gold);
+}
+
+.assign-modal .officer-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, var(--primary-navy), var(--light-navy));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-weight: 600;
+  font-size: 16px;
+}
+
+.assign-modal .officer-info {
+  flex: 1;
+}
+
+.assign-modal .officer-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.assign-modal .officer-badge {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* Form Actions */
+.form-actions {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border-color);
+}
+
+/* ============================
+   Responsive Styles
+   ============================ */
+@media (max-width: 1024px) {
+  .report-detail .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .reports-page .filters {
+    width: 100%;
+  }
+
+  .reports-page .filters select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .report-detail .report-actions {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .report-detail .report-actions .action-group {
+    width: 100%;
+  }
+
+  .report-detail .report-actions select {
+    flex: 1;
+  }
+}
