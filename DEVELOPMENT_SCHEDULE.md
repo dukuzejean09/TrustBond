@@ -29,15 +29,21 @@
 
 - [ ] Initialize Git repository with branching strategy (`main`, `develop`, `feature/*`)
 - [ ] Set up Python virtual environment, install FastAPI, Uvicorn, SQLAlchemy, Alembic
-- [ ] Design and implement PostgreSQL database schema with PostGIS extension
-  - `devices` table (pseudonymous device tracking via SHA-256 hash)
-  - `reports` table (incident data, GPS, timestamps, evidence references)
-  - `device_trust` table (trust score history, confirmation rates)
-  - `clusters` / `hotspots` table (DBSCAN results)
-  - `officers` / `admin` tables (dashboard users)
-  - `cases` table (unified case management)
-  - `activity_log` table (audit trail)
-  - `alerts` table (notifications)
+- [ ] Design and implement PostgreSQL database schema with PostGIS extension (14 tables):
+  - `devices` — anonymous reporter devices (device_hash, device_trust_score, total/trusted/flagged reports)
+  - `incident_types` — incident categories (type_name, severity_weight, is_active)
+  - `reports` — raw incident submissions (GPS, motion_level, movement_speed, was_stationary, rule_status, is_flagged, feature_vector JSONB, ai_ready)
+  - `evidence_files` — report evidence (file_url, file_type, media GPS, is_live_capture, perceptual_hash, blur_score, tamper_score, ai_quality_label)
+  - `ml_predictions` — ML outputs (trust_score, prediction_label, confidence, explanation JSONB, model_type, is_final)
+  - `police_users` — police accounts & roles (badge_number, role ENUM, assigned_location_id)
+  - `police_reviews` — ground truth decisions (decision, ground_truth_label, confidence_level, used_for_training)
+  - `locations` — administrative boundaries for Musanze (location_type sector/cell/village, geometry GEOMETRY, parent hierarchy)
+  - `hotspots` — DBSCAN risk clusters (center coords, radius_meters, risk_level, time_window_hours)
+  - `hotspot_reports` — hotspot-report membership (composite PK)
+  - `incident_groups` — duplicate incident grouping (center coords, time range, report_count)
+  - `report_assignments` — case handling workflow (status, priority, assigned/completed timestamps)
+  - `notifications` — system alerts (type: report/hotspot/assignment/system, related_entity_type/id)
+  - `audit_logs` — security & accountability (actor_type, action_type, entity_type, ip_address, success)
 - [ ] Write Alembic migration scripts
 - [ ] Set up Docker Compose for local PostgreSQL + PostGIS
 - [ ] Configure Cloudinary account and test media upload/retrieval
@@ -65,26 +71,37 @@
 
 **Goal:** Build all essential API endpoints and secure authentication.
 
-- [ ] Implement JWT-based authentication for police officers/admin
-- [ ] Implement pseudonymous device registration endpoint (SHA-256 device hash generation)
+- [ ] Implement JWT-based authentication for `police_users` (role-based: admin, supervisor, officer)
+- [ ] Implement pseudonymous device registration endpoint (SHA-256 → `devices.device_hash`)
+- [ ] Build Incident Types API:
+  - `GET /api/incident-types` — list active categories from `incident_types`
+  - `POST /api/incident-types` — admin creates new types (type_name, severity_weight)
 - [ ] Build Report Submission API:
-  - `POST /api/reports` — accept incident data + GPS + timestamp + evidence files
-  - `GET /api/reports` — list/filter reports (for dashboard)
-  - `GET /api/reports/{id}` — single report detail
-  - `PATCH /api/reports/{id}/status` — update case status
+  - `POST /api/reports` — accept incident data + GPS + motion_level + movement_speed + was_stationary + village_location_id (FK → `locations`)
+  - `GET /api/reports` — list/filter reports for dashboard (join `incident_types`, `devices`, `ml_predictions`)
+  - `GET /api/reports/{id}` — single report with evidence_files, ml_predictions, police_reviews, assignments
+  - `PATCH /api/reports/{id}` — update rule_status, is_flagged
+- [ ] Build Evidence Files API:
+  - `POST /api/reports/{id}/evidence` — upload to Cloudinary, store in `evidence_files` (file_url, file_type, media GPS, is_live_capture)
+  - `GET /api/reports/{id}/evidence` — retrieve evidence for a report
 - [ ] Build Device Trust API:
-  - `GET /api/devices/{hash}/trust` — retrieve device trust score
-  - Internal trust score update logic
-- [ ] Build Officer/Admin API:
-  - `POST /api/auth/login` — officer login
-  - `GET /api/officers` — list officers
-  - CRUD for officer management
-- [ ] Implement Cloudinary upload service (image/video evidence)
-- [ ] Write input validation with Pydantic schemas for all endpoints
-- [ ] Set up CORS middleware and rate limiting
+  - `GET /api/devices/{hash}` — retrieve device record with trust score, total/trusted/flagged counts
+  - Internal logic: update `devices.device_trust_score` after each `police_reviews` decision
+- [ ] Build Police Users API:
+  - `POST /api/auth/login` — JWT login (update `police_users.last_login_at`)
+  - `GET /api/police-users` — list officers (filterable by role, assigned_location_id)
+  - `POST /api/police-users` — create officer (admin only: first_name, last_name, email, phone, badge_number, role, assigned_location_id)
+  - `PATCH /api/police-users/{id}` — update officer, toggle is_active
+- [ ] Build Locations API:
+  - `GET /api/locations` — list Musanze admin boundaries (sectors → cells → villages hierarchy)
+  - `GET /api/locations/{id}` — single location with geometry
+- [ ] Implement Cloudinary upload service (photo/video evidence)
+- [ ] Write Pydantic schemas matching all 14 database tables
+- [ ] Set up CORS middleware, rate limiting
+- [ ] Write `audit_logs` entries for all state-changing API calls (actor_type, action_type, entity_type, entity_id, ip_address)
 - [ ] Write unit tests for core endpoints
 
-**Deliverable:** Fully functional REST API with auth, report CRUD, device tracking, and media upload.
+**Deliverable:** Fully functional REST API covering all 14 tables, JWT auth, report CRUD, evidence upload, device tracking, locations, and audit logging.
 
 ---
 
@@ -110,25 +127,29 @@
   - Perceptual hashing (pHash) for submitted images
   - Hamming distance comparison against existing report images
   - Flag duplicate media submissions
-- [ ] Device trust formula (transparent rule-based):
+- [ ] Device trust formula (updates `devices.device_trust_score` using `devices` columns):
   ```
-  trust_score = (
+  device_trust_score = (
       base_score
-      + (confirmation_rate × w1)
-      - (rejection_rate × w2)
-      - (spam_flags × w3)
-      + (reporting_consistency × w4)
+      + (trusted_reports / total_reports × w1)
+      - (flagged_reports / total_reports × w2)
+      + (consistency_bonus × w3)
   )
   ```
 
+  - Inputs: `devices.total_reports`, `devices.trusted_reports`, `devices.flagged_reports`
+  - Triggered after each `police_reviews` entry (decision = confirmed → trusted++, rejected → flagged++)
+
 #### ML Data Preparation
 
-- [ ] Generate synthetic training dataset based on variable tables (Tables 3.1–3.5)
-- [ ] Define feature engineering pipeline:
-  - Extract report-level features (description_length, evidence_count, image_quality, etc.)
-  - Extract device-level features (total_reports, confirmation_rate, etc.)
-  - Extract temporal features (time_since_incident, reporting_frequency)
-- [ ] Label synthetic data: Verified / Rejected / Pending
+- [ ] Build feature extraction pipeline that populates `reports.feature_vector` (JSONB) and sets `reports.ai_ready = true`:
+  - Report-level: description length, evidence count, gps_accuracy, motion_level, movement_speed, was_stationary
+  - Device-level: `devices.total_reports`, `devices.trusted_reports`, `devices.flagged_reports`, `devices.device_trust_score`
+  - Evidence-level: `evidence_files.blur_score`, `evidence_files.tamper_score`, `evidence_files.is_live_capture`, `evidence_files.ai_quality_label`
+  - Temporal: time since incident, reporting frequency per device
+  - Set `reports.features_extracted` timestamp on completion
+- [ ] Generate synthetic training data matching schema columns
+- [ ] Label using `police_reviews.ground_truth_label` (real / fake) where `used_for_training = true`
 - [ ] Split data into train/validation/test sets (70/15/15)
 
 **Deliverable:** Working rule-based verification pipeline, labeled dataset ready for model training.
@@ -154,19 +175,24 @@
 - [ ] Implement pseudonymous device ID generation (SHA-256 of device attributes)
 - [ ] Build onboarding/welcome screens (no login required — anonymous)
 - [ ] Implement report submission screen:
-  - Incident type selector (Theft, Vandalism, Suspicious Activity, etc.)
+  - Incident type selector (fetched from `incident_types` API)
   - Description text field
-  - Automatic GPS capture with accuracy display
-  - Automatic timestamp capture
+  - Automatic GPS capture (latitude, longitude, gps_accuracy)
+  - Motion sensor data capture (motion_level, movement_speed, was_stationary)
+  - Automatic timestamp capture (reported_at)
+  - Auto-resolve village_location_id via GPS → `locations` lookup
 - [ ] Set up API service layer connecting to FastAPI backend
 
 #### Week 4 — Evidence & Offline Support
 
-- [ ] Implement camera integration for photo/video evidence capture
+- [ ] Implement camera integration for photo/video evidence capture:
+  - Capture media GPS (media_latitude, media_longitude)
+  - Record capture timestamp (captured_at)
+  - Detect if live capture (is_live_capture flag)
 - [ ] Implement gallery picker for existing media
-- [ ] Build evidence preview and multi-file attachment UI
+- [ ] Build evidence preview and multi-file attachment UI (maps to `evidence_files`)
 - [ ] Implement offline report queue (store locally, sync when connected)
-- [ ] Build report history screen (user's own submissions, anonymized)
+- [ ] Build report history screen (user's own submissions via device_hash, anonymized)
 - [ ] Add network status indicator and connectivity handling
 - [ ] Implement local notifications for submission confirmation
 
@@ -181,33 +207,40 @@
 #### Random Forest Classifier
 
 - [ ] Train Random Forest model using scikit-learn:
-  - Input features from Tables 3.1 & 3.2
-  - Target: `authenticity_label` (Verified / Rejected / Pending)
+  - Input: `reports.feature_vector` (JSONB) — only where `reports.ai_ready = true`
+  - Target: `police_reviews.ground_truth_label` (real / fake) — only where `used_for_training = true`
   - Hyperparameter tuning via GridSearchCV
 - [ ] Evaluate model performance:
   - Precision, Recall, F1-score per class
   - Confusion matrix analysis
-  - Feature importance ranking
+  - Feature importance ranking → stored in `ml_predictions.explanation` (JSONB / SHAP values)
 - [ ] Export trained model (joblib/pickle) for API integration
-- [ ] Build prediction endpoint: `POST /api/ml/predict-authenticity`
+- [ ] Build prediction endpoint: `POST /api/ml/predict` → writes to `ml_predictions` table:
+  - `trust_score`, `prediction_label` (likely_real / suspicious / fake)
+  - `confidence`, `model_version`, `model_type` = 'random_forest'
+  - `processing_time` (ms), `is_final = true` for production predictions
 - [ ] Implement authenticity score output (probability 0.0–1.0)
 
-#### AI-Assisted Verification (OpenCV + lightweight checks)
+#### AI-Assisted Verification (OpenCV + lightweight checks) → writes to `evidence_files`
 
 - [ ] Image quality assessment:
-  - Blur detection (Laplacian variance)
-  - Brightness/contrast check (mean pixel value)
-  - Resolution validation
-- [ ] Image quality score calculation (0.0–1.0)
-- [ ] Integrate perceptual hashing for duplicate image detection
-- [ ] GPS anomaly detection (speed-based, geographic bounds)
-- [ ] Timestamp anomaly detection (statistical outlier detection)
+  - Blur detection (Laplacian variance) → `evidence_files.blur_score`
+  - Tampering/manipulation analysis → `evidence_files.tamper_score`
+  - Combined assessment → `evidence_files.ai_quality_label` (good / poor / suspicious)
+  - Set `evidence_files.ai_checked_at` timestamp
+- [ ] Perceptual hashing for duplicate detection:
+  - Compute pHash → `evidence_files.perceptual_hash`
+  - Compare Hamming distance against existing hashes in DB
+  - Flag duplicates in `reports.is_flagged`
+- [ ] GPS anomaly detection (speed-based using `reports.movement_speed`, geographic bounds via `locations`)
+- [ ] Timestamp anomaly detection (statistical outlier detection on `reports.reported_at`)
+- [ ] Anomaly model predictions → `ml_predictions` with `model_type` = 'anomaly' or 'vision'
 
 #### Integration
 
-- [ ] Wire verification pipeline: Rule-based → AI checks → RF prediction → Final score
+- [ ] Wire verification pipeline: Rule-based (`reports.rule_status`) → AI checks (`evidence_files` scores) → RF prediction (`ml_predictions`) → Final trust update (`devices.device_trust_score`)
 - [ ] Implement background task processing with Celery + Redis for ML inference
-- [ ] Store verification results alongside reports in database
+- [ ] All ML results stored in `ml_predictions`; evidence analysis in `evidence_files`
 
 **Deliverable:** Trained Random Forest model integrated into API, complete AI verification pipeline.
 
@@ -232,11 +265,14 @@
 - [ ] Implement authentication flow (JWT login for officers)
 - [ ] Build Layout component (sidebar navigation, header, responsive design)
 - [ ] Build Dashboard home page:
-  - Total reports stat card
-  - Reports by status (Verified / Pending / Rejected)
-  - Reports by category chart
-  - Recent reports table
-  - Trust score distribution
+  - Total reports stat card (count from `reports`)
+  - Reports by `reports.rule_status` (passed / flagged / rejected)
+  - Reports by `incident_types.type_name` chart
+  - Recent reports table (join `reports` + `devices` + `ml_predictions` + `incident_types`)
+  - ML trust score distribution (`ml_predictions.trust_score` where `is_final = true`)
+  - Device trust overview (`devices.device_trust_score` averages)
+  - Pending assignments count (from `report_assignments` where status = 'assigned')
+  - Unread notifications badge (from `notifications` where `is_read = false`)
 
 **Deliverable:** Production-ready mobile app; dashboard with auth and home page.
 
@@ -246,27 +282,39 @@
 
 **Goal:** Build core case management and report viewing features.
 
-- [ ] Build Reports page:
-  - Filterable data table (by status, category, date range, trust score)
-  - Report detail modal with evidence viewer (images/video from Cloudinary)
-  - Verification details display (rule-based results, ML score, AI checks)
-  - Status update actions (Verify, Reject, Escalate)
-- [ ] Build Cases / Unified Case Management page:
-  - Group related reports into cases
-  - Case timeline view
-  - Evidence aggregation across linked reports
-  - Case assignment to officers
-- [ ] Build Officers management page:
-  - Add/edit/deactivate officers
-  - Role-based access control
-- [ ] Build Activity Log page:
-  - Audit trail of all actions
-  - Filterable by officer, action type, date
-- [ ] Build Alerts page:
-  - System notifications (new high-priority reports, anomalies)
-  - Alert configuration settings
+- [ ] Build Reports page (data from `reports` + `incident_types` + `devices` + `ml_predictions`):
+  - Filterable data table (by `reports.rule_status`, `incident_types.type_name`, date range, `ml_predictions.trust_score`)
+  - Report detail modal with:
+    - Evidence viewer (`evidence_files` — images/video from Cloudinary URLs)
+    - AI verification details: `blur_score`, `tamper_score`, `ai_quality_label`, `perceptual_hash` matches
+    - ML prediction panel: `prediction_label`, `trust_score`, `confidence`, `explanation` (SHAP)
+    - Rule check status: `reports.rule_status` (passed/flagged/rejected)
+    - Device trust info: `devices.device_trust_score`, total/trusted/flagged counts
+  - Police Review actions → writes to `police_reviews` (confirmed / rejected / investigation)
+    - Officer selects `ground_truth_label` (real / fake), `confidence_level`
+    - Checkbox for `used_for_training` (allow model retraining)
+- [ ] Build Report Assignments page (data from `report_assignments`):
+  - Assign reports to officers (`police_user_id`) with priority (low/medium/high/urgent)
+  - Track workflow: assigned → investigating → resolved → closed
+  - Show `assigned_at`, `completed_at` timestamps
+- [ ] Build Incident Groups page (data from `incident_groups`):
+  - View grouped duplicate reports (same incident, multiple submissions)
+  - Show center location, time range, report_count
+  - Drill into individual reports within a group
+- [ ] Build Officers management page (data from `police_users`):
+  - Add/edit officers: first_name, last_name, email, phone, badge_number, role, assigned_location_id
+  - Toggle `is_active` status
+  - Role-based access control (admin / supervisor / officer)
+  - Show `last_login_at`
+- [ ] Build Activity Log page (data from `audit_logs`):
+  - Display: actor_type, action_type, entity_type, entity_id, ip_address, success, timestamp
+  - Filterable by actor (system vs police_user), action_type, date range
+- [ ] Build Notifications page (data from `notifications`):
+  - Show: title, message, type (report/hotspot/assignment/system)
+  - Link to related entity via `related_entity_type` + `related_entity_id`
+  - Mark as read (`is_read` toggle)
 
-**Deliverable:** Fully functional case management and report review interface.
+**Deliverable:** Fully functional report management, police reviews, report assignments, incident groups, officers, activity log, and notifications UI — all mapped to schema tables.
 
 ---
 
@@ -274,37 +322,45 @@
 
 **Goal:** Implement DBSCAN clustering and analytics visualization.
 
-#### Trust-Weighted DBSCAN
+#### Trust-Weighted DBSCAN → writes to `hotspots` + `hotspot_reports`
 
 - [ ] Implement trust-weighted DBSCAN algorithm:
-  - Weight each data point by `trust_weight` (derived from `final_trust_score`)
-  - Configurable `eps_radius` (50–500m) and `min_samples` (3–10)
-  - Time window filtering (7, 30, 90 days)
-  - Category-based filtering
+  - Input: `reports` where `rule_status = 'passed'` and `ai_ready = true`
+  - Weight each point by `ml_predictions.trust_score` (where `is_final = true`)
+  - Configurable eps_radius → stored as `hotspots.radius_meters`
+  - Time window filtering → `hotspots.time_window_hours` (168, 720, 2160 = 7d, 30d, 90d)
+  - Category-based filtering via `reports.incident_type_id`
 - [ ] Build hotspot API endpoints:
-  - `GET /api/hotspots` — retrieve current clusters
-  - `GET /api/hotspots/map-data` — GeoJSON for map rendering
-  - `POST /api/hotspots/recalculate` — trigger reclustering
-- [ ] Assign `hotspot_risk_level` (Critical / Warning / Normal) based on cluster density and trust weights
+  - `GET /api/hotspots` — retrieve from `hotspots` table (center_lat, center_long, radius_meters, incident_count, risk_level)
+  - `GET /api/hotspots/{id}/reports` — retrieve linked reports via `hotspot_reports` join
+  - `GET /api/hotspots/map-data` — GeoJSON for map rendering using `locations.geometry`
+  - `POST /api/hotspots/recalculate` — trigger reclustering, rebuild `hotspot_reports` associations
+- [ ] Assign `hotspots.risk_level` (low / medium / high) based on cluster density, incident_count, and trust weights
+- [ ] Generate `notifications` (type = 'hotspot') when new high-risk clusters detected
 - [ ] Schedule periodic recalculation (Celery beat task)
 
 #### Analytics & Visualization (Dashboard)
 
-- [ ] Build Hotspots page:
-  - Interactive map (Leaflet.js or Mapbox) with cluster visualization
+- [ ] Build Hotspots page (data from `hotspots` + `hotspot_reports` + `locations`):
+  - Interactive map (Leaflet.js) with cluster visualization at `hotspots.center_lat/center_long`
+  - Cluster circles sized by `hotspots.radius_meters`, colored by `hotspots.risk_level`
   - Heatmap overlay toggle
-  - Click-to-drill-down into cluster details
-  - Time range selector
-- [ ] Build Analytics page:
-  - Incident trends over time (line charts)
-  - Category distribution (pie/bar charts)
-  - Trust score distribution histogram
-  - Geographic distribution analysis
-  - Device trust trends
-  - Report verification rate over time
+  - Click-to-drill-down: show linked reports via `hotspot_reports`
+  - Time range selector matching `hotspots.time_window_hours`
+  - Overlay `locations.geometry` (sector/cell/village boundaries)
+- [ ] Build Analytics page (aggregating across all tables):
+  - Incident trends over time (from `reports.reported_at`)
+  - Category distribution by `incident_types.type_name` with `severity_weight`
+  - ML trust score distribution (`ml_predictions.trust_score` histogram)
+  - `reports.rule_status` breakdown (passed/flagged/rejected)
+  - Device trust trends (`devices.device_trust_score` over time)
+  - Police review rate (`police_reviews` confirmed vs rejected vs investigation)
+  - Evidence quality summary (`evidence_files.ai_quality_label` distribution)
+  - Geographic distribution by `locations` hierarchy
 - [ ] Build Settings page:
-  - DBSCAN parameter configuration
-  - Alert thresholds
+  - DBSCAN parameter configuration (eps, min_samples, time_window)
+  - `incident_types` management (add/edit categories, severity_weight)
+  - Notification thresholds
   - System configuration
 
 **Deliverable:** Working hotspot detection with map visualization, comprehensive analytics dashboard.
@@ -315,21 +371,27 @@
 
 **Goal:** Connect all components and build the public safety map.
 
-- [ ] End-to-end flow testing:
-  1. Submit report from Flutter app →
-  2. Backend receives and stores →
-  3. Rule-based verification runs →
-  4. AI checks execute (image quality, GPS anomaly, duplicate) →
-  5. Random Forest predicts authenticity →
-  6. Device trust score updates →
-  7. Report appears in dashboard with scores →
-  8. Officer reviews and updates status →
-  9. DBSCAN recalculates hotspots →
-  10. Safety map updates
+- [ ] End-to-end flow testing (mapped to database):
+  1. Flutter app generates `device_hash` → `devices` table (first_seen_at set)
+  2. Submit report → `reports` table (latitude, longitude, gps_accuracy, motion_level, movement_speed, was_stationary, village_location_id)
+  3. Upload evidence → `evidence_files` table (file_url via Cloudinary, media GPS, is_live_capture)
+  4. Rule-based checks → `reports.rule_status` updated (passed/flagged/rejected)
+  5. AI checks → `evidence_files` updated (blur_score, tamper_score, perceptual_hash, ai_quality_label, ai_checked_at)
+  6. Feature extraction → `reports.feature_vector` populated, `reports.ai_ready = true`, `reports.features_extracted` set
+  7. Random Forest → `ml_predictions` created (trust_score, prediction_label, confidence, explanation, model_version, model_type, is_final)
+  8. Device trust recalculated → `devices.device_trust_score` updated based on total/trusted/flagged
+  9. Report appears in dashboard with all joined data
+  10. Officer reviews → `police_reviews` (decision, ground_truth_label, confidence_level, used_for_training)
+  11. Assignment created → `report_assignments` (status, priority)
+  12. DBSCAN recalculates → `hotspots` + `hotspot_reports` rebuilt
+  13. Notifications generated → `notifications` for relevant officers
+  14. All actions logged → `audit_logs`
+  15. Safety map & community map update with anonymized hotspot data
 - [ ] Build Community Safety Map (public-facing):
-  - Anonymized cluster display (no individual report locations)
-  - Risk level color coding
-  - Category filtering
+  - Anonymized `hotspots` display (center_lat/center_long, radius_meters — no individual report locations)
+  - Risk level color coding from `hotspots.risk_level` (low/medium/high)
+  - Category filtering by `incident_types`
+  - `locations.geometry` overlay (sector/cell/village boundaries)
   - Mobile-responsive design
 - [ ] Implement real-time updates (WebSocket or polling) for dashboard
 - [ ] API error handling and edge case coverage
@@ -359,15 +421,16 @@
 #### Security Audit
 
 - [ ] Verify anonymity guarantees:
-  - No PII stored or logged
-  - Device hash is non-reversible
-  - No IP address logging
-- [ ] Input sanitization review (SQL injection, XSS)
-- [ ] JWT token security (expiration, refresh, revocation)
+  - Only `devices.device_hash` stored (no PII, no reversibility)
+  - No PII in `reports`, `evidence_files`, or `audit_logs`
+  - `audit_logs.ip_address` only for police_user sessions, never for reporters
+- [ ] Input sanitization review (SQL injection on all endpoints, XSS on dashboard)
+- [ ] JWT token security (expiration, refresh, revocation for `police_users`)
 - [ ] HTTPS enforcement
-- [ ] Rate limiting validation
-- [ ] Cloudinary URL security (signed URLs)
-- [ ] Database access control review
+- [ ] Rate limiting per `devices.device_hash` to prevent spam
+- [ ] Cloudinary URL security (signed URLs for `evidence_files.file_url`)
+- [ ] Role-based access control validation (`police_users.role`: admin/supervisor/officer)
+- [ ] Database access control review (PostGIS geometry data, JSONB fields)
 
 #### Performance Testing
 
