@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # ── Redis / Celery ────────────────────────────────────
     REDIS_URL: str = "redis://localhost:6379/0"
 
+    # ── Rate Limiting ─────────────────────────────────────
+    RATE_LIMIT_PER_MINUTE: int = 60
+
     class Config:
         env_file = ".env"
         case_sensitive = True

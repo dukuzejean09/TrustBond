@@ -11,6 +11,13 @@ class IncidentTypeCreate(BaseModel):
     is_active: bool = True
 
 
+class IncidentTypeUpdate(BaseModel):
+    type_name: Optional[str] = None
+    description: Optional[str] = None
+    severity_weight: Optional[Decimal] = None
+    is_active: Optional[bool] = None
+
+
 class IncidentTypeResponse(BaseModel):
     incident_type_id: int
     type_name: str

@@ -5,6 +5,14 @@ from datetime import datetime
 from decimal import Decimal
 
 
+class EvidenceFileCreate(BaseModel):
+    file_type: str = "photo"                      # photo / video
+    media_latitude: Optional[Decimal] = None
+    media_longitude: Optional[Decimal] = None
+    captured_at: Optional[datetime] = None
+    is_live_capture: bool = False
+
+
 class EvidenceFileResponse(BaseModel):
     evidence_id: UUID
     report_id: UUID

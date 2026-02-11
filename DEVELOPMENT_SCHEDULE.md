@@ -46,7 +46,7 @@
   - `audit_logs` — security & accountability (actor_type, action_type, entity_type, ip_address, success)
 - [x] Write Alembic migration scripts
 - [x] Set up Docker Compose for local PostgreSQL + PostGIS
-- [ ] Configure Cloudinary account and test media upload/retrieval
+- [x] Configure Cloudinary account and test media upload/retrieval
 - [x] Set up project folder structure for backend:
   ```
   backend/
@@ -71,35 +71,35 @@
 
 **Goal:** Build all essential API endpoints and secure authentication.
 
-- [ ] Implement JWT-based authentication for `police_users` (role-based: admin, supervisor, officer)
-- [ ] Implement pseudonymous device registration endpoint (SHA-256 → `devices.device_hash`)
-- [ ] Build Incident Types API:
+- [x] Implement JWT-based authentication for `police_users` (role-based: admin, supervisor, officer)
+- [x] Implement pseudonymous device registration endpoint (SHA-256 → `devices.device_hash`)
+- [x] Build Incident Types API:
   - `GET /api/incident-types` — list active categories from `incident_types`
   - `POST /api/incident-types` — admin creates new types (type_name, severity_weight)
-- [ ] Build Report Submission API:
+- [x] Build Report Submission API:
   - `POST /api/reports` — accept incident data + GPS + motion_level + movement_speed + was_stationary + village_location_id (FK → `locations`)
   - `GET /api/reports` — list/filter reports for dashboard (join `incident_types`, `devices`, `ml_predictions`)
   - `GET /api/reports/{id}` — single report with evidence_files, ml_predictions, police_reviews, assignments
   - `PATCH /api/reports/{id}` — update rule_status, is_flagged
-- [ ] Build Evidence Files API:
+- [x] Build Evidence Files API:
   - `POST /api/reports/{id}/evidence` — upload to Cloudinary, store in `evidence_files` (file_url, file_type, media GPS, is_live_capture)
   - `GET /api/reports/{id}/evidence` — retrieve evidence for a report
-- [ ] Build Device Trust API:
+- [x] Build Device Trust API:
   - `GET /api/devices/{hash}` — retrieve device record with trust score, total/trusted/flagged counts
   - Internal logic: update `devices.device_trust_score` after each `police_reviews` decision
-- [ ] Build Police Users API:
+- [x] Build Police Users API:
   - `POST /api/auth/login` — JWT login (update `police_users.last_login_at`)
   - `GET /api/police-users` — list officers (filterable by role, assigned_location_id)
   - `POST /api/police-users` — create officer (admin only: first_name, last_name, email, phone, badge_number, role, assigned_location_id)
   - `PATCH /api/police-users/{id}` — update officer, toggle is_active
-- [ ] Build Locations API:
+- [x] Build Locations API:
   - `GET /api/locations` — list Musanze admin boundaries (sectors → cells → villages hierarchy)
   - `GET /api/locations/{id}` — single location with geometry
-- [ ] Implement Cloudinary upload service (photo/video evidence)
-- [ ] Write Pydantic schemas matching all 14 database tables
-- [ ] Set up CORS middleware, rate limiting
-- [ ] Write `audit_logs` entries for all state-changing API calls (actor_type, action_type, entity_type, entity_id, ip_address)
-- [ ] Write unit tests for core endpoints
+- [x] Implement Cloudinary upload service (photo/video evidence)
+- [x] Write Pydantic schemas matching all 14 database tables
+- [x] Set up CORS middleware, rate limiting
+- [x] Write `audit_logs` entries for all state-changing API calls (actor_type, action_type, entity_type, entity_id, ip_address)
+- [x] Write unit tests for core endpoints
 
 **Deliverable:** Fully functional REST API covering all 14 tables, JWT auth, report CRUD, evidence upload, device tracking, locations, and audit logging.
 

@@ -25,6 +25,18 @@ class PoliceUserCreate(BaseModel):
     assigned_location_id: Optional[int] = None
 
 
+class PoliceUserUpdate(BaseModel):
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    middle_name: Optional[str] = None
+    email: Optional[str] = None
+    phone_number: Optional[str] = None
+    badge_number: Optional[str] = None
+    role: Optional[str] = None
+    assigned_location_id: Optional[int] = None
+    is_active: Optional[bool] = None
+
+
 class PoliceUserResponse(BaseModel):
     police_user_id: int
     first_name: str
