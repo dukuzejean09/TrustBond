@@ -1,0 +1,2 @@
+# dependencies removed on 2026-02-16 per user request
+# (file intentionally left empty - all packages uninstalled)

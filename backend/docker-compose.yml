@@ -1,0 +1,57 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: trustbond_db
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: trustbond2026
+      POSTGRES_DB: trustbond
+    volumes:
+      - trustbond_pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trustbond"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: trustbond_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - trustbond_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trustbond_backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    environment:
+      DATABASE_URL: "postgresql://postgres:trustbond2026@db:5432/trustbond"
+      REDIS_URL: "redis://redis:6379/0"
+      SECRET_KEY: "CHANGE-ME-IN-PRODUCTION"
+      RATE_LIMIT_PER_MINUTE: 120
+    volumes:
+      - ./:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+volumes:
+  trustbond_pgdata:
+  trustbond_redis:

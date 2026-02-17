@@ -1,0 +1,2 @@
+# Trained model files (.joblib, .pkl) will be placed here.
+# Do NOT commit large model files — use .gitignore or Git LFS.

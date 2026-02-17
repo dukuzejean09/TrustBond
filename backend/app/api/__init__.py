@@ -1,0 +1,15 @@
+from app.api.auth import router as auth_router
+from app.api.devices import router as devices_router
+from app.api.reports import router as reports_router
+from app.api.evidence import router as evidence_router
+from app.api.incident_types import router as incident_types_router
+from app.api.locations import router as locations_router
+from app.api.police_users import router as police_users_router
+from app.api.police_reviews import router as police_reviews_router
+from app.api.report_assignments import router as report_assignments_router
+from app.api.incident_groups import router as incident_groups_router
+from app.api.hotspots import router as hotspots_router
+from app.api.notifications import router as notifications_router
+from app.api.audit_logs import router as audit_logs_router
+from app.api.ml import router as ml_router
+from app.api.analytics import router as analytics_router

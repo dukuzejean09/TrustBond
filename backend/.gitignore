@@ -1,0 +1,18 @@
+venv/
+__pycache__/
+.env
+*.pyc
+.env.example
+
+# IDE/workspace
+.vscode/
+.idea/
+
+# OS & logs
+.DS_Store
+*.log
+
+# Mobile build artifacts (also ignored in mobile/.gitignore)
+mobile/build/
+mobile/.dart_tool/
+mobile/android/.gradle/
