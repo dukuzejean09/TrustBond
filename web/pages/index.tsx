@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/router";
 import KpiCard from "../components/KpiCard";
 import ReportsTable from "../components/ReportsTable";
@@ -9,6 +10,8 @@ import {
   getReports,
   getHotspots,
 } from "../lib/api";
+
+import logo from "./logo.png";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -67,7 +70,19 @@ export default function Dashboard() {
   return (
     <div className="container">
       <div className="header">
-        <div className="brand">TrustBond — Dashboard</div>
+        <div
+          className="brand"
+          style={{ display: "flex", alignItems: "center", gap: 10 }}
+        >
+          <Image
+            src={logo}
+            alt="TrustBond Logo"
+            width={36}
+            height={36}
+            style={{ borderRadius: 6 }}
+          />
+          <span>TrustBond — Dashboard</span>
+        </div>
         <div className="controls">
           <div className="small-muted">Role: Admin</div>
           <button className="button" onClick={logout}>
