@@ -59,8 +59,12 @@ export async function getReportCount(filters: Record<string, any> = {}) {
   return resp.total ?? 0;
 }
 
-export async function getAssignments(status?: string) {
-  const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+export async function getAssignments(status?: string, policeUserId?: number) {
+  const params = new URLSearchParams();
+  if (status) params.set("status_filter", status); // backend expects `status_filter`
+  if (typeof policeUserId !== "undefined")
+    params.set("police_user_id", String(policeUserId));
+  const qs = params.toString() ? `?${params.toString()}` : "";
   const res = await fetch(`${API_BASE}/report-assignments${qs}`, {
     headers: { "Content-Type": "application/json", ...authHeader() },
   });

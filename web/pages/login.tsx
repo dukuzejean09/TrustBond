@@ -34,7 +34,25 @@ export default function Login() {
     try {
       const resp: any = await login(email, password);
       localStorage.setItem("tb_token", resp.access_token);
-      router.push("/");
+      // route to role-specific dashboard when possible
+      try {
+        const payload = JSON.parse(
+          atob(
+            resp.access_token
+              .split(".")[1]
+              .replace(/-/g, "+")
+              .replace(/_/g, "/"),
+          ),
+        );
+        const r = payload?.role;
+        if (r && (r === "officer" || r === "supervisor")) {
+          router.push(`/${r}`);
+        } else {
+          router.push("/");
+        }
+      } catch (e) {
+        router.push("/");
+      }
     } catch (err: any) {
       setError(err?.message || "Login failed");
     } finally {
