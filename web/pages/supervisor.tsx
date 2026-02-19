@@ -10,10 +10,9 @@ import {
   getReports,
   getHotspots,
 } from "../lib/api";
-
 import logo from "./logo.png";
 
-export default function Dashboard() {
+export default function SupervisorDashboard() {
   const router = useRouter();
   const [total, setTotal] = useState<number | null>(null);
   const [flagged, setFlagged] = useState<number | null>(null);
@@ -23,33 +22,29 @@ export default function Dashboard() {
   const [hotspots, setHotspots] = useState<any[]>([]);
   const [reports, setReports] = useState<any[]>([]);
   const [selectedReport, setSelectedReport] = useState<string | null>(null);
-  const [role, setRole] = useState<string | null>(null);
 
   useEffect(() => {
-    console.log("Dashboard mounted");
-    if (typeof window === "undefined")
-      return () => console.log("Dashboard unmounted (ssr)");
-    // allow access without login (development): do not redirect to /login when no token
-    // API calls may fail without an auth token but the page will render safely.
+    if (typeof window === "undefined") return;
 
-    // read role from stored JWT (if present) so the UI shows the actual role
     const rawToken = localStorage.getItem("tb_token");
-    if (rawToken) {
-      try {
-        const payload = JSON.parse(
-          atob(rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
-        );
-        setRole(payload?.role ?? null);
-        // if logged-in user is not admin, send them to their role-specific dashboard
-        if (payload?.role && payload.role !== "admin") {
-          router.push(`/${payload.role}`);
-          return () => console.log("Dashboard redirected to role page");
-        }
-      } catch (err) {
-        setRole(null);
-      }
-    } else {
-      setRole(null);
+    if (!rawToken) {
+      router.push("/login");
+      return;
+    }
+
+    let payload: any = null;
+    try {
+      payload = JSON.parse(
+        atob(rawToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")),
+      );
+    } catch (err) {
+      router.push("/login");
+      return;
+    }
+
+    if (payload?.role !== "supervisor") {
+      router.push("/");
+      return;
     }
 
     let mounted = true;
@@ -76,7 +71,6 @@ export default function Dashboard() {
 
     return () => {
       mounted = false;
-      console.log("Dashboard unmounted");
     };
   }, [router]);
 
@@ -99,19 +93,13 @@ export default function Dashboard() {
             height={36}
             style={{ borderRadius: 6 }}
           />
-          <span>TrustBond — Dashboard</span>
+          <span>TrustBond — Supervisor Dashboard</span>
         </div>
         <div className="controls">
-          <div className="small-muted">Role: {role ?? "Guest"}</div>
-          {role ? (
-            <button className="button" onClick={logout}>
-              Logout
-            </button>
-          ) : (
-            <button className="button" onClick={() => router.push("/login")}>
-              Login
-            </button>
-          )}
+          <div className="small-muted">Role: Supervisor</div>
+          <button className="button" onClick={logout}>
+            Logout
+          </button>
         </div>
       </div>
 
@@ -160,13 +148,9 @@ export default function Dashboard() {
 
         <div>
           <div className="card" style={{ marginBottom: 12 }}>
-            <strong>ML summary</strong>
+            <strong>Team assignments</strong>
             <div className="small-muted" style={{ marginTop: 8 }}>
-              Model status: <span style={{ color: "#7dd3fc" }}>no data</span>
-            </div>
-            <div style={{ marginTop: 12 }} className="small-muted">
-              Top predictions and confidence will appear here once the ML API is
-              available.
+              Open assignments are visible to supervisors
             </div>
           </div>
 
@@ -174,9 +158,6 @@ export default function Dashboard() {
             <strong>Assignments (recent)</strong>
             <div className="small-muted" style={{ marginTop: 8 }}>
               Open assignments are shown in the table
-            </div>
-            <div style={{ marginTop: 12 }} className="small-muted">
-              Use the Report details modal to assign or change status.
             </div>
           </div>
         </div>
