@@ -60,14 +60,7 @@ def create_report(
     # Verify device exists, auto-register if not found
     device = db.query(Device).filter(Device.device_id == report_data.device_id).first()
     if not device:
-        # Try to get device_hash from request (if present)
-        device_hash = None
-        # If device_id is not found, try to get device_hash from evidence_files or description
-        # (Assume mobile app can send device_hash in description or evidence file metadata if needed)
-        # If you want to pass device_hash explicitly, add it to ReportCreate and mobile app
-        # For now, fallback: device_hash = str(report_data.device_id)
         device_hash = str(report_data.device_id)
-        from uuid import uuid4
         device = Device(
             device_id=report_data.device_id,
             device_hash=device_hash,

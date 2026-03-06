@@ -106,5 +106,5 @@ async def global_exception_handler(request: Request, exc: Exception):
     logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, "".join(tb))
     return JSONResponse(
         status_code=500,
-        content={"detail": f"{type(exc).__name__}: {str(exc)}"},
+        content={"detail": "Internal server error"},
     )
