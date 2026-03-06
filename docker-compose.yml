@@ -43,7 +43,7 @@ services:
     depends_on:
       - backend
     environment:
-      NGROK_AUTHTOKEN: 3A3xZOCIwPEzZrUlahJ8f74I36B_51GsNAHeh3GSULYjdhHbR
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN}
     command: ["http", "backend:8000", "--log=stdout"]
     ports:
       - "4040:4040" # ngrok web inspect UI
