@@ -285,8 +285,57 @@ export default function ReportDetail() {
             )}
             {evidence.length > 0 && (
               <section className="evidence-section">
-                <h3>Evidence</h3>
-                <EvidenceCarousel items={evidence} />
+                <h3>Evidence ({evidence.length})</h3>
+                <EvidenceCarousel items={evidence} showMeta />
+                <div className="evidence-detail-table">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>#</th>
+                        <th>Type</th>
+                        <th>Captured</th>
+                        <th>Live</th>
+                        <th>GPS</th>
+                        <th>Integrity</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {evidence.map((ev, i) => (
+                        <tr key={ev.evidence_id}>
+                          <td>{i + 1}</td>
+                          <td>{ev.file_type}</td>
+                          <td>
+                            {ev.captured_at
+                              ? new Date(ev.captured_at).toLocaleString()
+                              : "—"}
+                          </td>
+                          <td>
+                            {ev.is_live_capture ? (
+                              <span className="evidence-chip live">Live</span>
+                            ) : (
+                              <span className="evidence-chip">Gallery</span>
+                            )}
+                          </td>
+                          <td>
+                            {ev.media_latitude != null &&
+                            ev.media_longitude != null
+                              ? `${Number(ev.media_latitude).toFixed(4)}, ${Number(ev.media_longitude).toFixed(4)}`
+                              : "—"}
+                          </td>
+                          <td>
+                            {ev.perceptual_hash ? (
+                              <span className="evidence-chip verified">
+                                Verified
+                              </span>
+                            ) : (
+                              <span className="evidence-chip">—</span>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </section>
             )}
           </>

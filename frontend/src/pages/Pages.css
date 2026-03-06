@@ -897,6 +897,100 @@
     order: -1;
   }
 }
+
+/* ── Evidence verification metadata ── */
+.evidence-meta-strip {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-top: none;
+  border-radius: 0 0 var(--r) var(--r);
+  padding: 10px 14px;
+  font-size: 12px;
+}
+.evidence-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.evidence-meta-label {
+  font-weight: 600;
+  color: var(--text-dim);
+}
+.evidence-meta-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 99px;
+  white-space: nowrap;
+}
+.evidence-meta-chip.live {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+}
+.evidence-meta-chip.hash {
+  background: rgba(79, 142, 247, 0.15);
+  color: var(--accent);
+}
+.evidence-meta-detail {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.evidence-meta-detail svg {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+/* Evidence detail table (report detail page) */
+.evidence-detail-table {
+  margin-top: 12px;
+  overflow-x: auto;
+}
+.evidence-detail-table table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.evidence-detail-table th {
+  text-align: left;
+  font-weight: 600;
+  color: var(--muted);
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.evidence-detail-table td {
+  padding: 8px;
+  border-bottom: 1px solid var(--border2);
+  color: var(--text-dim);
+}
+.evidence-detail-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* Evidence chips (inline badges) */
+.evidence-chip {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--surface2);
+  color: var(--muted);
+}
+.evidence-chip.live {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+}
+.evidence-chip.verified {
+  background: rgba(79, 142, 247, 0.15);
+  color: var(--accent);
+}
 @media (max-width: 600px) {
   .users-header {
     flex-direction: column;

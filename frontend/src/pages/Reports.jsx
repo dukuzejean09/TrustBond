@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect, useCallback } from "react";
 import Layout from "../components/Layout.jsx";
+import EvidenceCarousel from "../components/EvidenceCarousel.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { apiService } from "../services/apiService.js";
 import "./Pages.css";
@@ -782,6 +783,18 @@ export default function Reports() {
                                 </li>
                               ))}
                             </ul>
+                          </section>
+                        )}
+
+                        {(selectedReport.evidence_files || []).length > 0 && (
+                          <section className="side-panel-section">
+                            <h4>
+                              Evidence ({selectedReport.evidence_files.length})
+                            </h4>
+                            <EvidenceCarousel
+                              items={selectedReport.evidence_files}
+                              showMeta
+                            />
                           </section>
                         )}
                       </>
