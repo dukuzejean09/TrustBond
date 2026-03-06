@@ -1,10 +1,12 @@
 from contextlib import asynccontextmanager
 import logging
+import traceback
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
 
@@ -96,3 +98,13 @@ app.include_router(incident_groups.router, prefix="/api/v1")
 @app.get("/health")
 def health():
     return {"status": "ok", "app": settings.app_name}
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    tb = traceback.format_exception(type(exc), exc, exc.__traceback__)
+    logger.error("Unhandled exception on %s %s:\n%s", request.method, request.url.path, "".join(tb))
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {str(exc)}"},
+    )
