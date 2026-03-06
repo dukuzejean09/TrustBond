@@ -28,6 +28,7 @@ from app.models import (
 from app.api.v1 import auth, devices, incident_types, police_users, reports, stats, hotspots, notifications, audit, locations, incident_groups
 from app.services.incident_type_importer import import_incident_types
 from app.services.admin_seeder import create_default_admin
+from scripts.populate_locations import populate_locations as seed_locations
 
 
 @asynccontextmanager
@@ -46,6 +47,16 @@ async def lifespan(app: FastAPI):
     with Session(engine) as db:
         admin_result = create_default_admin(db)
         logger.info("[startup] Admin user seeding: %s", admin_result['message'])
+
+    # 4) Seed locations (sectors, cells, villages) if not already populated
+    with Session(engine) as db:
+        count = db.execute(text("SELECT COUNT(*) FROM locations")).scalar()
+        if count == 0:
+            logger.info("[startup] Seeding locations from GeoJSON...")
+            seed_locations()
+            logger.info("[startup] Locations seeded successfully.")
+        else:
+            logger.info("[startup] Locations already populated (%d rows).", count)
 
     yield
     # shutdown if needed
