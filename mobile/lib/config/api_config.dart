@@ -1,15 +1,9 @@
 /// API base URL. Change via --dart-define when running, or edit the default below.
 ///
-/// **Real phone (ngrok):**
-/// 1. Start backend: cd backend && uvicorn app.main:app --reload --host 0.0.0.0
-/// 2. Start ngrok: ngrok http 8000
-/// 3. Copy the https URL (e.g. https://abc123.ngrok-free.app)
-/// 4. Run app: flutter run --dart-define=API_BASE_URL=https://YOUR_NGROK_URL/api/v1
-///
-/// **Change it yourself:** Edit [baseUrl] below, or use --dart-define=API_BASE_URL=... when running.
+/// **Production:** Uses Render-hosted backend (auto-deployed from GitHub).
+/// **Override:** flutter run --dart-define=API_BASE_URL=https://YOUR_URL/api/v1
 class ApiConfig {
-  /// Default: localhost (emulator/desktop). For real device use ngrok URL via --dart-define.
-  /// Must include scheme (http:// or https://) so requests succeed.
+  /// Backend URL — deployed on Render.com (auto-deploys on git push).
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
     defaultValue: 'https://trustbond-backend.onrender.com/api/v1',

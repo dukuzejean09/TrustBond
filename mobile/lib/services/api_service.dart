@@ -11,14 +11,11 @@ class ApiService {
   final http.Client _client = http.Client();
   static const Duration _timeout = Duration(seconds: 30);
 
-  /// Common headers — includes ngrok tunnel bypass.
+  /// Common headers for API requests.
   static const Map<String, String> _jsonHeaders = {
     'Content-Type': 'application/json',
-    'ngrok-skip-browser-warning': 'true',
   };
-  static const Map<String, String> _getHeaders = {
-    'ngrok-skip-browser-warning': 'true',
-  };
+  static const Map<String, String> _getHeaders = {};
 
   Future<Map<String, dynamic>> registerDevice(String deviceHash) async {
     final response = await _client.post(
@@ -138,6 +135,16 @@ class ApiService {
                 : message;
       }
     } catch (_) {}
-    throw Exception(message);
+    throw EvidenceUploadException(message, response.statusCode);
   }
+}
+
+/// Custom exception for evidence upload failures with status code info.
+class EvidenceUploadException implements Exception {
+  final String message;
+  final int statusCode;
+  EvidenceUploadException(this.message, this.statusCode);
+
+  @override
+  String toString() => message;
 }

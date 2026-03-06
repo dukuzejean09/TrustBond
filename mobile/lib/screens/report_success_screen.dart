@@ -4,11 +4,13 @@ import '../config/theme.dart';
 class ReportSuccessScreen extends StatefulWidget {
   final String reportId;
   final String incidentTypeName;
+  final List<String> evidenceWarnings;
 
   const ReportSuccessScreen({
     super.key,
     required this.reportId,
     required this.incidentTypeName,
+    this.evidenceWarnings = const [],
   });
 
   @override
@@ -77,6 +79,10 @@ class _ReportSuccessScreenState extends State<ReportSuccessScreen>
               const SizedBox(height: 24),
               _buildIdCard(),
               const SizedBox(height: 24),
+              if (widget.evidenceWarnings.isNotEmpty) ...[
+                _buildEvidenceWarnings(),
+                const SizedBox(height: 16),
+              ],
               _buildTimeline(),
               const Spacer(flex: 3),
               _buildButtons(),
@@ -110,6 +116,39 @@ class _ReportSuccessScreenState extends State<ReportSuccessScreen>
                 fontFamily: 'monospace',
                 color: AppColors.accent),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEvidenceWarnings() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.orange.withValues(alpha: 0.08),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, size: 16, color: Colors.orange),
+              SizedBox(width: 6),
+              Text('Evidence Notices',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.orange)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ...widget.evidenceWarnings.map((w) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text('• $w',
+                    style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+              )),
         ],
       ),
     );

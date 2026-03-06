@@ -140,10 +140,12 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
       final result = await _apiService.submitReport(reportData);
       final reportId = result['report_id']?.toString() ?? '';
 
-      // Upload evidence files
-      for (final f in _files) {
+      // Upload evidence files with verification feedback
+      final List<String> uploadErrors = [];
+      for (int i = 0; i < _files.length; i++) {
+        final f = _files[i];
         try {
-          await _apiService.uploadEvidence(
+          final evidenceResult = await _apiService.uploadEvidence(
             reportId,
             deviceId,
             f.path,
@@ -152,8 +154,13 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
             capturedAt: DateTime.now(),
             isLiveCapture: f.isLive,
           );
-        } catch (_) {
-          // Continue uploading remaining files even if one fails
+          // Log verification status from backend
+          final status = evidenceResult['verification_status'] ?? 'unknown';
+          if (status == 'flagged') {
+            uploadErrors.add('File ${i + 1}: flagged for review');
+          }
+        } catch (e) {
+          uploadErrors.add('File ${i + 1}: ${e.toString()}');
         }
       }
 
@@ -163,6 +170,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
               builder: (_) => ReportSuccessScreen(
                     reportId: reportId,
                     incidentTypeName: widget.incidentTypeName,
+                    evidenceWarnings: uploadErrors,
                   )),
           (route) => route.isFirst,
         );
