@@ -1,0 +1,3263 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrustBond</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg: #0a0f1e;
+        --surface: #111827;
+        --surface2: #1a2235;
+        --surface3: #222d42;
+        --accent: #00e5b4;
+        --accent2: #0099ff;
+        --warn: #ff6b35;
+        --danger: #ff3b5c;
+        --ok: #00e5b4;
+        --text: #eaf0ff;
+        --muted: #7a8aaa;
+        --border: #1e2d4a;
+        --card: #141e30;
+      }
+      body {
+        background: radial-gradient(ellipse at 30% 20%, #0d1a2e, #060b14 60%);
+        font-family: "Sora", sans-serif;
+        color: var(--text);
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 32px 0;
+      }
+      /* PHONE */
+      .phone {
+        width: 375px;
+        height: 812px;
+        background: #000;
+        border-radius: 56px;
+        border: 2px solid #243047;
+        box-shadow:
+          0 0 0 6px #0a0f1e,
+          0 0 0 7px #1a2540,
+          0 40px 120px rgba(0, 0, 0, 0.9),
+          0 0 60px rgba(0, 229, 180, 0.06);
+        position: relative;
+        overflow: hidden;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .phone::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 126px;
+        height: 34px;
+        background: #000;
+        border-radius: 0 0 20px 20px;
+        z-index: 200;
+      }
+      /* SCREEN */
+      .screen {
+        display: none;
+        position: absolute;
+        inset: 0;
+        background: var(--bg);
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .screen.active {
+        display: flex;
+      }
+      /* STATUS BAR */
+      .sbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 42px 24px 6px;
+        font-size: 12px;
+        flex-shrink: 0;
+        z-index: 10;
+      }
+      .sbar .t {
+        font-weight: 600;
+        color: var(--text);
+      }
+      .sbar .ic {
+        display: flex;
+        gap: 5px;
+        font-size: 11px;
+        color: var(--muted);
+      }
+      /* HEADER */
+      .hdr {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 12px 20px 16px;
+        gap: 14px;
+        flex-shrink: 0;
+      }
+      .back {
+        width: 34px;
+        height: 34px;
+        border-radius: 11px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        font-size: 16px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        transition: background 0.15s;
+      }
+      .back:active {
+        background: var(--surface3);
+      }
+      .htitle {
+        font-size: 19px;
+        font-weight: 700;
+        text-align: center;
+      }
+      .htitle em {
+        color: var(--accent);
+        font-style: normal;
+      }
+      .hright {
+        margin-left: auto;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+      }
+      /* BODY */
+      .body {
+        flex: 1;
+        overflow-y: auto;
+        padding: 0 24px 24px;
+        scrollbar-width: none;
+      }
+      .body::-webkit-scrollbar {
+        display: none;
+      }
+      /* BOTTOM NAV */
+      .bnav {
+        display: flex;
+        justify-content: space-around;
+        padding: 8px 0 26px;
+        background: rgba(8, 12, 24, 0.97);
+        border-top: 1px solid var(--border);
+        flex-shrink: 0;
+        backdrop-filter: blur(12px);
+      }
+      .bni {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        cursor: pointer;
+        padding: 4px 10px;
+        border-radius: 12px;
+        transition: all 0.2s;
+      }
+      .bni .ic {
+        font-size: 20px;
+      }
+      .bni .lb {
+        font-size: 9px;
+        color: var(--muted);
+        letter-spacing: 0.4px;
+      }
+      .bni.on .lb {
+        color: var(--accent);
+      }
+      .bni.on {
+        background: rgba(0, 229, 180, 0.08);
+      }
+      /* FAB CENTER */
+      .fabc {
+        background: var(--accent);
+        border-radius: 16px;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #000;
+        font-size: 22px;
+        margin-top: -18px;
+        box-shadow: 0 4px 20px rgba(0, 229, 180, 0.45);
+        cursor: pointer;
+        border: none;
+        transition: transform 0.15s;
+      }
+      .fabc:active {
+        transform: scale(0.93);
+      }
+      /* FLOATING FAB */
+      .fab {
+        position: absolute;
+        bottom: 84px;
+        right: 18px;
+        width: 50px;
+        height: 50px;
+        border-radius: 16px;
+        background: var(--accent);
+        border: none;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        color: #000;
+        box-shadow: 0 4px 20px rgba(0, 229, 180, 0.4);
+        z-index: 50;
+        transition: transform 0.15s;
+      }
+      .fab:active {
+        transform: scale(0.93);
+      }
+      /* CARD */
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 18px;
+        margin-bottom: 18px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .ctitle {
+        font-size: 11px;
+        color: var(--muted);
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+        font-weight: 500;
+      }
+      /* BADGE */
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        padding: 3px 8px;
+        border-radius: 20px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      .b-ok {
+        background: rgba(0, 229, 180, 0.13);
+        color: var(--ok);
+      }
+      .b-warn {
+        background: rgba(255, 107, 53, 0.13);
+        color: var(--warn);
+      }
+      .b-err {
+        background: rgba(255, 59, 92, 0.13);
+        color: var(--danger);
+      }
+      .b-info {
+        background: rgba(0, 153, 255, 0.13);
+        color: var(--accent2);
+      }
+      .b-mute {
+        background: var(--surface2);
+        color: var(--muted);
+      }
+      /* RING */
+      .ring {
+        position: relative;
+        flex-shrink: 0;
+      }
+      .ring .rscore {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        font-weight: 700;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--accent);
+      }
+      /* REPORT ITEM */
+      .ri {
+        display: flex;
+        gap: 16px;
+        padding: 16px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        margin-bottom: 14px;
+        cursor: pointer;
+        transition: border-color 0.2s;
+      }
+      .ri:active {
+        border-color: var(--accent);
+      }
+      .ri-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 18px;
+        flex-shrink: 0;
+      }
+      .ri-meta {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .ri-type {
+        font-size: 15px;
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+      .ri-desc {
+        font-size: 12px;
+        color: var(--muted);
+        margin-bottom: 7px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ri-foot {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        width: 100%;
+      }
+      .ri-time {
+        font-size: 11px;
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+      }
+      /* MAP */
+      .mmap {
+        width: 100%;
+        border-radius: 14px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        position: relative;
+        overflow: hidden;
+      }
+      .mgrid {
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(0, 229, 180, 0.05) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(0, 229, 180, 0.05) 1px, transparent 1px);
+        background-size: 28px 28px;
+      }
+      .mhs {
+        position: absolute;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        animation: hs 2s infinite;
+      }
+      @keyframes hs {
+        0%,
+        100% {
+          box-shadow: 0 0 0 0 rgba(255, 59, 92, 0.3);
+        }
+        50% {
+          box-shadow: 0 0 0 10px rgba(255, 59, 92, 0);
+        }
+      }
+      .mhs-h {
+        background: rgba(255, 59, 92, 0.15);
+        border: 2px solid var(--danger);
+        width: 42px;
+        height: 42px;
+        top: 28%;
+        left: 36%;
+      }
+      .mhs-m {
+        background: rgba(255, 107, 53, 0.15);
+        border: 2px solid var(--warn);
+        width: 34px;
+        height: 34px;
+        top: 52%;
+        left: 62%;
+        animation-delay: 0.5s;
+      }
+      .mhs-l {
+        background: rgba(0, 229, 180, 0.1);
+        border: 2px solid var(--accent);
+        width: 28px;
+        height: 28px;
+        top: 20%;
+        left: 68%;
+        animation-delay: 1s;
+      }
+      .mlabel {
+        position: absolute;
+        bottom: 8px;
+        left: 10px;
+        font-size: 9px;
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+        background: rgba(10, 15, 30, 0.85);
+        padding: 3px 7px;
+        border-radius: 6px;
+      }
+      /* INPUTS */
+      .igrp {
+        margin-bottom: 13px;
+      }
+      .ilbl {
+        font-size: 11px;
+        color: var(--muted);
+        margin-bottom: 5px;
+        letter-spacing: 0.4px;
+        text-transform: uppercase;
+      }
+      .ifield {
+        width: 100%;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 11px 13px;
+        color: var(--text);
+        font-family: "Sora", sans-serif;
+        font-size: 13px;
+        outline: none;
+        transition: border-color 0.2s;
+      }
+      .ifield:focus {
+        border-color: var(--accent);
+      }
+      .ifield::placeholder {
+        color: var(--muted);
+      }
+      textarea.ifield {
+        resize: none;
+      }
+      /* BUTTONS */
+      .btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        width: 100%;
+        padding: 16px;
+        border-radius: 18px;
+        border: none;
+        font-family: "Sora", sans-serif;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        letter-spacing: 0.4px;
+        transition: all 0.15s;
+      }
+      .btn:active {
+        transform: scale(0.98);
+        opacity: 0.88;
+      }
+      .btn-p {
+        background: var(--accent);
+        color: #000;
+        box-shadow: 0 2px 12px rgba(0, 229, 180, 0.12);
+      }
+      .btn-s {
+        background: var(--surface2);
+        color: var(--text);
+        border: 1px solid var(--border);
+        box-shadow: 0 2px 8px rgba(30, 45, 74, 0.08);
+      }
+      .btn-d {
+        background: rgba(255, 59, 92, 0.12);
+        color: var(--danger);
+        border: 1px solid rgba(255, 59, 92, 0.25);
+        box-shadow: 0 2px 8px rgba(255, 59, 92, 0.08);
+      }
+      /* STEPS */
+      .steps {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        margin-bottom: 18px;
+      }
+      .sd {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--surface3);
+        transition: all 0.3s;
+      }
+      .sd.on {
+        background: var(--accent);
+        width: 22px;
+        border-radius: 4px;
+      }
+      .sd.dn {
+        background: rgba(0, 229, 180, 0.45);
+      }
+      /* TAGS */
+      .tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      .tag {
+        padding: 6px 11px;
+        border-radius: 20px;
+        font-size: 11px;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        transition: all 0.2s;
+        user-select: none;
+      }
+      .tag.on {
+        background: rgba(0, 229, 180, 0.1);
+        border-color: var(--accent);
+        color: var(--accent);
+      }
+      /* UPLOAD */
+      .upbox {
+        border: 2px dashed var(--border);
+        border-radius: 14px;
+        padding: 22px;
+        text-align: center;
+        background: var(--surface2);
+        cursor: pointer;
+        transition: border-color 0.2s;
+        margin-bottom: 12px;
+      }
+      .upbox:hover {
+        border-color: var(--accent);
+      }
+      /* VERIFY */
+      .vs {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .vs:last-child {
+        border-bottom: none;
+      }
+      .vs-ic {
+        font-size: 15px;
+        width: 24px;
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .vs-nm {
+        font-size: 12px;
+        flex: 1;
+      }
+      .vs-ok {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--ok);
+      }
+      .vs-wn {
+        font-size: 10px;
+        font-weight: 600;
+        color: var(--warn);
+      }
+      /* SHAP */
+      .shap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 7px;
+      }
+      .shap-l {
+        font-size: 10px;
+        width: 108px;
+        flex-shrink: 0;
+        color: var(--muted);
+      }
+      .shap-bw {
+        flex: 1;
+        height: 7px;
+        background: var(--surface3);
+        border-radius: 4px;
+        overflow: hidden;
+      }
+      .shap-bf {
+        height: 100%;
+        border-radius: 4px;
+      }
+      .shap-v {
+        font-size: 10px;
+        font-family: "JetBrains Mono", monospace;
+        color: var(--accent);
+        width: 34px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+      /* TOGGLE */
+      .trow {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 11px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .trow:last-child {
+        border-bottom: none;
+      }
+      .tlbl {
+        font-size: 13px;
+      }
+      .tsub {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .tgl {
+        width: 42px;
+        height: 24px;
+        border-radius: 12px;
+        background: var(--surface3);
+        position: relative;
+        cursor: pointer;
+        border: none;
+        flex-shrink: 0;
+        transition: background 0.2s;
+      }
+      .tgl.on {
+        background: var(--accent);
+      }
+      .tgl::after {
+        content: "";
+        position: absolute;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: white;
+        top: 3px;
+        left: 3px;
+        transition: transform 0.2s;
+      }
+      .tgl.on::after {
+        transform: translateX(18px);
+      }
+      /* MISC */
+      .divl {
+        height: 1px;
+        background: var(--border);
+        margin: 13px 0;
+      }
+      .sec {
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        margin: 14px 0 9px;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .sec::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--border);
+      }
+      .sgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+        margin-bottom: 11px;
+      }
+      .sbox {
+        background: var(--surface2);
+        border-radius: 12px;
+        padding: 13px;
+        border: 1px solid var(--border);
+        text-align: center;
+      }
+      .sv {
+        font-size: 22px;
+        font-weight: 700;
+        font-family: "JetBrains Mono", monospace;
+      }
+      .sl {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 3px;
+        text-transform: uppercase;
+        letter-spacing: 0.4px;
+      }
+      .pbar {
+        height: 6px;
+        background: var(--surface3);
+        border-radius: 3px;
+        overflow: hidden;
+        margin-top: 5px;
+      }
+      .pfill {
+        height: 100%;
+        border-radius: 3px;
+      }
+      .mgd {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 6px;
+        margin-top: 9px;
+      }
+      .mth {
+        aspect-ratio: 1;
+        border-radius: 10px;
+        background: var(--surface3);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 20px;
+        border: 1px solid var(--border);
+        position: relative;
+        overflow: hidden;
+      }
+      .mth .mb {
+        position: absolute;
+        bottom: 3px;
+        right: 3px;
+        font-size: 8px;
+        padding: 2px 5px;
+        border-radius: 4px;
+        background: rgba(0, 0, 0, 0.75);
+        color: var(--ok);
+        font-family: "JetBrains Mono", monospace;
+      }
+      .mth.add {
+        border-style: dashed;
+        cursor: pointer;
+      }
+      .cgrid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 9px;
+      }
+      .ci {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 15px 10px;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .ci.on,
+      .ci:active {
+        background: rgba(0, 229, 180, 0.08);
+        border-color: var(--accent);
+      }
+      .ci-em {
+        font-size: 22px;
+        margin-bottom: 5px;
+      }
+      .ci-nm {
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .ci-ct {
+        font-size: 10px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .nitem {
+        display: flex;
+        gap: 10px;
+        padding: 11px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        margin-bottom: 8px;
+        cursor: pointer;
+      }
+      .ndot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--accent);
+        margin-top: 4px;
+        flex-shrink: 0;
+      }
+      .ndot.r {
+        background: transparent;
+        border: 1px solid var(--border);
+      }
+      .tl {
+        display: flex;
+        gap: 10px;
+        padding-bottom: 14px;
+        position: relative;
+      }
+      .tl::before {
+        content: "";
+        position: absolute;
+        left: 13px;
+        top: 26px;
+        width: 2px;
+        height: calc(100% - 6px);
+        background: var(--border);
+      }
+      .tl:last-child::before {
+        display: none;
+      }
+      .tld {
+        width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 13px;
+        flex-shrink: 0;
+        z-index: 1;
+      }
+      .tlc {
+        flex: 1;
+      }
+      .tlt {
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .tlm {
+        font-size: 10px;
+        color: var(--muted);
+        font-family: "JetBrains Mono", monospace;
+        margin-top: 2px;
+      }
+      .tld2 {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 3px;
+        line-height: 1.5;
+      }
+      .splash-bg {
+        position: absolute;
+        inset: 0;
+        z-index: 0;
+        background:
+          radial-gradient(
+            ellipse at 50% 30%,
+            rgba(0, 229, 180, 0.1),
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 80% 80%,
+            rgba(0, 153, 255, 0.07),
+            transparent 50%
+          );
+      }
+      .gline {
+        height: 2px;
+        background: linear-gradient(
+          90deg,
+          transparent,
+          var(--accent),
+          transparent
+        );
+        border-radius: 1px;
+        margin: 16px 0;
+      }
+      .nball {
+        position: relative;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+      }
+      .nball::after {
+        content: "";
+        position: absolute;
+        top: -1px;
+        right: -2px;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--danger);
+        border: 1.5px solid var(--bg);
+      }
+      .ftact {
+        padding: 0 24px 36px;
+        flex-shrink: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        position: relative;
+        z-index: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="phone">
+      <!-- SPLASH -->
+      <div class="screen active" id="s-splash">
+        <div class="splash-bg"></div>
+        <div
+          style="
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            padding: 32px;
+            position: relative;
+            z-index: 1;
+          "
+        >
+          <div style="font-size: 54px; margin-bottom: 12px">🛡️</div>
+          <div style="font-size: 30px; font-weight: 700; letter-spacing: 3px">
+            TRUST<span style="color: var(--accent)">BOND</span>
+          </div>
+          <div
+            style="
+              font-size: 10px;
+              color: var(--muted);
+              letter-spacing: 2.5px;
+              text-transform: uppercase;
+              margin-top: 6px;
+            "
+          >
+            Community Safety · Rwanda
+          </div>
+          <div class="gline" style="width: 110px; margin: 22px auto"></div>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--muted);
+              line-height: 1.8;
+              max-width: 250px;
+            "
+          >
+            Anonymous reporting. Intelligent verification. Safer Musanze.
+          </p>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('onboard')">
+            Get Started →
+          </button>
+          <p style="text-align: center; font-size: 10px; color: var(--muted)">
+            Your identity is always protected
+          </p>
+        </div>
+      </div>
+
+      <!-- ONBOARDING -->
+      <div class="screen" id="s-onboard">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div
+          style="
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 12px 20px;
+            overflow-y: auto;
+            scrollbar-width: none;
+          "
+        >
+          <div class="steps">
+            <div class="sd dn"></div>
+            <div class="sd on"></div>
+            <div class="sd"></div>
+          </div>
+          <div style="text-align: center; font-size: 32px; margin-bottom: 12px">
+            🔒
+          </div>
+          <h2
+            style="
+              font-size: 20px;
+              font-weight: 700;
+              text-align: center;
+              margin-bottom: 9px;
+            "
+          >
+            Your Privacy is <span style="color: var(--accent)">Sacred</span>
+          </h2>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--muted);
+              text-align: center;
+              line-height: 1.8;
+              margin-bottom: 20px;
+            "
+          >
+            TrustBond never collects your name, phone, or personal details. You
+            are identified only by an anonymous device hash.
+          </p>
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                align-items: start;
+                gap: 11px;
+                margin-bottom: 13px;
+              "
+            >
+              <div style="font-size: 18px">🆔</div>
+              <div>
+                <div
+                  style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+                >
+                  Pseudonymous Identity
+                </div>
+                <div
+                  style="font-size: 11px; color: var(--muted); line-height: 1.6"
+                >
+                  A unique device_hash is generated locally — never linked to
+                  you personally.
+                </div>
+              </div>
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: start;
+                gap: 11px;
+                margin-bottom: 13px;
+              "
+            >
+              <div style="font-size: 18px">🌐</div>
+              <div>
+                <div
+                  style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+                >
+                  No Account Required
+                </div>
+                <div
+                  style="font-size: 11px; color: var(--muted); line-height: 1.6"
+                >
+                  Report incidents without signing up. No email, no password.
+                </div>
+              </div>
+            </div>
+            <div style="display: flex; align-items: start; gap: 11px">
+              <div style="font-size: 18px">🤖</div>
+              <div>
+                <div
+                  style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+                >
+                  AI-Verified Reports
+                </div>
+                <div
+                  style="font-size: 11px; color: var(--muted); line-height: 1.6"
+                >
+                  Submissions are intelligently validated before reaching law
+                  enforcement.
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('home')">Continue →</button>
+          <button class="btn btn-s" onclick="go('splash')">← Back</button>
+        </div>
+      </div>
+
+      <!-- HOME -->
+      <div class="screen" id="s-home">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <div>
+            <div style="font-size: 11px; color: var(--muted)">
+              Good morning,
+            </div>
+            <div class="htitle">Musanze <em>District</em></div>
+          </div>
+          <div class="hright">
+            <div class="nball" onclick="go('notifications')">
+              <span style="font-size: 22px">🔔</span>
+            </div>
+          </div>
+        </div>
+        <div class="body">
+          <div
+            style="
+              background: linear-gradient(
+                135deg,
+                rgba(0, 229, 180, 0.1),
+                rgba(0, 153, 255, 0.05)
+              );
+              border: 1px solid rgba(0, 229, 180, 0.28);
+              border-radius: 16px;
+              padding: 15px;
+              margin-bottom: 12px;
+              display: flex;
+              align-items: center;
+              gap: 14px;
+            "
+          >
+            <div class="ring" style="width: 62px; height: 62px">
+              <svg width="62" height="62" viewBox="0 0 62 62">
+                <circle
+                  cx="31"
+                  cy="31"
+                  r="25"
+                  fill="none"
+                  stroke="rgba(0,229,180,.1)"
+                  stroke-width="5"
+                />
+                <circle
+                  cx="31"
+                  cy="31"
+                  r="25"
+                  fill="none"
+                  stroke="#00e5b4"
+                  stroke-width="5"
+                  stroke-dasharray="157"
+                  stroke-dashoffset="44"
+                  stroke-linecap="round"
+                  transform="rotate(-90 31 31)"
+                />
+              </svg>
+              <div class="rscore">72</div>
+            </div>
+            <div>
+              <div
+                style="
+                  font-size: 11px;
+                  color: var(--muted);
+                  text-transform: uppercase;
+                  letter-spacing: 0.8px;
+                "
+              >
+                Device Trust Score
+              </div>
+              <div style="font-size: 14px; font-weight: 600; margin-top: 2px">
+                Good Standing <span style="color: var(--accent)">↑</span>
+              </div>
+              <div
+                style="font-size: 10px; color: var(--muted); margin-top: 2px"
+              >
+                8 reports · 7 verified
+              </div>
+            </div>
+          </div>
+          <div class="sgrid">
+            <div class="sbox">
+              <div class="sv" style="color: var(--ok)">8</div>
+              <div class="sl">My Reports</div>
+            </div>
+            <div class="sbox">
+              <div class="sv" style="color: var(--warn)">3</div>
+              <div class="sl">Active Hotspots</div>
+            </div>
+          </div>
+          <div class="sec">Safety Overview</div>
+          <div
+            class="mmap"
+            style="height: 180px; margin-bottom: 11px; cursor: pointer"
+            onclick="go('safety-map')"
+          >
+            <div class="mgrid"></div>
+            <div class="mhs mhs-h">🔴</div>
+            <div class="mhs mhs-m">🟠</div>
+            <div class="mhs mhs-l">🟢</div>
+            <div class="mlabel">Musanze District · Live View</div>
+            <div
+              style="
+                position: absolute;
+                top: 9px;
+                right: 9px;
+                background: rgba(10, 15, 30, 0.8);
+                border-radius: 7px;
+                padding: 5px 9px;
+                font-size: 9px;
+                color: var(--accent);
+              "
+            >
+              Tap to expand →
+            </div>
+          </div>
+          <div class="sec">Recent Near You</div>
+          <div class="ri" onclick="go('report-detail')">
+            <div class="ri-icon" style="background: rgba(255, 59, 92, 0.1)">
+              🚨
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Suspicious Activity</div>
+              <div class="ri-desc">Near Kinigi Sector junction</div>
+              <div class="ri-foot">
+                <span class="ri-time">2 hrs ago</span
+                ><span class="badge b-warn">Investigating</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri">
+            <div class="ri-icon" style="background: rgba(255, 107, 53, 0.1)">
+              🚲
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Theft</div>
+              <div class="ri-desc">Bicycle stolen at Muhoza market</div>
+              <div class="ri-foot">
+                <span class="ri-time">5 hrs ago</span
+                ><span class="badge b-ok">Confirmed</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri">
+            <div class="ri-icon" style="background: rgba(0, 153, 255, 0.1)">
+              🏚️
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Vandalism</div>
+              <div class="ri-desc">Property damage, Ruhengeri road</div>
+              <div class="ri-foot">
+                <span class="ri-time">Yesterday</span
+                ><span class="badge b-mute">Pending</span>
+              </div>
+            </div>
+          </div>
+          <div style="height: 10px"></div>
+        </div>
+        <button class="fab" onclick="go('report-step1')">＋</button>
+        <nav class="bnav">
+          <div class="bni on" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni" onclick="go('profile')">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- REPORT STEP 1 -->
+      <div class="screen" id="s-report-step1">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('home')">←</button>
+          <div class="htitle">New <em>Report</em></div>
+          <div class="hright"><span class="badge b-ok">1 / 3</span></div>
+        </div>
+        <div class="body">
+          <div class="steps">
+            <div class="sd on"></div>
+            <div class="sd"></div>
+            <div class="sd"></div>
+          </div>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--muted);
+              text-align: center;
+              margin-bottom: 18px;
+              line-height: 1.6;
+            "
+          >
+            Select the type of incident you are reporting
+          </p>
+          <div class="cgrid">
+            <div class="ci on" onclick="selCat(this)">
+              <div class="ci-em">🚨</div>
+              <div class="ci-nm">Suspicious Activity</div>
+              <div class="ci-ct">Most reported</div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">💼</div>
+              <div class="ci-nm">Theft</div>
+              <div class="ci-ct">High priority</div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">🏚️</div>
+              <div class="ci-nm">Vandalism</div>
+              <div class="ci-ct"></div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">🤬</div>
+              <div class="ci-nm">Assault</div>
+              <div class="ci-ct">Urgent</div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">🚗</div>
+              <div class="ci-nm">Traffic Incident</div>
+              <div class="ci-ct"></div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">💊</div>
+              <div class="ci-nm">Drug Activity</div>
+              <div class="ci-ct"></div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">🔥</div>
+              <div class="ci-nm">Fire / Hazard</div>
+              <div class="ci-ct"></div>
+            </div>
+            <div class="ci" onclick="selCat(this)">
+              <div class="ci-em">📋</div>
+              <div class="ci-nm">Other</div>
+              <div class="ci-ct"></div>
+            </div>
+          </div>
+          <div style="height: 20px"></div>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('report-step2')">
+            Continue →
+          </button>
+        </div>
+      </div>
+
+      <!-- REPORT STEP 2 -->
+      <div class="screen" id="s-report-step2">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('report-step1')">←</button>
+          <div class="htitle">Incident <em>Details</em></div>
+          <div class="hright"><span class="badge b-ok">2 / 3</span></div>
+        </div>
+        <div class="body">
+          <div class="steps">
+            <div class="sd dn"></div>
+            <div class="sd on"></div>
+            <div class="sd"></div>
+          </div>
+          <div class="igrp">
+            <div class="ilbl">Description</div>
+            <textarea
+              class="ifield"
+              rows="4"
+              placeholder="Describe what happened in detail…"
+            ></textarea>
+          </div>
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 8px;
+              "
+            >
+              <div class="ctitle" style="margin-bottom: 0">Location (GPS)</div>
+              <span class="badge b-ok">✓ Captured</span>
+            </div>
+            <div
+              style="
+                font-family: &quot;JetBrains Mono&quot;, monospace;
+                font-size: 11px;
+                color: var(--muted);
+              "
+            >
+              📍 -1.4976° S, 29.6346° E
+            </div>
+            <div style="font-size: 10px; color: var(--muted); margin-top: 3px">
+              Accuracy: ±8m · Muhoza Sector
+            </div>
+            <div
+              class="mmap"
+              style="height: 90px; margin-top: 9px; border-radius: 10px"
+            >
+              <div class="mgrid"></div>
+              <div
+                style="
+                  position: absolute;
+                  top: 50%;
+                  left: 50%;
+                  transform: translate(-50%, -50%);
+                  font-size: 20px;
+                "
+              >
+                📍
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+              "
+            >
+              <div>
+                <div class="ctitle" style="margin-bottom: 2px">Timestamp</div>
+                <div
+                  style="
+                    font-size: 12px;
+                    font-family: &quot;JetBrains Mono&quot;, monospace;
+                  "
+                >
+                  2026-02-26 · 09:38 AM
+                </div>
+              </div>
+              <span class="badge b-ok">✓ Valid</span>
+            </div>
+          </div>
+          <div class="igrp">
+            <div class="ilbl">Contextual Tags</div>
+            <div class="tags">
+              <div class="tag on">Daytime</div>
+              <div class="tag">Nighttime</div>
+              <div class="tag on">Outdoor</div>
+              <div class="tag">Armed</div>
+              <div class="tag">Vehicle involved</div>
+              <div class="tag">Multiple people</div>
+            </div>
+          </div>
+          <div style="height: 10px"></div>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('report-step3')">
+            Continue →
+          </button>
+        </div>
+      </div>
+
+      <!-- REPORT STEP 3 -->
+      <div class="screen" id="s-report-step3">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('report-step2')">←</button>
+          <div class="htitle">Evidence <em>Upload</em></div>
+          <div class="hright"><span class="badge b-ok">3 / 3</span></div>
+        </div>
+        <div class="body">
+          <div class="steps">
+            <div class="sd dn"></div>
+            <div class="sd dn"></div>
+            <div class="sd on"></div>
+          </div>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--muted);
+              line-height: 1.7;
+              margin-bottom: 14px;
+              text-align: center;
+            "
+          >
+            Photos and videos strengthen your report and are automatically
+            analysed for authenticity.
+          </p>
+          <div class="upbox">
+            <div style="font-size: 26px; margin-bottom: 7px">📸</div>
+            <div style="font-size: 12px; color: var(--muted)">
+              <strong style="color: var(--accent)">Tap to add photo</strong> or
+              take live capture
+            </div>
+          </div>
+          <div class="upbox" style="border-color: rgba(0, 153, 255, 0.3)">
+            <div style="font-size: 26px; margin-bottom: 7px">🎥</div>
+            <div style="font-size: 12px; color: var(--muted)">
+              <strong style="color: var(--accent2)">Add video</strong> evidence
+              (max 60s)
+            </div>
+          </div>
+          <div class="sec">Attached Evidence</div>
+          <div class="mgd">
+            <div class="mth">
+              📷
+              <div class="mb">✓ Good</div>
+            </div>
+            <div class="mth">
+              🖼️
+              <div class="mb" style="color: var(--warn)">⚠ Blur</div>
+            </div>
+            <div class="mth add">＋</div>
+          </div>
+          <div class="card" style="margin-top: 12px">
+            <div class="ctitle">AI Evidence Pre-check</div>
+            <div class="vs">
+              <div class="vs-ic">🖼️</div>
+              <div class="vs-nm">Image Quality (blur_score)</div>
+              <div class="vs-wn">⚠ 0.34</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">🔍</div>
+              <div class="vs-nm">Tamper Detection</div>
+              <div class="vs-ok">✓ CLEAN</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">📋</div>
+              <div class="vs-nm">Perceptual Hash (pHash)</div>
+              <div class="vs-ok">✓ UNIQUE</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">📍</div>
+              <div class="vs-nm">Media GPS Match</div>
+              <div class="vs-ok">✓ MATCHED</div>
+            </div>
+          </div>
+          <div style="height: 10px"></div>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('report-success')">
+            Submit Report 🚀
+          </button>
+          <button
+            class="btn btn-s"
+            onclick="go('report-success')"
+            style="font-size: 12px; opacity: 0.7"
+          >
+            Skip evidence &amp; Submit
+          </button>
+        </div>
+      </div>
+
+      <!-- REPORT SUCCESS -->
+      <div class="screen" id="s-report-success">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div
+          style="
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 22px;
+            text-align: center;
+            overflow-y: auto;
+            scrollbar-width: none;
+          "
+        >
+          <div style="font-size: 58px; margin-bottom: 14px">✅</div>
+          <div style="font-size: 22px; font-weight: 700; margin-bottom: 7px">
+            Report <span style="color: var(--accent)">Submitted!</span>
+          </div>
+          <p
+            style="
+              font-size: 12px;
+              color: var(--muted);
+              line-height: 1.8;
+              max-width: 250px;
+              margin-bottom: 20px;
+            "
+          >
+            Anonymously received and now being processed through our
+            verification pipeline.
+          </p>
+          <div class="card" style="width: 100%; text-align: left">
+            <div class="ctitle">Report ID</div>
+            <div
+              style="
+                font-family: &quot;JetBrains Mono&quot;, monospace;
+                font-size: 12px;
+                color: var(--accent);
+                margin-bottom: 10px;
+              "
+            >
+              RPT-2026-0A4F9E2B
+            </div>
+            <div class="divl"></div>
+            <div class="ctitle">Processing Status</div>
+            <div class="tl">
+              <div class="tld" style="background: rgba(0, 229, 180, 0.1)">
+                ✅
+              </div>
+              <div class="tlc">
+                <div class="tlt">Submitted</div>
+                <div class="tlm">Just now</div>
+              </div>
+            </div>
+            <div class="tl">
+              <div class="tld" style="background: rgba(0, 153, 255, 0.1)">
+                🔄
+              </div>
+              <div class="tlc">
+                <div class="tlt">Rule Validation</div>
+                <div class="tlm">In progress…</div>
+              </div>
+            </div>
+            <div class="tl">
+              <div class="tld" style="background: var(--surface3)">🤖</div>
+              <div class="tlc">
+                <div class="tlt" style="color: var(--muted)">
+                  AI Verification
+                </div>
+                <div class="tlm">Pending</div>
+              </div>
+            </div>
+            <div class="tl">
+              <div class="tld" style="background: var(--surface3)">👮</div>
+              <div class="tlc">
+                <div class="tlt" style="color: var(--muted)">Police Review</div>
+                <div class="tlm">Pending</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="ftact">
+          <button class="btn btn-p" onclick="go('my-reports')">
+            View My Reports
+          </button>
+          <button class="btn btn-s" onclick="go('home')">Back to Home</button>
+        </div>
+      </div>
+
+      <!-- MY REPORTS -->
+      <div class="screen" id="s-my-reports">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('home')">←</button>
+          <div class="htitle">My <em>Reports</em></div>
+        </div>
+        <div class="body">
+          <div
+            style="
+              display: flex;
+              gap: 7px;
+              overflow-x: auto;
+              scrollbar-width: none;
+              margin-bottom: 13px;
+              padding-bottom: 3px;
+            "
+          >
+            <div class="tag on">All (8)</div>
+            <div class="tag">Pending (3)</div>
+            <div class="tag">Verified (4)</div>
+            <div class="tag">Rejected (1)</div>
+          </div>
+          <div class="ri" onclick="go('report-detail')">
+            <div class="ri-icon" style="background: rgba(255, 59, 92, 0.1)">
+              🚨
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Suspicious Activity</div>
+              <div class="ri-desc">Near Kinigi Sector junction</div>
+              <div class="ri-foot">
+                <span class="ri-time">Today · 07:38</span
+                ><span class="badge b-warn">Investigating</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri" onclick="go('verification')">
+            <div class="ri-icon" style="background: rgba(0, 229, 180, 0.1)">
+              💼
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Theft</div>
+              <div class="ri-desc">Bicycle stolen at Muhoza market</div>
+              <div class="ri-foot">
+                <span class="ri-time">Yesterday · 14:20</span
+                ><span class="badge b-ok">Confirmed</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri">
+            <div class="ri-icon" style="background: rgba(0, 153, 255, 0.1)">
+              🏚️
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Vandalism</div>
+              <div class="ri-desc">Property damage, Ruhengeri road</div>
+              <div class="ri-foot">
+                <span class="ri-time">Feb 24 · 16:05</span
+                ><span class="badge b-mute">Pending</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri">
+            <div class="ri-icon" style="background: rgba(255, 255, 255, 0.05)">
+              🤬
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Assault</div>
+              <div class="ri-desc">Altercation near Cyuve Cell</div>
+              <div class="ri-foot">
+                <span class="ri-time">Feb 22 · 20:10</span
+                ><span class="badge b-ok">Confirmed</span>
+              </div>
+            </div>
+          </div>
+          <div class="ri">
+            <div class="ri-icon" style="background: rgba(255, 59, 92, 0.05)">
+              📋
+            </div>
+            <div class="ri-meta">
+              <div class="ri-type">Other</div>
+              <div class="ri-desc">Unspecified concern, Nkotsi village</div>
+              <div class="ri-foot">
+                <span class="ri-time">Feb 20 · 10:00</span
+                ><span class="badge b-err">Rejected</span>
+              </div>
+            </div>
+          </div>
+          <div style="height: 10px"></div>
+        </div>
+        <button class="fab" onclick="go('report-step1')">＋</button>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni on">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni" onclick="go('profile')">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- REPORT DETAIL -->
+      <div class="screen" id="s-report-detail">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('my-reports')">←</button>
+          <div class="htitle">Report <em>Detail</em></div>
+          <div class="hright">
+            <span class="badge b-warn">Investigating</span>
+          </div>
+        </div>
+        <div class="body">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 13px;
+            "
+          >
+            <div
+              class="ri-icon"
+              style="
+                width: 50px;
+                height: 50px;
+                border-radius: 15px;
+                background: rgba(255, 59, 92, 0.1);
+                font-size: 22px;
+              "
+            >
+              🚨
+            </div>
+            <div>
+              <div style="font-size: 16px; font-weight: 700">
+                Suspicious Activity
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  margin-top: 2px;
+                "
+              >
+                RPT-2026-0A4F9E2B
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">Description</div>
+            <p style="font-size: 12px; line-height: 1.8; color: #c8d5f0">
+              An unusual vehicle was parked near Kinigi Sector junction for over
+              2 hours with engine running. Multiple occupants were observed
+              exchanging items with passersby.
+            </p>
+          </div>
+          <div class="card">
+            <div class="ctitle">Location &amp; Time</div>
+            <div
+              style="
+                display: flex;
+                gap: 7px;
+                align-items: center;
+                margin-bottom: 6px;
+              "
+            >
+              <span>📍</span
+              ><span style="font-size: 12px"
+                >Kinigi Sector, Musanze District</span
+              >
+            </div>
+            <div
+              style="
+                font-size: 11px;
+                color: var(--muted);
+                font-family: &quot;JetBrains Mono&quot;, monospace;
+                margin-bottom: 7px;
+              "
+            >
+              -1.4976° S, 29.6346° E · ±8m
+            </div>
+            <div class="mmap" style="height: 90px; border-radius: 10px">
+              <div class="mgrid"></div>
+              <div
+                style="
+                  position: absolute;
+                  top: 50%;
+                  left: 50%;
+                  transform: translate(-50%, -50%);
+                  font-size: 20px;
+                "
+              >
+                📍
+              </div>
+            </div>
+            <div
+              style="
+                font-size: 10px;
+                color: var(--muted);
+                margin-top: 7px;
+                font-family: &quot;JetBrains Mono&quot;, monospace;
+              "
+            >
+              📅 2026-02-26 · 07:38 AM
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">Evidence Attached</div>
+            <div class="mgd">
+              <div class="mth">
+                📷
+                <div class="mb">✓</div>
+              </div>
+              <div class="mth">
+                🖼️
+                <div class="mb" style="color: var(--warn)">⚠</div>
+              </div>
+            </div>
+          </div>
+          <div
+            class="card"
+            style="cursor: pointer"
+            onclick="go('verification')"
+          >
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 11px;
+              "
+            >
+              <div class="ctitle" style="margin-bottom: 0">Trust Score</div>
+              <span style="font-size: 11px; color: var(--accent)"
+                >Full analysis →</span
+              >
+            </div>
+            <div style="display: flex; align-items: center; gap: 14px">
+              <div class="ring" style="width: 62px; height: 62px">
+                <svg width="62" height="62" viewBox="0 0 62 62">
+                  <circle
+                    cx="31"
+                    cy="31"
+                    r="25"
+                    fill="none"
+                    stroke="rgba(0,229,180,.1)"
+                    stroke-width="5"
+                  />
+                  <circle
+                    cx="31"
+                    cy="31"
+                    r="25"
+                    fill="none"
+                    stroke="#00e5b4"
+                    stroke-width="5"
+                    stroke-dasharray="157"
+                    stroke-dashoffset="55"
+                    stroke-linecap="round"
+                    transform="rotate(-90 31 31)"
+                  />
+                </svg>
+                <div class="rscore">65</div>
+              </div>
+              <div style="flex: 1">
+                <div class="shap">
+                  <div class="shap-l">Device Trust</div>
+                  <div class="shap-bw">
+                    <div
+                      class="shap-bf"
+                      style="width: 72%; background: var(--accent)"
+                    ></div>
+                  </div>
+                  <div class="shap-v">0.72</div>
+                </div>
+                <div class="shap">
+                  <div class="shap-l">GPS Validity</div>
+                  <div class="shap-bw">
+                    <div
+                      class="shap-bf"
+                      style="width: 90%; background: var(--accent)"
+                    ></div>
+                  </div>
+                  <div class="shap-v">0.90</div>
+                </div>
+                <div class="shap">
+                  <div class="shap-l">Evidence Quality</div>
+                  <div class="shap-bw">
+                    <div
+                      class="shap-bf"
+                      style="width: 55%; background: var(--warn)"
+                    ></div>
+                  </div>
+                  <div class="shap-v">0.55</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sec">Processing Timeline</div>
+          <div class="tl">
+            <div class="tld" style="background: rgba(0, 229, 180, 0.1)">✅</div>
+            <div class="tlc">
+              <div class="tlt">Submitted</div>
+              <div class="tlm">2026-02-26 · 07:38 AM</div>
+            </div>
+          </div>
+          <div class="tl">
+            <div class="tld" style="background: rgba(0, 229, 180, 0.1)">✅</div>
+            <div class="tlc">
+              <div class="tlt">Rule Validation Passed</div>
+              <div class="tlm">GPS ✓ · Timestamp ✓ · No duplicate</div>
+            </div>
+          </div>
+          <div class="tl">
+            <div class="tld" style="background: rgba(0, 229, 180, 0.1)">🤖</div>
+            <div class="tlc">
+              <div class="tlt">AI Verification Complete</div>
+              <div class="tlm">Score: 65 · Likely Real</div>
+            </div>
+          </div>
+          <div class="tl">
+            <div class="tld" style="background: rgba(255, 107, 53, 0.1)">
+              👮
+            </div>
+            <div class="tlc">
+              <div class="tlt">Under Investigation</div>
+              <div class="tlm">07:45 AM · Assigned to officer</div>
+              <div class="tld2">Actively reviewed by Kinigi Sector unit.</div>
+            </div>
+          </div>
+          <div style="height: 12px"></div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">Reports</div>
+          </div>
+          <div class="bni" onclick="go('verification')">
+            <div class="ic">🔍</div>
+            <div class="lb">Analysis</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- AI VERIFICATION -->
+      <div class="screen" id="s-verification">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('report-detail')">←</button>
+          <div class="htitle">AI <em>Verification</em></div>
+          <div class="hright"><span class="badge b-ok">Likely Real</span></div>
+        </div>
+        <div class="body">
+          <div
+            style="
+              background: linear-gradient(
+                135deg,
+                rgba(0, 229, 180, 0.08),
+                rgba(0, 153, 255, 0.05)
+              );
+              border: 1px solid rgba(0, 229, 180, 0.22);
+              border-radius: 16px;
+              padding: 18px;
+              margin-bottom: 12px;
+              display: flex;
+              align-items: center;
+              gap: 18px;
+            "
+          >
+            <div class="ring" style="width: 74px; height: 74px">
+              <svg width="74" height="74" viewBox="0 0 74 74">
+                <circle
+                  cx="37"
+                  cy="37"
+                  r="29"
+                  fill="none"
+                  stroke="rgba(0,229,180,.1)"
+                  stroke-width="6"
+                />
+                <circle
+                  cx="37"
+                  cy="37"
+                  r="29"
+                  fill="none"
+                  stroke="#00e5b4"
+                  stroke-width="6"
+                  stroke-dasharray="182"
+                  stroke-dashoffset="64"
+                  stroke-linecap="round"
+                  transform="rotate(-90 37 37)"
+                />
+              </svg>
+              <div class="rscore" style="font-size: 15px">65</div>
+            </div>
+            <div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  text-transform: uppercase;
+                  letter-spacing: 0.8px;
+                  margin-bottom: 3px;
+                "
+              >
+                Trust Score · Random Forest
+              </div>
+              <div style="font-size: 18px; font-weight: 700">
+                Likely <span style="color: var(--accent)">Real</span>
+              </div>
+              <div
+                style="font-size: 10px; color: var(--muted); margin-top: 3px"
+              >
+                Confidence: 78% · Model v2.1.0
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">🔧 Rule-Based Validation</div>
+            <div class="vs">
+              <div class="vs-ic">📍</div>
+              <div class="vs-nm">GPS Coordinates Valid</div>
+              <div class="vs-ok">✓ PASS</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">⏱️</div>
+              <div class="vs-nm">Timestamp Consistency</div>
+              <div class="vs-ok">✓ PASS</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">🔁</div>
+              <div class="vs-nm">Duplicate Detection</div>
+              <div class="vs-ok">✓ UNIQUE</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">📎</div>
+              <div class="vs-nm">Evidence Metadata</div>
+              <div class="vs-wn">⚠ WARNING</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">🤖 AI-Assisted Checks</div>
+            <div class="vs">
+              <div class="vs-ic">🌐</div>
+              <div class="vs-nm">GPS Anomaly Detection</div>
+              <div class="vs-ok">✓ NORMAL</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">⏰</div>
+              <div class="vs-nm">Temporal Anomaly</div>
+              <div class="vs-ok">✓ NORMAL</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">🖼️</div>
+              <div class="vs-nm">blur_score</div>
+              <div class="vs-wn">⚠ 0.34</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">🔏</div>
+              <div class="vs-nm">tamper_score</div>
+              <div class="vs-ok">✓ 0.07</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">👁️</div>
+              <div class="vs-nm">perceptual_hash</div>
+              <div class="vs-ok">✓ UNIQUE</div>
+            </div>
+            <div class="vs">
+              <div class="vs-ic">🏷️</div>
+              <div class="vs-nm">ai_quality_label</div>
+              <div class="vs-ok">GOOD</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">📊 Feature Importance (SHAP)</div>
+            <div class="shap">
+              <div class="shap-l">device_trust_score</div>
+              <div class="shap-bw">
+                <div
+                  class="shap-bf"
+                  style="width: 72%; background: var(--accent)"
+                ></div>
+              </div>
+              <div class="shap-v">+0.72</div>
+            </div>
+            <div class="shap">
+              <div class="shap-l">gps_accuracy</div>
+              <div class="shap-bw">
+                <div
+                  class="shap-bf"
+                  style="width: 90%; background: var(--accent)"
+                ></div>
+              </div>
+              <div class="shap-v">+0.90</div>
+            </div>
+            <div class="shap">
+              <div class="shap-l">time_consistency</div>
+              <div class="shap-bw">
+                <div
+                  class="shap-bf"
+                  style="width: 80%; background: var(--accent)"
+                ></div>
+              </div>
+              <div class="shap-v">+0.80</div>
+            </div>
+            <div class="shap">
+              <div class="shap-l">evidence_quality</div>
+              <div class="shap-bw">
+                <div
+                  class="shap-bf"
+                  style="width: 45%; background: var(--warn)"
+                ></div>
+              </div>
+              <div class="shap-v">−0.45</div>
+            </div>
+            <div class="shap">
+              <div class="shap-l">motion_level</div>
+              <div class="shap-bw">
+                <div
+                  class="shap-bf"
+                  style="width: 30%; background: var(--muted)"
+                ></div>
+              </div>
+              <div class="shap-v">+0.30</div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="ctitle">📱 Device Trust Formula</div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 7px;
+              "
+            >
+              <span style="font-size: 11px; color: var(--muted)"
+                >total_reports</span
+              ><span
+                style="
+                  font-size: 11px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+                >8</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 7px;
+              "
+            >
+              <span style="font-size: 11px; color: var(--muted)"
+                >trusted_reports</span
+              ><span
+                style="
+                  font-size: 11px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  color: var(--ok);
+                "
+                >7</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 7px;
+              "
+            >
+              <span style="font-size: 11px; color: var(--muted)"
+                >flagged_reports</span
+              ><span
+                style="
+                  font-size: 11px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  color: var(--warn);
+                "
+                >1</span
+              >
+            </div>
+            <div class="divl"></div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+              "
+            >
+              <span style="font-size: 11px; color: var(--muted)"
+                >device_trust_score</span
+              ><span
+                style="
+                  font-size: 16px;
+                  font-weight: 700;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  color: var(--accent);
+                "
+                >72.0</span
+              >
+            </div>
+            <div class="pbar">
+              <div
+                class="pfill"
+                style="
+                  width: 72%;
+                  background: linear-gradient(
+                    90deg,
+                    var(--accent2),
+                    var(--accent)
+                  );
+                "
+              ></div>
+            </div>
+          </div>
+          <div style="height: 14px"></div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('report-detail')">
+            <div class="ic">←</div>
+            <div class="lb">Report</div>
+          </div>
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">Reports</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- SAFETY MAP -->
+      <div class="screen" id="s-safety-map">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('home')">←</button>
+          <div class="htitle">Safety <em>Map</em></div>
+          <div class="hright" style="gap: 5px; align-items: center">
+            <span
+              style="
+                font-size: 9px;
+                color: var(--ok);
+                font-family: &quot;JetBrains Mono&quot;, monospace;
+              "
+              >LIVE</span
+            >
+            <div
+              style="
+                width: 6px;
+                height: 6px;
+                border-radius: 50%;
+                background: var(--ok);
+                animation: hs 1.5s infinite;
+              "
+            ></div>
+          </div>
+        </div>
+        <div class="body" style="padding: 0 0 16px">
+          <div
+            class="mmap"
+            style="
+              height: 290px;
+              border-radius: 0;
+              border-left: none;
+              border-right: none;
+              border-top: none;
+            "
+          >
+            <div class="mgrid"></div>
+            <svg
+              style="position: absolute; inset: 0; width: 100%; height: 100%"
+              viewBox="0 0 343 290"
+            >
+              <line
+                x1="0"
+                y1="145"
+                x2="343"
+                y2="145"
+                stroke="rgba(0,229,180,.08)"
+                stroke-width="3"
+              />
+              <line
+                x1="171"
+                y1="0"
+                x2="171"
+                y2="290"
+                stroke="rgba(0,229,180,.07)"
+                stroke-width="2"
+              />
+              <line
+                x1="0"
+                y1="70"
+                x2="343"
+                y2="200"
+                stroke="rgba(0,229,180,.05)"
+                stroke-width="1.5"
+              />
+            </svg>
+            <div
+              style="
+                position: absolute;
+                top: 27%;
+                left: 34%;
+                width: 68px;
+                height: 68px;
+                border-radius: 50%;
+                background: rgba(255, 59, 92, 0.1);
+                border: 2px solid rgba(255, 59, 92, 0.35);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 14px;
+                animation: hs 2s infinite;
+              "
+            >
+              🔴
+            </div>
+            <div
+              style="
+                position: absolute;
+                top: 50%;
+                left: 60%;
+                width: 50px;
+                height: 50px;
+                border-radius: 50%;
+                background: rgba(255, 107, 53, 0.1);
+                border: 2px solid rgba(255, 107, 53, 0.35);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 12px;
+                animation: hs 2s infinite 0.5s;
+              "
+            >
+              🟠
+            </div>
+            <div
+              style="
+                position: absolute;
+                top: 18%;
+                left: 65%;
+                width: 38px;
+                height: 38px;
+                border-radius: 50%;
+                background: rgba(0, 229, 180, 0.1);
+                border: 2px solid rgba(0, 229, 180, 0.35);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 10px;
+                animation: hs 2s infinite 1s;
+              "
+            >
+              🟢
+            </div>
+            <div
+              style="
+                position: absolute;
+                top: 26%;
+                left: 18%;
+                font-size: 9px;
+                color: var(--muted);
+                background: rgba(10, 15, 30, 0.8);
+                padding: 2px 6px;
+                border-radius: 4px;
+              "
+            >
+              Kinigi
+            </div>
+            <div
+              style="
+                position: absolute;
+                top: 53%;
+                left: 42%;
+                font-size: 9px;
+                color: var(--muted);
+                background: rgba(10, 15, 30, 0.8);
+                padding: 2px 6px;
+                border-radius: 4px;
+              "
+            >
+              Muhoza
+            </div>
+            <div
+              style="
+                position: absolute;
+                top: 38%;
+                left: 67%;
+                font-size: 9px;
+                color: var(--muted);
+                background: rgba(10, 15, 30, 0.8);
+                padding: 2px 6px;
+                border-radius: 4px;
+              "
+            >
+              Cyuve
+            </div>
+            <div class="mlabel">Trust-Weighted DBSCAN · Musanze</div>
+          </div>
+          <div
+            style="
+              display: flex;
+              gap: 7px;
+              overflow-x: auto;
+              scrollbar-width: none;
+              padding: 11px 16px;
+              border-bottom: 1px solid var(--border);
+            "
+          >
+            <div class="tag on">All</div>
+            <div class="tag">🔴 High</div>
+            <div class="tag">🟠 Medium</div>
+            <div class="tag">🟢 Low</div>
+            <div class="tag">Theft</div>
+            <div class="tag">Assault</div>
+          </div>
+          <div style="padding: 12px 16px">
+            <div class="ctitle">Active Hotspots</div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                padding: 11px 0;
+                border-bottom: 1px solid var(--border);
+                cursor: pointer;
+              "
+            >
+              <div
+                style="
+                  width: 34px;
+                  height: 34px;
+                  border-radius: 50%;
+                  background: rgba(255, 59, 92, 0.15);
+                  border: 2px solid var(--danger);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 13px;
+                  flex-shrink: 0;
+                "
+              >
+                🔴
+              </div>
+              <div style="flex: 1">
+                <div style="font-size: 12px; font-weight: 600">
+                  Kinigi Sector
+                </div>
+                <div style="font-size: 10px; color: var(--muted)">
+                  12 reports · 24hr · r=250m
+                </div>
+              </div>
+              <span class="badge b-err">HIGH</span>
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                padding: 11px 0;
+                border-bottom: 1px solid var(--border);
+                cursor: pointer;
+              "
+            >
+              <div
+                style="
+                  width: 34px;
+                  height: 34px;
+                  border-radius: 50%;
+                  background: rgba(255, 107, 53, 0.15);
+                  border: 2px solid var(--warn);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 13px;
+                  flex-shrink: 0;
+                "
+              >
+                🟠
+              </div>
+              <div style="flex: 1">
+                <div style="font-size: 12px; font-weight: 600">
+                  Muhoza Center
+                </div>
+                <div style="font-size: 10px; color: var(--muted)">
+                  7 reports · 48hr · r=180m
+                </div>
+              </div>
+              <span class="badge b-warn">MEDIUM</span>
+            </div>
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 11px;
+                padding: 11px 0;
+                cursor: pointer;
+              "
+            >
+              <div
+                style="
+                  width: 34px;
+                  height: 34px;
+                  border-radius: 50%;
+                  background: rgba(0, 229, 180, 0.1);
+                  border: 2px solid var(--ok);
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 13px;
+                  flex-shrink: 0;
+                "
+              >
+                🟢
+              </div>
+              <div style="flex: 1">
+                <div style="font-size: 12px; font-weight: 600">
+                  Cyuve Cell North
+                </div>
+                <div style="font-size: 10px; color: var(--muted)">
+                  3 reports · 72hr · r=120m
+                </div>
+              </div>
+              <span class="badge b-ok">LOW</span>
+            </div>
+          </div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni on">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni" onclick="go('profile')">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- NOTIFICATIONS -->
+      <div class="screen" id="s-notifications">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('home')">←</button>
+          <div class="htitle">Notifications</div>
+        </div>
+        <div class="body">
+          <div class="sec">Today</div>
+          <div class="nitem" onclick="go('report-detail')">
+            <div class="ndot"></div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+              >
+                Report Under Investigation 🔍
+              </div>
+              <div
+                style="font-size: 11px; color: var(--muted); line-height: 1.6"
+              >
+                RPT-0A4F9E2B has been assigned to an officer and is under active
+                investigation.
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 3px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+              >
+                Today · 09:30
+              </div>
+            </div>
+          </div>
+          <div class="nitem">
+            <div class="ndot"></div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+              >
+                New Hotspot Near You 🔴
+              </div>
+              <div
+                style="font-size: 11px; color: var(--muted); line-height: 1.6"
+              >
+                A high-risk cluster detected in Kinigi Sector. Exercise caution.
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 3px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+              >
+                Today · 08:15
+              </div>
+            </div>
+          </div>
+          <div class="sec">Yesterday</div>
+          <div class="nitem">
+            <div class="ndot r"></div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+              >
+                Report Confirmed ✅
+              </div>
+              <div
+                style="font-size: 11px; color: var(--muted); line-height: 1.6"
+              >
+                Your theft report from Feb 25 has been verified and confirmed by
+                police.
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 3px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+              >
+                Yesterday · 16:45
+              </div>
+            </div>
+          </div>
+          <div class="nitem">
+            <div class="ndot r"></div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+              >
+                Trust Score Updated 📈
+              </div>
+              <div
+                style="font-size: 11px; color: var(--muted); line-height: 1.6"
+              >
+                Your device_trust_score increased to 72 after report
+                confirmation.
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 3px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+              >
+                Yesterday · 17:00
+              </div>
+            </div>
+          </div>
+          <div class="nitem">
+            <div class="ndot r"></div>
+            <div style="flex: 1">
+              <div
+                style="font-size: 12px; font-weight: 600; margin-bottom: 3px"
+              >
+                System Update 🛡️
+              </div>
+              <div
+                style="font-size: 11px; color: var(--muted); line-height: 1.6"
+              >
+                AI model updated to v2.1.0 for improved anomaly detection
+                accuracy.
+              </div>
+              <div
+                style="
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 3px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+              >
+                Yesterday · 12:00
+              </div>
+            </div>
+          </div>
+          <div style="height: 10px"></div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni" onclick="go('profile')">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- PROFILE -->
+      <div class="screen" id="s-profile">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <div class="htitle">My <em>Profile</em></div>
+          <div class="hright">
+            <button
+              style="
+                background: none;
+                border: none;
+                font-size: 20px;
+                cursor: pointer;
+              "
+              onclick="go('settings')"
+            >
+              ⚙️
+            </button>
+          </div>
+        </div>
+        <div class="body">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 13px;
+              margin-bottom: 18px;
+            "
+          >
+            <div
+              style="
+                width: 58px;
+                height: 58px;
+                border-radius: 18px;
+                background: linear-gradient(
+                  135deg,
+                  var(--accent),
+                  var(--accent2)
+                );
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 24px;
+              "
+            >
+              🛡️
+            </div>
+            <div>
+              <div style="font-size: 15px; font-weight: 700">
+                Anonymous Reporter
+              </div>
+              <div
+                style="
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  font-size: 10px;
+                  color: var(--muted);
+                  margin-top: 2px;
+                "
+              >
+                DEV-7a3f2b91e4c8...
+              </div>
+              <div style="font-size: 10px; color: var(--ok); margin-top: 2px">
+                ● Active since Feb 2026
+              </div>
+            </div>
+          </div>
+          <div class="sgrid">
+            <div class="sbox">
+              <div class="sv" style="color: var(--ok)">8</div>
+              <div class="sl">Submitted</div>
+            </div>
+            <div class="sbox">
+              <div class="sv" style="color: var(--accent2)">7</div>
+              <div class="sl">Verified</div>
+            </div>
+          </div>
+          <div class="sgrid">
+            <div class="sbox">
+              <div class="sv" style="color: var(--warn)">1</div>
+              <div class="sl">Flagged</div>
+            </div>
+            <div class="sbox">
+              <div class="sv" style="color: var(--accent); font-size: 20px">
+                72
+              </div>
+              <div class="sl">Trust Score</div>
+            </div>
+          </div>
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 9px;
+              "
+            >
+              <div class="ctitle" style="margin-bottom: 0">
+                Trust Score Breakdown
+              </div>
+              <span class="badge b-ok">Good</span>
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                margin-bottom: 4px;
+              "
+            >
+              <span style="font-size: 11px; color: var(--muted)"
+                >device_trust_score</span
+              ><span
+                style="
+                  font-size: 11px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  color: var(--accent);
+                "
+                >72 / 100</span
+              >
+            </div>
+            <div class="pbar">
+              <div
+                class="pfill"
+                style="
+                  width: 72%;
+                  background: linear-gradient(
+                    90deg,
+                    var(--accent2),
+                    var(--accent)
+                  );
+                "
+              ></div>
+            </div>
+            <div
+              style="
+                font-size: 10px;
+                color: var(--muted);
+                line-height: 1.8;
+                margin-top: 9px;
+              "
+            >
+              Submit accurate reports to increase your score. Flagged reports
+              lower it.
+            </div>
+          </div>
+          <div class="sec">Achievements</div>
+          <div
+            style="
+              display: flex;
+              gap: 9px;
+              flex-wrap: wrap;
+              margin-bottom: 14px;
+            "
+          >
+            <div
+              style="
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 11px;
+                text-align: center;
+                width: 76px;
+              "
+            >
+              <div style="font-size: 20px; margin-bottom: 3px">🎯</div>
+              <div style="font-size: 9px; color: var(--muted)">
+                First Report
+              </div>
+            </div>
+            <div
+              style="
+                background: var(--surface2);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 11px;
+                text-align: center;
+                width: 76px;
+              "
+            >
+              <div style="font-size: 20px; margin-bottom: 3px">🏅</div>
+              <div style="font-size: 9px; color: var(--muted)">5 Verified</div>
+            </div>
+            <div
+              style="
+                background: var(--surface2);
+                border: 1px solid rgba(0, 229, 180, 0.3);
+                border-radius: 12px;
+                padding: 11px;
+                text-align: center;
+                width: 76px;
+              "
+            >
+              <div style="font-size: 20px; margin-bottom: 3px">⭐</div>
+              <div style="font-size: 9px; color: var(--accent)">
+                Trusted Rep.
+              </div>
+            </div>
+            <div
+              style="
+                background: var(--surface3);
+                border: 1px solid var(--border);
+                border-radius: 12px;
+                padding: 11px;
+                text-align: center;
+                width: 76px;
+                opacity: 0.4;
+              "
+            >
+              <div style="font-size: 20px; margin-bottom: 3px">🏆</div>
+              <div style="font-size: 9px; color: var(--muted)">10 Verified</div>
+            </div>
+          </div>
+          <div class="gline"></div>
+          <button class="btn btn-d" onclick="go('settings')">
+            ⚠️ Clear Device Data
+          </button>
+          <div style="height: 12px"></div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni on">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="screen" id="s-settings">
+        <div class="sbar">
+          <span class="t">09:41</span>
+          <div class="ic">📶 🔋</div>
+        </div>
+        <div class="hdr">
+          <button class="back" onclick="go('profile')">←</button>
+          <div class="htitle">Settings</div>
+        </div>
+        <div class="body">
+          <div class="sec">Privacy</div>
+          <div class="card">
+            <div class="trow">
+              <div>
+                <div class="tlbl">Anonymous Mode</div>
+                <div class="tsub">Never share device details</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+            <div class="trow">
+              <div>
+                <div class="tlbl">High-Accuracy GPS</div>
+                <div class="tsub">Precise location for reports</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+            <div class="trow">
+              <div>
+                <div class="tlbl">Evidence GPS Tagging</div>
+                <div class="tsub">Embed location in photos</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+          </div>
+          <div class="sec">Notifications</div>
+          <div class="card">
+            <div class="trow">
+              <div>
+                <div class="tlbl">Report Status Updates</div>
+                <div class="tsub">When your report is reviewed</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+            <div class="trow">
+              <div>
+                <div class="tlbl">Nearby Hotspot Alerts</div>
+                <div class="tsub">High-risk areas near you</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+            <div class="trow">
+              <div>
+                <div class="tlbl">Trust Score Changes</div>
+                <div class="tsub">When score is updated</div>
+              </div>
+              <button
+                class="tgl"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+          </div>
+          <div class="sec">Display</div>
+          <div class="card">
+            <div class="trow">
+              <div>
+                <div class="tlbl">Dark Theme</div>
+                <div class="tsub">Always on for battery saving</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+            <div class="trow">
+              <div>
+                <div class="tlbl">Show AI Explanations</div>
+                <div class="tsub">SHAP values in report detail</div>
+              </div>
+              <button
+                class="tgl on"
+                onclick="this.classList.toggle('on')"
+              ></button>
+            </div>
+          </div>
+          <div class="sec">About</div>
+          <div class="card">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid var(--border);
+              "
+            >
+              <span style="font-size: 12px; color: var(--muted)"
+                >App Version</span
+              ><span
+                style="
+                  font-size: 12px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                "
+                >1.0.0-beta</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid var(--border);
+              "
+            >
+              <span style="font-size: 12px; color: var(--muted)">AI Model</span
+              ><span
+                style="
+                  font-size: 12px;
+                  font-family: &quot;JetBrains Mono&quot;, monospace;
+                  color: var(--accent);
+                "
+                >v2.1.0</span
+              >
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+                border-bottom: 1px solid var(--border);
+              "
+            >
+              <span style="font-size: 12px; color: var(--muted)"
+                >Pilot Region</span
+              ><span style="font-size: 12px">Musanze District</span>
+            </div>
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                padding: 8px 0;
+              "
+            >
+              <span style="font-size: 12px; color: var(--muted)">Partner</span
+              ><span style="font-size: 12px">Rwanda National Police</span>
+            </div>
+          </div>
+          <div class="gline"></div>
+          <button class="btn btn-d" style="margin-bottom: 9px">
+            🗑️ Clear All Local Data
+          </button>
+          <button class="btn btn-s">📤 Export My Data</button>
+          <div style="height: 14px"></div>
+        </div>
+        <nav class="bnav">
+          <div class="bni" onclick="go('home')">
+            <div class="ic">🏠</div>
+            <div class="lb">Home</div>
+          </div>
+          <div class="bni" onclick="go('safety-map')">
+            <div class="ic">🗺️</div>
+            <div class="lb">Map</div>
+          </div>
+          <div class="bni" onclick="go('report-step1')">
+            <button class="fabc">＋</button>
+            <div class="lb" style="margin-top: 6px">Report</div>
+          </div>
+          <div class="bni" onclick="go('my-reports')">
+            <div class="ic">📋</div>
+            <div class="lb">My Reports</div>
+          </div>
+          <div class="bni on" onclick="go('profile')">
+            <div class="ic">👤</div>
+            <div class="lb">Profile</div>
+          </div>
+        </nav>
+      </div>
+    </div>
+    <!-- /phone -->
+    <script>
+      function go(id) {
+        document
+          .querySelectorAll(".screen")
+          .forEach((s) => s.classList.remove("active"));
+        const el = document.getElementById("s-" + id);
+        if (!el) return;
+        el.classList.add("active");
+        const b = el.querySelector(".body");
+        if (b) b.scrollTop = 0;
+      }
+      function selCat(el) {
+        document
+          .querySelectorAll(".ci")
+          .forEach((c) => c.classList.remove("on"));
+        el.classList.add("on");
+      }
+      document.querySelectorAll(".tag").forEach((t) => {
+        t.addEventListener("click", function () {
+          this.classList.toggle("on");
+        });
+      });
+    </script>
+  </body>
+</html>

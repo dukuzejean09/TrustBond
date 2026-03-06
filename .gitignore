@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.env
+
+# Node
+node_modules/
+dist/
+
+# Flutter/Dart
+mobile/build/
+mobile/.dart_tool/
+mobile/.packages
+
+# Uploads
+backend/uploads/evidence/*
+!backend/uploads/evidence/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Database
+*.backup
