@@ -3,7 +3,13 @@ import { Link } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { apiService } from "../services/apiService.js";
-import { MapContainer, TileLayer, CircleMarker, Popup } from "react-leaflet";
+import {
+  MapContainer,
+  TileLayer,
+  CircleMarker,
+  Popup,
+  GeoJSON,
+} from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 
 const STATUS_BADGE = {
@@ -113,6 +119,32 @@ export default function Dashboard() {
 
   // Center of Musanze District
   const MUSANZE_CENTER = [-1.4975, 29.6347];
+
+  // Load Musanze boundary GeoJSON
+  const [boundaries, setBoundaries] = useState(null);
+  useEffect(() => {
+    fetch("/musanze_boundaries.geojson")
+      .then((r) => r.json())
+      .then(setBoundaries)
+      .catch(() => {});
+  }, []);
+
+  const boundaryStyle = (feature) => ({
+    color: "#2563eb",
+    weight: 1.5,
+    fillColor: "#3b82f620",
+    fillOpacity: 0.15,
+  });
+
+  const onEachBoundary = (feature, layer) => {
+    const { Village, Cell, Sector } = feature.properties || {};
+    if (Village) {
+      layer.bindTooltip(`${Village}, ${Cell} — ${Sector}`, {
+        sticky: true,
+        className: "boundary-tooltip",
+      });
+    }
+  };
 
   return (
     <Layout>
@@ -332,61 +364,55 @@ export default function Dashboard() {
                   border: "1px solid var(--border)",
                 }}
               >
-                {mapMarkers.length === 0 ? (
-                  <div
-                    className="empty-state"
-                    style={{
-                      height: "100%",
-                      display: "grid",
-                      placeItems: "center",
-                    }}
-                  >
-                    <p>No geolocated reports to display yet.</p>
-                  </div>
-                ) : (
-                  <MapContainer
-                    center={MUSANZE_CENTER}
-                    zoom={13}
-                    style={{ height: "100%", width: "100%" }}
-                    scrollWheelZoom
-                  >
-                    <TileLayer
-                      attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                      url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                <MapContainer
+                  center={MUSANZE_CENTER}
+                  zoom={13}
+                  style={{ height: "100%", width: "100%" }}
+                  scrollWheelZoom
+                >
+                  <TileLayer
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  />
+                  {boundaries && (
+                    <GeoJSON
+                      data={boundaries}
+                      style={boundaryStyle}
+                      onEachFeature={onEachBoundary}
                     />
-                    {mapMarkers.map((m) => (
-                      <CircleMarker
-                        key={m.id}
-                        center={[m.lat, m.lng]}
-                        radius={7}
-                        pathOptions={{
-                          color: statusColor(m.status),
-                          fillColor: statusColor(m.status),
-                          fillOpacity: 0.75,
-                          weight: 2,
-                        }}
-                      >
-                        <Popup>
-                          <strong>{m.type}</strong>
-                          <br />
-                          Status: {m.status}
-                          {m.village && (
-                            <>
-                              <br />
-                              {m.village}
-                            </>
-                          )}
-                          {m.date && (
-                            <>
-                              <br />
-                              {fmtDate(m.date)}
-                            </>
-                          )}
-                        </Popup>
-                      </CircleMarker>
-                    ))}
-                  </MapContainer>
-                )}
+                  )}
+                  {mapMarkers.map((m) => (
+                    <CircleMarker
+                      key={m.id}
+                      center={[m.lat, m.lng]}
+                      radius={7}
+                      pathOptions={{
+                        color: statusColor(m.status),
+                        fillColor: statusColor(m.status),
+                        fillOpacity: 0.75,
+                        weight: 2,
+                      }}
+                    >
+                      <Popup>
+                        <strong>{m.type}</strong>
+                        <br />
+                        Status: {m.status}
+                        {m.village && (
+                          <>
+                            <br />
+                            {m.village}
+                          </>
+                        )}
+                        {m.date && (
+                          <>
+                            <br />
+                            {fmtDate(m.date)}
+                          </>
+                        )}
+                      </Popup>
+                    </CircleMarker>
+                  ))}
+                </MapContainer>
               </div>
               <div
                 className="legend-row"

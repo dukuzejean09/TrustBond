@@ -344,6 +344,14 @@
     max-height: 250px;
   }
 }
+
+/* Musanze boundary tooltips */
+.boundary-tooltip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
 @media (max-width: 600px) {
   .smp-filters {
     flex-direction: column;

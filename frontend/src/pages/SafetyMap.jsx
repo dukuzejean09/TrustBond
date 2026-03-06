@@ -8,6 +8,7 @@ import {
   TileLayer,
   CircleMarker,
   Popup,
+  GeoJSON,
   useMap,
 } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
@@ -62,6 +63,32 @@ export default function SafetyMap() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedReport, setSelectedReport] = useState(null);
+
+  // Load Musanze boundary GeoJSON
+  const [boundaries, setBoundaries] = useState(null);
+  useEffect(() => {
+    fetch("/musanze_boundaries.geojson")
+      .then((r) => r.json())
+      .then(setBoundaries)
+      .catch(() => {});
+  }, []);
+
+  const boundaryStyle = (feature) => ({
+    color: "#2563eb",
+    weight: 1.5,
+    fillColor: "#3b82f620",
+    fillOpacity: 0.12,
+  });
+
+  const onEachBoundary = (feature, layer) => {
+    const { Village, Cell, Sector } = feature.properties || {};
+    if (Village) {
+      layer.bindTooltip(`${Village}, ${Cell} \u2014 ${Sector}`, {
+        sticky: true,
+        className: "boundary-tooltip",
+      });
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -238,6 +265,13 @@ export default function SafetyMap() {
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 />
                 <MapZoomControls />
+                {boundaries && (
+                  <GeoJSON
+                    data={boundaries}
+                    style={boundaryStyle}
+                    onEachFeature={onEachBoundary}
+                  />
+                )}
                 {filteredMarkers.map((m) => (
                   <CircleMarker
                     key={m.id}
