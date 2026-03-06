@@ -68,6 +68,9 @@ class EvidenceFileResponse(BaseModel):
     uploaded_at: Optional[datetime] = None
     media_latitude: Optional[Decimal] = None
     media_longitude: Optional[Decimal] = None
+    captured_at: Optional[datetime] = None
+    is_live_capture: bool = False
+    perceptual_hash: Optional[str] = None
 
     class Config:
         from_attributes = True

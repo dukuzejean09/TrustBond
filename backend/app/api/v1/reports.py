@@ -7,11 +7,6 @@ from datetime import datetime, timedelta, timezone
 import io
 import os
 
-import cloudinary
-import cloudinary.uploader
-from PIL import Image
-from PIL.ExifTags import TAGS, GPSTAGS
-
 logger = logging.getLogger(__name__)
 
 from app.config import settings
@@ -42,119 +37,17 @@ from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_
 from app.core.audit import log_action
 from app.core.hotspot_auto import create_hotspots_from_reports
 from app.core.village_lookup import get_village_location_id, get_village_location_info
+from app.services.cloudinary_service import (
+    CLOUDINARY_ENABLED,
+    upload_to_cloudinary,
+    run_evidence_verification,
+)
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 UPLOAD_DIR = "uploads/evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-
-# Configure Cloudinary using settings (Pydantic loads .env for us)
-cloudinary.config(
-    cloud_name=settings.cloudinary_cloud_name,
-    api_key=settings.cloudinary_api_key,
-    api_secret=settings.cloudinary_api_secret,
-    secure=True,
-)
-
-_CLOUDINARY_ENABLED = bool(settings.cloudinary_cloud_name)
-
-
-def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optional[float], Optional[datetime]]:
-    """Extract GPS latitude/longitude and capture time from image EXIF, if present."""
-    try:
-        image = Image.open(io.BytesIO(image_bytes))
-        # Try modern getexif() API first, fall back to _getexif()
-        exif_data = getattr(image, "getexif", lambda: None)()
-        if not exif_data:
-            exif_data = getattr(image, "_getexif", lambda: None)()
-
-        if not exif_data:
-            return None, None, None
-
-        exif = {TAGS.get(k, k): v for k, v in exif_data.items()}
-        # Debug: show that we actually saw EXIF keys
-        print(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
-
-        # Try to get GPS info in a robust way
-        gps_info = None
-
-        # 1) Best effort: use get_ifd if available (Pillow Exif object)
-        if hasattr(exif_data, "get_ifd"):
-            try:
-                gps_ifd = exif_data.get_ifd(34853)  # 34853 == GPSInfo tag
-                if gps_ifd:
-                    gps_info = gps_ifd
-            except Exception:
-                gps_info = None
-
-        # 2) Fallback: raw tag value 34853 or "GPSInfo"
-        if gps_info is None:
-            raw_gps = exif_data.get(34853) or exif.get("GPSInfo")
-            # Some cameras store an integer offset here; resolve via get_ifd
-            if isinstance(raw_gps, dict):
-                gps_info = raw_gps
-            elif isinstance(raw_gps, int) and hasattr(exif_data, "get_ifd"):
-                try:
-                    gps_info = exif_data.get_ifd(raw_gps)
-                except Exception:
-                    gps_info = None
-
-        dt_original = exif.get("DateTimeOriginal") or exif.get("DateTime")
-
-        lat = lon = None
-        print(f"[EXIF] raw GPSInfo: {gps_info!r}")
-        if gps_info:
-            gps_parsed = {GPSTAGS.get(k, k): v for k, v in gps_info.items()}
-            print(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
-
-            def _to_deg(value, ref):
-                """
-                Convert EXIF GPS coordinates to decimal degrees.
-
-                Handles both:
-                - Rational tuples: ((deg_num, deg_den), (min_num, min_den), (sec_num, sec_den))
-                - Simple float triplets: (deg_float, min_float, sec_float)
-                """
-                try:
-                    # Case 1: rational tuples
-                    if isinstance(value[0], (tuple, list)):
-                        d = value[0][0] / value[0][1]
-                        m = value[1][0] / value[1][1]
-                        s = value[2][0] / value[2][1]
-                    else:
-                        # Case 2: already simple floats (deg, min, sec)
-                        d, m, s = value
-
-                    result = d + (m / 60.0) + (s / 3600.0)
-                    if ref in ["S", "W"]:
-                        result = -result
-                    return float(result)
-                except Exception:
-                    return None
-
-            lat_val = gps_parsed.get("GPSLatitude")
-            lat_ref = gps_parsed.get("GPSLatitudeRef")
-            lon_val = gps_parsed.get("GPSLongitude")
-            lon_ref = gps_parsed.get("GPSLongitudeRef")
-
-            if lat_val and lat_ref:
-                lat = _to_deg(lat_val, lat_ref)
-            if lon_val and lon_ref:
-                lon = _to_deg(lon_val, lon_ref)
-
-        dt = None
-        if dt_original:
-            # EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
-            try:
-                dt = datetime.strptime(dt_original, "%Y:%m:%d %H:%M:%S")
-            except Exception:
-                dt = None
-
-        return lat, lon, dt
-    except Exception:
-        # If EXIF parsing fails, just return Nones
-        return None, None, None
 
 
 @router.post("/", response_model=ReportResponse)
@@ -800,27 +693,17 @@ async def upload_evidence(
         )
 
     # Cloudinary upload if configured, otherwise save locally
-    if _CLOUDINARY_ENABLED:
-        upload_opts = {"folder": "trustbond/evidence"}
-        # Cloudinary uses resource_type="video" for both video and audio
-        if not is_image:
-            upload_opts["resource_type"] = "video"
-
+    if CLOUDINARY_ENABLED:
         try:
-            # Wrap bytes in a file-like object so Cloudinary treats it as an uploaded file
-            file_obj = io.BytesIO(content)
-            # Give Cloudinary a sensible name (helps with type detection / extensions)
-            file_obj.name = file.filename or f"{uuid4()}.{file_ext or 'bin'}"
-
-            upload_result = cloudinary.uploader.upload(file_obj, **upload_opts)
+            upload_result = upload_to_cloudinary(
+                content, file.filename or f"{uuid4()}.{file_ext or 'bin'}", is_image
+            )
             file_url = upload_result.get("secure_url") or upload_result.get("url")
         except Exception as e:
-            # In production mode with Cloudinary configured, we do NOT write to local disk.
-            # The client (mobile app) should handle offline/low-network by queuing uploads locally.
-            print(f"[Cloudinary] upload error for report {report_id}: {e}")
-            raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {e}")
+            logger.error("Cloudinary upload error for report %s: %s", report_id, e)
+            raise HTTPException(status_code=500, detail="Evidence upload failed. Please try again.")
     else:
-        # Dev mode without Cloudinary configured: save to local disk
+        # Dev mode without Cloudinary: save to local disk
         safe_ext = file_ext or "bin"
         file_name = f"{uuid4()}.{safe_ext}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
@@ -828,25 +711,48 @@ async def upload_evidence(
             f.write(content)
         file_url = f"/uploads/evidence/{file_name}"
 
-    # EXIF-based metadata extraction for images
-    exif_lat = exif_lon = None
-    exif_dt = None
-    if is_image:
-        exif_lat, exif_lon, exif_dt = _extract_exif_metadata(content)
+    # Run evidence verification pipeline (EXIF, freshness, screenshot, duplicates)
+    verification = run_evidence_verification(
+        content=content,
+        filename=file.filename or "",
+        is_image=is_image,
+        report_reported_at=report.reported_at,
+    )
 
-    final_lat = exif_lat if exif_lat is not None else media_latitude
-    final_lon = exif_lon if exif_lon is not None else media_longitude
+    exif_meta = verification["exif"]
 
-    # captured_at priority:
-    # 1) EXIF DateTimeOriginal / DateTime (true capture time if present)
-    # 2) Client-provided captured_at (from mobile app)
-    # 3) Optional fallback to report.reported_at for live captures only
-    final_captured_at = exif_dt if exif_dt is not None else captured_at
+    # Reject stale evidence (older than 24 hours)
+    if verification["verification_status"] == "rejected":
+        raise HTTPException(
+            status_code=400,
+            detail=verification["rejection_reason"],
+        )
+
+    # Check for duplicate evidence (same perceptual hash in this report)
+    if verification["perceptual_hash"]:
+        existing_dup = (
+            db.query(EvidenceFile)
+            .filter(
+                EvidenceFile.report_id == report.report_id,
+                EvidenceFile.perceptual_hash == verification["perceptual_hash"],
+            )
+            .first()
+        )
+        if existing_dup:
+            raise HTTPException(
+                status_code=400,
+                detail="This evidence appears to be a duplicate of an already uploaded file.",
+            )
+
+    # Use EXIF GPS if available, otherwise fall back to form values
+    final_lat = exif_meta["gps_latitude"] if exif_meta["gps_latitude"] is not None else media_latitude
+    final_lon = exif_meta["gps_longitude"] if exif_meta["gps_longitude"] is not None else media_longitude
+
+    # Captured time: EXIF > client-provided > report time (for live captures)
+    final_captured_at = exif_meta["captured_at"] if exif_meta["captured_at"] is not None else captured_at
     if final_captured_at is None and is_live_capture:
-        # For true live captures (camera in app), if we somehow didn't get
-        # EXIF or client timestamp, approximate with report time.
         final_captured_at = report.reported_at
-    
+
     evidence = EvidenceFile(
         evidence_id=uuid4(),
         report_id=report.report_id,
@@ -856,6 +762,7 @@ async def upload_evidence(
         media_longitude=final_lon,
         captured_at=final_captured_at,
         is_live_capture=is_live_capture,
+        perceptual_hash=verification["perceptual_hash"],
     )
     db.add(evidence)
     db.commit()
@@ -870,4 +777,10 @@ async def upload_evidence(
         report_after.is_flagged = is_flagged
         db.commit()
     
-    return {"evidence_id": str(evidence.evidence_id), "file_url": file_url}
+    return {
+        "evidence_id": str(evidence.evidence_id),
+        "file_url": file_url,
+        "verification_status": verification["verification_status"],
+        "camera_model": exif_meta.get("camera_model"),
+        "freshness": verification["freshness"],
+    }
