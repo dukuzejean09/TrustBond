@@ -9,7 +9,7 @@ class ApiService {
   ApiService._internal();
 
   final http.Client _client = http.Client();
-  static const Duration _timeout = Duration(seconds: 30);
+  static const Duration _timeout = Duration(seconds: 60);
 
   /// Common headers for API requests.
   static const Map<String, String> _jsonHeaders = {
