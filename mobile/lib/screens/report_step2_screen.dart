@@ -43,6 +43,7 @@ class _ReportStep2ScreenState extends State<ReportStep2Screen> {
   @override
   void initState() {
     super.initState();
+    _descController.addListener(() => setState(() {}));
     _getLocation();
   }
 
