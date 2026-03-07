@@ -112,7 +112,13 @@ export const authService = {
       let detail = "Failed to send reset code";
       try {
         const j = JSON.parse(text);
-        detail = j.detail || detail;
+        if (typeof j.detail === "string") {
+          detail = j.detail;
+        } else if (Array.isArray(j.detail)) {
+          detail = j.detail
+            .map((d) => d.msg || d.message || JSON.stringify(d))
+            .join("; ");
+        }
       } catch (_) {}
       throw new Error(detail);
     }
@@ -135,7 +141,13 @@ export const authService = {
       let detail = "Invalid or expired code";
       try {
         const j = JSON.parse(text);
-        detail = j.detail || detail;
+        if (typeof j.detail === "string") {
+          detail = j.detail;
+        } else if (Array.isArray(j.detail)) {
+          detail = j.detail
+            .map((d) => d.msg || d.message || JSON.stringify(d))
+            .join("; ");
+        }
       } catch (_) {}
       throw new Error(detail);
     }
@@ -158,11 +170,18 @@ export const authService = {
       }),
     });
     if (!res.ok) {
+      if (res.status === 401) this.removeToken();
       const text = await res.text();
       let detail = "Failed to change password";
       try {
         const j = JSON.parse(text);
-        detail = j.detail || detail;
+        if (typeof j.detail === "string") {
+          detail = j.detail;
+        } else if (Array.isArray(j.detail)) {
+          detail = j.detail
+            .map((d) => d.msg || d.message || JSON.stringify(d))
+            .join("; ");
+        }
       } catch (_) {}
       throw new Error(detail);
     }

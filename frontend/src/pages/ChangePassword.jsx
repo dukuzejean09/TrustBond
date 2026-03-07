@@ -17,8 +17,20 @@ export default function ChangePassword() {
       setError("New password and confirmation do not match.");
       return;
     }
-    if (newPassword.length < 6) {
-      setError("New password must be at least 6 characters.");
+    if (newPassword.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    if (!/[A-Z]/.test(newPassword)) {
+      setError("New password must contain at least one uppercase letter.");
+      return;
+    }
+    if (!/[a-z]/.test(newPassword)) {
+      setError("New password must contain at least one lowercase letter.");
+      return;
+    }
+    if (!/\d/.test(newPassword)) {
+      setError("New password must contain at least one digit.");
       return;
     }
     try {
@@ -61,9 +73,12 @@ export default function ChangePassword() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               autoComplete="new-password"
             />
+            <small className="field-hint">
+              Min 8 characters, with uppercase, lowercase, and a digit.
+            </small>
           </div>
           <div className="form-row">
             <label>Confirm new password *</label>
@@ -72,7 +87,7 @@ export default function ChangePassword() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               required
-              minLength={6}
+              minLength={8}
               autoComplete="new-password"
             />
           </div>

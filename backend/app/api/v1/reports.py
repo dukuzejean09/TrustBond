@@ -140,6 +140,19 @@ def create_report(
     db.commit()
     db.refresh(report)
 
+    # Eagerly load relationships for the response
+    report = (
+        db.query(Report)
+        .options(
+            joinedload(Report.incident_type),
+            joinedload(Report.village_location),
+            selectinload(Report.evidence_files),
+            selectinload(Report.hotspots),
+        )
+        .filter(Report.report_id == report.report_id)
+        .first()
+    )
+
     # Run hotspot auto-creation in background when criteria are met (no user intervention)
     def run_hotspot_auto():
         session = SessionLocal()
@@ -151,7 +164,7 @@ def create_report(
             session.close()
 
     background_tasks.add_task(run_hotspot_auto)
-    return report
+    return _build_report_response(report, db)
 
 
 def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportResponse:

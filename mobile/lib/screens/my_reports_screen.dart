@@ -23,6 +23,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   bool _loading = true;
   int _filterIndex = 0;
 
+  String? _error;
+
   static const _filters = ['All', 'Pending', 'Verified', 'Rejected'];
 
   late TabController _tabCtrl;
@@ -46,7 +48,10 @@ class _MyReportsScreenState extends State<MyReportsScreen>
   }
 
   Future<void> _load() async {
-    setState(() => _loading = true);
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     final deviceId = await _deviceService.getDeviceId();
     if (deviceId == null || deviceId.isEmpty) {
       setState(() {
@@ -64,8 +69,12 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             .toList();
         _loading = false;
       });
-    } catch (_) {
-      setState(() => _loading = false);
+    } catch (e) {
+      debugPrint('Failed to load my reports: $e');
+      setState(() {
+        _error = e.toString().replaceFirst('Exception: ', '');
+        _loading = false;
+      });
     }
   }
 
@@ -143,6 +152,38 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     if (_loading) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.accent));
+    }
+    if (_error != null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.cloud_off, color: AppColors.muted, size: 48),
+              const SizedBox(height: 12),
+              const Text('Could not load reports',
+                  style: TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 6),
+              Text(_error!,
+                  style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                  textAlign: TextAlign.center),
+              const SizedBox(height: 16),
+              ElevatedButton.icon(
+                onPressed: _load,
+                icon: const Icon(Icons.refresh, size: 16),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.accent,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
     }
     final items = _filtered;
     if (items.isEmpty) {

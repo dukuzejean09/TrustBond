@@ -88,7 +88,8 @@ class _HomeScreenState extends State<HomeScreen> {
             : ((verified / reports.length) * 100).clamp(0, 100);
         _loading = false;
       });
-    } catch (_) {
+    } catch (e) {
+      debugPrint('Failed to load reports on home: $e');
       setState(() => _loading = false);
     }
   }
