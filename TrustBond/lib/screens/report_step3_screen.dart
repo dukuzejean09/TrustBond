@@ -139,8 +139,13 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
 
       final result = await _apiService.submitReport(reportData);
       final reportId = result['report_id']?.toString() ?? '';
+      final ruleStatus = result['rule_status']?.toString() ?? 'pending';
 
-      // Upload evidence files with verification feedback
+      if (reportId.isEmpty) {
+        throw Exception('Report was created but no report ID was returned.');
+      }
+
+      // The report is already stored at this point. Evidence upload feedback is non-blocking.
       final List<String> uploadErrors = [];
       for (int i = 0; i < _files.length; i++) {
         final f = _files[i];
@@ -169,6 +174,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
           MaterialPageRoute(
               builder: (_) => ReportSuccessScreen(
                     reportId: reportId,
+                    ruleStatus: ruleStatus,
                     incidentTypeName: widget.incidentTypeName,
                     evidenceWarnings: uploadErrors,
                   )),

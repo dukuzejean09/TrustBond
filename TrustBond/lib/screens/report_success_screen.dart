@@ -3,12 +3,14 @@ import '../config/theme.dart';
 
 class ReportSuccessScreen extends StatefulWidget {
   final String reportId;
+  final String ruleStatus;
   final String incidentTypeName;
   final List<String> evidenceWarnings;
 
   const ReportSuccessScreen({
     super.key,
     required this.reportId,
+    required this.ruleStatus,
     required this.incidentTypeName,
     this.evidenceWarnings = const [],
   });
@@ -71,7 +73,7 @@ class _ReportSuccessScreenState extends State<ReportSuccessScreen>
                   style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
               const SizedBox(height: 8),
               Text(
-                'Your ${widget.incidentTypeName} report has been received and is being processed.',
+                'Your ${widget.incidentTypeName} report has been saved to the database and passed through initial rule validation.',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                     fontSize: 13, color: AppColors.muted, height: 1.5),
@@ -155,10 +157,20 @@ class _ReportSuccessScreenState extends State<ReportSuccessScreen>
   }
 
   Widget _buildTimeline() {
+    final normalizedStatus = widget.ruleStatus.toLowerCase();
+    final ruleValidationDone = normalizedStatus != 'pending';
+    final ruleLabel = switch (normalizedStatus) {
+      'passed' => 'Passed',
+      'flagged' => 'Flagged',
+      'rejected' => 'Rejected',
+      _ => 'Pending',
+    };
+
     final steps = [
       _TimelineStep('Submitted', 'Just now', true, true),
-      _TimelineStep('Rule Validation', 'Processing...', true, false),
-      _TimelineStep('AI Verification', 'Pending', false, false),
+      _TimelineStep('Saved to Database', 'Complete', true, false),
+      _TimelineStep('Rule Validation', ruleLabel, ruleValidationDone, !ruleValidationDone),
+      _TimelineStep('Further Analysis', 'Runs after submission', false, false),
       _TimelineStep('Police Review', 'Waiting', false, false),
     ];
     return Container(

@@ -320,15 +320,20 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildTimeline(ReportDetailItem r) {
-    final validated = r.ruleStatus != 'pending';
-    final verified = r.ruleStatus == 'confirmed' ||
-        r.ruleStatus == 'verified' ||
-        r.ruleStatus == 'trusted';
+    final normalizedStatus = r.ruleStatus.toLowerCase();
+    final validated = normalizedStatus != 'pending';
+    final ruleLabel = switch (normalizedStatus) {
+      'passed' => 'Passed',
+      'flagged' => 'Flagged',
+      'rejected' => 'Rejected',
+      _ => 'Pending',
+    };
 
     final steps = [
       _Step('Submitted', _formatDate(r.reportedAt), true, true),
-      _Step('Rule Validation', validated ? 'Complete' : 'Processing...', validated, !validated),
-      _Step('AI Verification', verified ? 'Verified' : 'Pending', verified, !verified && validated),
+      _Step('Saved to Database', 'Complete', true, false),
+      _Step('Rule Validation', ruleLabel, validated, !validated),
+      _Step('Further Analysis', 'Runs after submission', false, false),
       _Step('Police Review', 'Waiting', false, false),
     ];
 

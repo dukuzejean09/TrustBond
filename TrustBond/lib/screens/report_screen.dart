@@ -8,6 +8,7 @@ import '../services/device_service.dart';
 import '../services/motion_service.dart';
 import '../models/report_model.dart';
 import '../models/evidence_attachment.dart';
+import 'report_success_screen.dart';
 
 /// Camera works only on Android/iOS. On Windows/Web use gallery.
 bool get _isMobileWithCamera =>
@@ -362,31 +363,61 @@ class _ReportScreenState extends State<ReportScreen> {
       );
 
       final result = await _apiService.submitReport(report.toJson());
-      final reportId = result['report_id'] as String?;
+      final reportId = result['report_id']?.toString();
+      final ruleStatus = result['rule_status']?.toString() ?? 'pending';
+      final selectedIncidentTypeName = _incidentTypes
+          .whereType<Map<String, dynamic>>()
+          .firstWhere(
+            (item) => item['incident_type_id'] == _selectedIncidentTypeId,
+            orElse: () => const {},
+          )['type_name']
+          ?.toString() ??
+          'incident';
 
-      if (reportId != null && _attachments.isNotEmpty) {
-        for (final attachment in _attachments) {
-          await _apiService.uploadEvidence(
-            reportId,
-            _deviceId!,
-            attachment.path,
-            mediaLatitude: attachment.mediaLatitude,
-            mediaLongitude: attachment.mediaLongitude,
-            capturedAt: attachment.capturedAt,
-            isLiveCapture: attachment.isLiveCapture,
-          );
+      if (reportId == null || reportId.isEmpty) {
+        throw Exception('Report was created but no report ID was returned.');
+      }
+
+      final uploadErrors = <String>[];
+      if (_attachments.isNotEmpty) {
+        for (int i = 0; i < _attachments.length; i++) {
+          final attachment = _attachments[i];
+          try {
+            final evidenceResult = await _apiService.uploadEvidence(
+              reportId,
+              _deviceId!,
+              attachment.path,
+              mediaLatitude: attachment.mediaLatitude,
+              mediaLongitude: attachment.mediaLongitude,
+              capturedAt: attachment.capturedAt,
+              isLiveCapture: attachment.isLiveCapture,
+            );
+            final status = evidenceResult['verification_status']?.toString() ?? 'unknown';
+            if (status == 'flagged') {
+              uploadErrors.add('File ${i + 1}: flagged for review');
+            }
+          } catch (e) {
+            uploadErrors.add('File ${i + 1}: ${e.toString()}');
+          }
         }
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Report submitted successfully!')),
-        );
         _descriptionController.clear();
         setState(() {
           _selectedIncidentTypeId = null;
           _attachments.clear();
         });
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ReportSuccessScreen(
+              reportId: reportId,
+              ruleStatus: ruleStatus,
+              incidentTypeName: selectedIncidentTypeName,
+              evidenceWarnings: uploadErrors,
+            ),
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {

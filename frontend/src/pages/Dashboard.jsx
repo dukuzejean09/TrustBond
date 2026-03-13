@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Layout from "../components/Layout.jsx";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { apiService } from "../services/apiService.js";
@@ -21,6 +21,7 @@ const STATUS_BADGE = {
 
 export default function Dashboard() {
   const { user, isOfficer, canSeeHotspots } = useAuth();
+  const navigate = useNavigate();
   const [stats, setStats] = useState(null);
   const [recentReports, setRecentReports] = useState([]);
   const [allReports, setAllReports] = useState([]);
@@ -444,9 +445,9 @@ export default function Dashboard() {
             <div className="card">
               <div className="card-header">
                 <span className="card-title">Recent Reports</span>
-                <a className="card-action" href="/reports">
+                <Link className="card-action" to="/reports">
                   View all →
-                </a>
+                </Link>
               </div>
               {recentReports.length === 0 ? (
                 <div className="empty-state">
@@ -470,9 +471,7 @@ export default function Dashboard() {
                           <tr
                             key={r.report_id}
                             style={{ cursor: "pointer" }}
-                            onClick={() =>
-                              (window.location.href = `/reports/${r.report_id}`)
-                            }
+                            onClick={() => navigate(`/reports/${r.report_id}`)}
                           >
                             <td style={{ fontWeight: 600 }}>
                               {r.incident_type_name ||
@@ -506,9 +505,9 @@ export default function Dashboard() {
               <div className="card-header">
                 <span className="card-title">Active Hotspots</span>
                 {canSeeHotspots && (
-                  <a className="card-action" href="/hotspots">
+                  <Link className="card-action" to="/hotspots">
                     View all →
-                  </a>
+                  </Link>
                 )}
               </div>
               {hotspots.length === 0 ? (

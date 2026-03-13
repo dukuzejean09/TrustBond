@@ -1,11 +1,20 @@
-import { createContext, useContext, useState, useEffect } from 'react';
-import { authService } from '../services/authService.js';
+import { createContext, useContext, useState, useEffect } from "react";
+import { authService } from "../services/authService.js";
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  const normalizedRole = String(user?.role || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^role[_\s-]*/i, "");
+
+  const isAdminRole = normalizedRole === "admin";
+  const isSupervisorRole = normalizedRole === "supervisor";
+  const isOfficerRole = normalizedRole === "officer";
 
   useEffect(() => {
     // Check if user is already logged in
@@ -45,13 +54,13 @@ export function AuthProvider({ children }) {
     login,
     logout,
     isAuthenticated: !!user,
-    isAdmin: user?.role === 'admin',
-    isSupervisor: user?.role === 'supervisor',
-    isOfficer: user?.role === 'officer',
-    canManageUsers: user?.role === 'admin' || user?.role === 'supervisor',
-    canAssignOrReview: user?.role === 'admin' || user?.role === 'supervisor',
-    canSeeHotspots: user?.role === 'admin' || user?.role === 'supervisor',
-    canSeeAudit: user?.role === 'admin',
+    isAdmin: isAdminRole,
+    isSupervisor: isSupervisorRole,
+    isOfficer: isOfficerRole,
+    canManageUsers: isAdminRole || isSupervisorRole,
+    canAssignOrReview: isAdminRole || isSupervisorRole,
+    canSeeHotspots: isAdminRole || isSupervisorRole,
+    canSeeAudit: isAdminRole,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -60,7 +69,7 @@ export function AuthProvider({ children }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
+    throw new Error("useAuth must be used within AuthProvider");
   }
   return context;
 }
