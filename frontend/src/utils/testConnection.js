@@ -1,13 +1,14 @@
+import { formatApiLocation, API_BASE_URL } from "../config/api.js";
+
 // Test backend connection
 export async function testBackendConnection() {
-  const baseUrl = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
-  const healthUrl = `${baseUrl}/health`;
+  const healthUrl = `${API_BASE_URL}/health`;
 
   try {
     const response = await fetch(healthUrl);
     const data = await response.json();
-    return { success: true, data };
+    return { success: true, data, baseUrl: formatApiLocation() };
   } catch (err) {
-    return { success: false, error: err.message };
+    return { success: false, error: err.message, baseUrl: formatApiLocation() };
   }
 }

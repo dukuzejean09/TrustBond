@@ -27,7 +27,24 @@ from app.models import (
     Notification,
     AuditLog,
 )
-from app.api.v1 import auth, devices, incident_types, police_users, reports, stats, hotspots, notifications, audit, locations, incident_groups
+from app.api.v1 import (
+    auth,
+    devices,
+    incident_types,
+    police_users,
+    reports,
+    stats,
+    hotspots,
+    notifications,
+    audit,
+    locations,
+    incident_groups,
+    cases,
+    stations,
+    system_config,
+    public_hotspots,
+    public_locations,
+)
 from app.services.incident_type_importer import import_incident_types
 from app.services.admin_seeder import create_default_admin
 from scripts.populate_locations import populate_locations as seed_locations
@@ -93,6 +110,11 @@ app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(locations.router, prefix="/api/v1")
 app.include_router(incident_groups.router, prefix="/api/v1")
+app.include_router(cases.router, prefix="/api/v1")
+app.include_router(stations.router, prefix="/api/v1")
+app.include_router(system_config.router, prefix="/api/v1")
+app.include_router(public_hotspots.router, prefix="/api/v1")
+app.include_router(public_locations.router, prefix="/api/v1")
 
 
 @app.get("/health")

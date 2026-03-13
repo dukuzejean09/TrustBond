@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext.jsx";
 import { testBackendConnection } from "../utils/testConnection.js";
+import { formatApiLocation } from "../config/api.js";
 import logoImage from "../assets/images/logo.jpeg";
 import "./Login.css";
 
@@ -23,7 +24,7 @@ export default function Login() {
       setBackendConnected(result.success);
       if (!result.success) {
         setError(
-          "Cannot connect to backend. Make sure the server is running at http://localhost:8000",
+          `Cannot connect to backend. Make sure the server is running at ${result.baseUrl}`,
         );
       }
     });
@@ -70,8 +71,8 @@ export default function Login() {
             )}
             {backendConnected === false && (
               <div className="error-message" role="alert">
-                Backend connection failed. Make sure the server is running at
-                http://localhost:8000
+                Backend connection failed. Make sure the server is running at{" "}
+                {formatApiLocation()}
               </div>
             )}
             {backendConnected === true && error && (

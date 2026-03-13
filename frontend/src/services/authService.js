@@ -1,4 +1,4 @@
-import { API_ENDPOINTS } from "../config/api.js";
+import { API_ENDPOINTS, formatApiLocation } from "../config/api.js";
 
 const TOKEN_KEY = "trustbond_auth_token";
 
@@ -51,7 +51,7 @@ export const authService = {
         err.message.includes("NetworkError")
       ) {
         throw new Error(
-          "Cannot connect to backend. Make sure the server is running at http://localhost:8000",
+          `Cannot connect to backend. Make sure the server is running at ${formatApiLocation()}`,
         );
       }
       throw err;
