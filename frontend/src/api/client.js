@@ -1,29 +1,31 @@
 /**
  * TrustBond API client – uses fetch with base URL and optional Bearer token.
+ * Token key matches authService.js so both clients share the same stored token.
  */
 import { API_BASE_URL } from "../config/api.js";
 
 const BASE = API_BASE_URL;
+// Must match the key used in authService.js
+const TOKEN_KEY = "trustbond_auth_token";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("tb_token") || localStorage.getItem("tb_token");
+  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
 }
 
 export function setToken(token, { remember = true } = {}) {
   if (typeof window === "undefined") return;
   if (!token) {
-    sessionStorage.removeItem("tb_token");
-    localStorage.removeItem("tb_token");
+    localStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem(TOKEN_KEY);
     return;
   }
-  // Clear both and set according to remember flag
-  sessionStorage.removeItem("tb_token");
-  localStorage.removeItem("tb_token");
+  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
   if (remember) {
-    localStorage.setItem("tb_token", token);
+    localStorage.setItem(TOKEN_KEY, token);
   } else {
-    sessionStorage.setItem("tb_token", token);
+    sessionStorage.setItem(TOKEN_KEY, token);
   }
 }
 
@@ -48,13 +50,11 @@ async function request(method, path, body = null, { token = getToken() } = {}) {
     data = null;
   }
   if (!res.ok) {
-    // Handle auth expiry: force logout on 401 so user is prompted to log in again
     if (res.status === 401) {
+      // Clear token and redirect to login — no alert popup
       setToken(null);
-      // Optional: simple reload to show login screen
       if (typeof window !== "undefined") {
-        window.alert(data?.detail || "Session expired. Please log in again.");
-        window.location.reload();
+        window.location.href = "/login";
       }
     }
     const err = new Error(data?.detail || res.statusText || "Request failed");
