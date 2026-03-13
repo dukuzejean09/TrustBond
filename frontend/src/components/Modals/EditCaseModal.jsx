@@ -1,26 +1,26 @@
-import React, { useEffect, useState } from 'react';
-import api from '../../api/client';
-import { useAuth } from '../../context/AuthContext';
+import React, { useEffect, useState } from "react";
+import api from "../../api/client";
+import { useAuth } from "../../contexts/AuthContext.jsx";
 
 const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
   const { user: me } = useAuth();
-  const role = me?.role || 'officer';
-  const isAdminOrSupervisor = role === 'admin' || role === 'supervisor';
+  const role = me?.role || "officer";
+  const isAdminOrSupervisor = role === "admin" || role === "supervisor";
 
-  const [status, setStatus] = useState(caseItem?.status || 'open');
-  const [priority, setPriority] = useState(caseItem?.priority || 'medium');
-  const [description, setDescription] = useState(caseItem?.description || '');
-  const [outcome, setOutcome] = useState(caseItem?.outcome || '');
+  const [status, setStatus] = useState(caseItem?.status || "open");
+  const [priority, setPriority] = useState(caseItem?.priority || "medium");
+  const [description, setDescription] = useState(caseItem?.description || "");
+  const [outcome, setOutcome] = useState(caseItem?.outcome || "");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!isOpen || !caseItem) return;
-    setStatus(caseItem.status || 'open');
-    setPriority(caseItem.priority || 'medium');
-    setDescription(caseItem.description || '');
-    setOutcome(caseItem.outcome || '');
-    setError('');
+    setStatus(caseItem.status || "open");
+    setPriority(caseItem.priority || "medium");
+    setDescription(caseItem.description || "");
+    setOutcome(caseItem.outcome || "");
+    setError("");
     setSaving(false);
   }, [isOpen, caseItem]);
 
@@ -28,7 +28,7 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
 
   const submit = async () => {
     setSaving(true);
-    setError('');
+    setError("");
     const payload = {
       status,
       description,
@@ -40,30 +40,36 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
       onSaved?.();
       onClose?.();
     } catch (e) {
-      setError(e?.message || 'Failed to update case.');
+      setError(e?.message || "Failed to update case.");
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
+    <div
+      className="modal-overlay open"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
       <div className="modal">
         <div className="modal-header">
           <div className="modal-title">
-            Update Case — {caseItem.case_number || String(caseItem.case_id).slice(0, 8)}
+            Update Case —{" "}
+            {caseItem.case_number || String(caseItem.case_id).slice(0, 8)}
           </div>
-          <div className="modal-close" onClick={onClose}>✕</div>
+          <div className="modal-close" onClick={onClose}>
+            ✕
+          </div>
         </div>
 
         {error && (
-          <div className="alert alert-danger" style={{ marginBottom: '10px' }}>
+          <div className="alert alert-danger" style={{ marginBottom: "10px" }}>
             <span className="alert-icon">!</span>
             <div>{error}</div>
           </div>
         )}
 
-        <div className="form-grid" style={{ marginBottom: '12px' }}>
+        <div className="form-grid" style={{ marginBottom: "12px" }}>
           <div className="input-group">
             <div className="input-label">Status</div>
             <select
@@ -111,12 +117,27 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
           ></textarea>
         </div>
 
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
-          <button className="btn btn-outline" onClick={onClose} disabled={saving}>
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            justifyContent: "flex-end",
+            marginTop: "10px",
+          }}
+        >
+          <button
+            className="btn btn-outline"
+            onClick={onClose}
+            disabled={saving}
+          >
             Cancel
           </button>
-          <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? 'Saving…' : 'Save Changes'}
+          <button
+            className="btn btn-primary"
+            onClick={submit}
+            disabled={saving}
+          >
+            {saving ? "Saving…" : "Save Changes"}
           </button>
         </div>
       </div>
@@ -125,4 +146,3 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
 };
 
 export default EditCaseModal;
-

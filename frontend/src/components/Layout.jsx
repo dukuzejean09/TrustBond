@@ -14,6 +14,10 @@ const PAGE_TITLES = {
   "/audit": "Audit Log",
   "/change-password": "Change Password",
   "/notifications": "Notifications",
+  "/stations": "Stations",
+  "/cases": "Case Management",
+  "/device-trust": "Device Trust",
+  "/system-config": "System Config",
 };
 
 export default function Layout({ children }) {
@@ -25,6 +29,7 @@ export default function Layout({ children }) {
     canSeeHotspots,
     canSeeAudit,
     isOfficer,
+    isSupervisor,
   } = useAuth();
   const canManageIncidentTypes = isAdmin;
   const location = useLocation();
@@ -176,10 +181,28 @@ export default function Layout({ children }) {
                 <span className="nav-text">Hotspots</span>
               </Link>
             )}
+            <Link
+              to="/cases"
+              className={`nav-item${isActive("/cases") ? " active" : ""}`}
+            >
+              <span className="nav-dot" />{" "}
+              <span className="nav-text">Case Management</span>
+            </Link>
+            <Link
+              to="/notifications"
+              className={`nav-item${isActive("/notifications") ? " active" : ""}`}
+            >
+              <span className="nav-dot" />{" "}
+              <span className="nav-text">Notifications</span>
+            </Link>
           </div>
 
           {/* Management */}
-          {(canManageUsers || canManageIncidentTypes || canSeeAudit) && (
+          {(canManageUsers ||
+            canManageIncidentTypes ||
+            canSeeAudit ||
+            isAdmin ||
+            isSupervisor) && (
             <div className="nav-section">
               <div className="nav-label">Management</div>
               {canManageUsers && (
@@ -191,6 +214,15 @@ export default function Layout({ children }) {
                   <span className="nav-text">Users</span>
                 </Link>
               )}
+              {(isAdmin || isSupervisor) && (
+                <Link
+                  to="/stations"
+                  className={`nav-item${isActive("/stations") ? " active" : ""}`}
+                >
+                  <span className="nav-dot" />{" "}
+                  <span className="nav-text">Stations</span>
+                </Link>
+              )}
               {canManageIncidentTypes && (
                 <Link
                   to="/incident-types"
@@ -198,6 +230,24 @@ export default function Layout({ children }) {
                 >
                   <span className="nav-dot" />{" "}
                   <span className="nav-text">Incident Types</span>
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  to="/device-trust"
+                  className={`nav-item${isActive("/device-trust") ? " active" : ""}`}
+                >
+                  <span className="nav-dot" />{" "}
+                  <span className="nav-text">Device Trust</span>
+                </Link>
+              )}
+              {isAdmin && (
+                <Link
+                  to="/system-config"
+                  className={`nav-item${isActive("/system-config") ? " active" : ""}`}
+                >
+                  <span className="nav-dot" />{" "}
+                  <span className="nav-text">System Config</span>
                 </Link>
               )}
               {canSeeAudit && (

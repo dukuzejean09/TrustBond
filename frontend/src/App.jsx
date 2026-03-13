@@ -14,6 +14,11 @@ import ChangePassword from "./pages/ChangePassword.jsx";
 import AuditLog from "./pages/AuditLog.jsx";
 import IncidentTypes from "./pages/IncidentTypes.jsx";
 import SafetyMap from "./pages/SafetyMap.jsx";
+import Stations from "./pages/Stations.jsx";
+import CaseManagement from "./pages/CaseManagement.jsx";
+import DeviceTrust from "./pages/DeviceTrust.jsx";
+import SystemConfig from "./pages/SystemConfig.jsx";
+import Notifications from "./pages/Notifications.jsx";
 import "./App.css";
 import "./pages/Pages.css";
 
@@ -95,6 +100,46 @@ function App() {
               element={
                 <ProtectedRoute>
                   <AuditLog />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/stations"
+              element={
+                <ProtectedRoute>
+                  <Stations />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/cases"
+              element={
+                <ProtectedRoute>
+                  <CaseManagement />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/device-trust"
+              element={
+                <ProtectedRoute>
+                  <DeviceTrust />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/system-config"
+              element={
+                <ProtectedRoute>
+                  <SystemConfig />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/notifications"
+              element={
+                <ProtectedRoute>
+                  <Notifications />
                 </ProtectedRoute>
               }
             />
