@@ -252,6 +252,21 @@ def score_report_credibility(
             processing_time=None,
         )
         db.add(prediction)
+
+        # Keep rule_status conservative: ML fake/suspicious should not stay classified.
+        # Human review can still finalize as confirmed/rejected later.
+        current_status = (getattr(report, "rule_status", "") or "").lower()
+        if prediction_label in ("fake", "suspicious") and current_status in (
+            "pending",
+            "classified",
+            "passed",
+            "confirmed",
+            "verified",
+            "trusted",
+        ):
+            report.rule_status = "flagged"
+            report.is_flagged = True
+
         # Mark when features were extracted for this report
         report.features_extracted = datetime.now(timezone.utc)
     except Exception as exc:

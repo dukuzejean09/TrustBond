@@ -553,6 +553,19 @@ def add_review(
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+
+    # Persist reviewer decision onto the report so all clients (dashboard/mobile)
+    # observe the same final moderation status.
+    if body.decision == "rejected":
+        report.rule_status = "rejected"
+        report.is_flagged = True
+    elif body.decision == "confirmed":
+        report.rule_status = "classified"
+        report.is_flagged = False
+    elif body.decision == "investigation":
+        report.rule_status = "flagged"
+        report.is_flagged = True
+
     review = PoliceReview(
         review_id=uuid4(),
         report_id=report_id,
