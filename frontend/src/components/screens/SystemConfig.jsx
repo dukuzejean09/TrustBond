@@ -1,38 +1,49 @@
-import React, { useEffect, useState } from 'react';
-import api from '../../api/client';
+import React, { useEffect, useState } from "react";
+import { apiService } from "../../services/apiService";
+import { formatApiLocation } from "../../config/api";
 
 const SystemConfig = () => {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [savingKey, setSavingKey] = useState(null);
   const [drafts, setDrafts] = useState({});
 
-  useEffect(() => {
+  const loadConfig = React.useCallback(() => {
     let cancelled = false;
     setLoading(true);
-    api
-      .get('/api/v1/system-config')
+    setError("");
+    apiService
+      .getSystemConfig()
       .then((res) => {
         if (cancelled) return;
         const rows = res?.items || [];
         setItems(rows);
         const nextDrafts = {};
         rows.forEach((row) => {
-          nextDrafts[row.config_key] = JSON.stringify(row.config_value ?? {}, null, 2);
+          nextDrafts[row.config_key] = JSON.stringify(
+            row.config_value ?? {},
+            null,
+            2,
+          );
         });
         setDrafts(nextDrafts);
         setLoading(false);
       })
       .catch((e) => {
         if (cancelled) return;
-        setError(e?.message || 'Failed to load system configuration.');
+        setError(e?.message || "Failed to load system configuration.");
         setLoading(false);
       });
     return () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const cancel = loadConfig();
+    return cancel;
+  }, [loadConfig]);
 
   const handleChangeDraft = (key) => (e) => {
     const value = e.target.value;
@@ -41,7 +52,7 @@ const SystemConfig = () => {
 
   const handleSave = async (row) => {
     const key = row.config_key;
-    const raw = drafts[key] ?? '';
+    const raw = drafts[key] ?? "";
     let parsed;
     try {
       parsed = raw.trim() ? JSON.parse(raw) : {};
@@ -49,17 +60,15 @@ const SystemConfig = () => {
       setError(`Config "${key}": value must be valid JSON.`);
       return;
     }
-    setError('');
+    setError("");
     setSavingKey(key);
     try {
-      const updated = await api.put(`/api/v1/system-config/${encodeURIComponent(key)}`, {
+      const updated = await apiService.updateSystemConfig(key, {
         config_key: key,
         config_value: parsed,
         description: row.description,
       });
-      setItems((prev) =>
-        prev.map((r) => (r.config_key === key ? updated : r)),
-      );
+      setItems((prev) => prev.map((r) => (r.config_key === key ? updated : r)));
       setDrafts((prev) => ({
         ...prev,
         [key]: JSON.stringify(updated.config_value ?? {}, null, 2),
@@ -75,20 +84,44 @@ const SystemConfig = () => {
     <>
       <div className="page-header">
         <h2>System Configuration</h2>
-        <p>Admin-only settings for DBSCAN, trust scoring, spam thresholds, and other global options.</p>
+        <p>
+          Admin-only settings for DBSCAN, trust scoring, spam thresholds, and
+          other global options.
+        </p>
       </div>
 
       <div className="card">
         {error && (
-          <div style={{ color: 'var(--danger)', fontSize: '12px', marginBottom: '8px' }}>
-            {error}
+          <div
+            style={{
+              color: "var(--danger)",
+              fontSize: "12px",
+              marginBottom: "10px",
+              lineHeight: 1.5,
+            }}
+          >
+            <div>{error}</div>
+            <div style={{ color: "var(--muted)", marginTop: 4 }}>
+              Active API: {formatApiLocation()}
+            </div>
+            <button
+              className="btn btn-outline btn-sm"
+              style={{ marginTop: 8 }}
+              onClick={loadConfig}
+            >
+              Retry
+            </button>
           </div>
         )}
         {loading && (
-          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>Loading configuration…</div>
+          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+            Loading configuration…
+          </div>
         )}
         {!loading && !items.length && !error && (
-          <div style={{ fontSize: '12px', color: 'var(--muted)' }}>No configuration rows found.</div>
+          <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+            No configuration rows found.
+          </div>
         )}
 
         {!loading && !!items.length && (
@@ -105,21 +138,23 @@ const SystemConfig = () => {
               <tbody>
                 {items.map((row) => (
                   <tr key={row.config_key}>
-                    <td style={{ fontWeight: 600, fontSize: '11px' }}>{row.config_key}</td>
-                    <td style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                      {row.description || '—'}
+                    <td style={{ fontWeight: 600, fontSize: "11px" }}>
+                      {row.config_key}
+                    </td>
+                    <td style={{ fontSize: "11px", color: "var(--muted)" }}>
+                      {row.description || "—"}
                     </td>
                     <td>
                       <textarea
                         rows={4}
                         style={{
-                          width: '100%',
-                          fontSize: '11px',
-                          fontFamily: 'monospace',
-                          background: 'var(--surface2)',
-                          borderRadius: '4px',
+                          width: "100%",
+                          fontSize: "11px",
+                          fontFamily: "monospace",
+                          background: "var(--surface2)",
+                          borderRadius: "4px",
                         }}
-                        value={drafts[row.config_key] ?? ''}
+                        value={drafts[row.config_key] ?? ""}
                         onChange={handleChangeDraft(row.config_key)}
                       />
                     </td>
@@ -129,7 +164,7 @@ const SystemConfig = () => {
                         onClick={() => handleSave(row)}
                         disabled={savingKey === row.config_key}
                       >
-                        {savingKey === row.config_key ? 'Saving…' : 'Save'}
+                        {savingKey === row.config_key ? "Saving…" : "Save"}
                       </button>
                     </td>
                   </tr>
@@ -144,4 +179,3 @@ const SystemConfig = () => {
 };
 
 export default SystemConfig;
-

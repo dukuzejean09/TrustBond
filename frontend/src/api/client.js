@@ -2,7 +2,7 @@
  * TrustBond API client – uses fetch with base URL and optional Bearer token.
  * Token key matches authService.js so both clients share the same stored token.
  */
-import { API_BASE_URL } from "../config/api.js";
+import { API_BASE_URL, formatApiLocation } from "../config/api.js";
 
 const BASE = API_BASE_URL;
 // Must match the key used in authService.js
@@ -41,7 +41,18 @@ async function request(method, path, body = null, { token = getToken() } = {}) {
     },
   };
   if (body && method !== "GET") opts.body = JSON.stringify(body);
-  const res = await fetch(url, opts);
+  let res;
+  try {
+    res = await fetch(url, opts);
+  } catch (err) {
+    const msg = err && err.message ? String(err.message) : "NetworkError";
+    if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+      throw new Error(
+        `Cannot connect to backend. Check API URL: ${formatApiLocation()}`,
+      );
+    }
+    throw err;
+  }
   const text = await res.text();
   let data;
   try {

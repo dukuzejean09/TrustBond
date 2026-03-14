@@ -132,10 +132,12 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
         return;
       }
 
+      final resolvedDeviceId = deviceId;
+
       final motion = await motionFuture;
 
       final reportData = <String, dynamic>{
-        'device_id': deviceId,
+        'device_id': resolvedDeviceId,
         'incident_type_id': widget.incidentTypeId,
         'description': widget.description,
         'latitude': widget.latitude,
@@ -167,7 +169,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
           try {
             final evidenceResult = await _apiService.uploadEvidence(
               reportId,
-              deviceId,
+              resolvedDeviceId,
               f.path,
               mediaLatitude: widget.latitude,
               mediaLongitude: widget.longitude,

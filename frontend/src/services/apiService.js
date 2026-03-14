@@ -324,4 +324,28 @@ export const apiService = {
     }
     return res.json();
   },
+
+  async getSystemConfig() {
+    return fetchWithAuth(API_ENDPOINTS.systemConfig.list);
+  },
+
+  async updateSystemConfig(key, body) {
+    const res = await fetch(API_ENDPOINTS.systemConfig.update(key), {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${authService.getToken()}`,
+      },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let detail = text;
+      try {
+        detail = JSON.parse(text).detail || text;
+      } catch (_) {}
+      throw new Error(detail || "Failed to update system configuration");
+    }
+    return res.json();
+  },
 };

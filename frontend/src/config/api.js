@@ -62,4 +62,9 @@ export const API_ENDPOINTS = {
     create: `${API_BASE_URL}/api/v1/incident-types`,
     update: (id) => `${API_BASE_URL}/api/v1/incident-types/${id}`,
   },
+  systemConfig: {
+    list: `${API_BASE_URL}/api/v1/system-config/`,
+    update: (key) =>
+      `${API_BASE_URL}/api/v1/system-config/${encodeURIComponent(key)}`,
+  },
 };

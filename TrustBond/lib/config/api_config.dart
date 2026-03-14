@@ -1,5 +1,3 @@
-import 'package:flutter/foundation.dart';
-
 /// API base URL. Change via --dart-define when running, or edit the default below.
 ///
 /// **Production:** Uses Render-hosted backend (auto-deployed from GitHub).
@@ -7,15 +5,11 @@ import 'package:flutter/foundation.dart';
 class ApiConfig {
   /// Backend URL selection strategy:
   /// - API_BASE_URL (dart-define) when provided
-  /// - release/profile default: Render backend
-  /// - debug default: local Docker backend via Android emulator loopback
+  /// - otherwise default to Render backend in all build modes
   static String get baseUrl {
     const overridden = String.fromEnvironment('API_BASE_URL', defaultValue: '');
     if (overridden.isNotEmpty) return _url(overridden);
-    if (!kDebugMode) {
-      return 'https://trustbond-backend.onrender.com/api/v1';
-    }
-    return 'http://10.0.2.2:8000/api/v1';
+    return 'https://trustbond-backend.onrender.com/api/v1';
   }
 
   static String get devicesUrl => _url('$baseUrl/devices');
