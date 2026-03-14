@@ -9,6 +9,7 @@ import '../services/location_service.dart';
 import '../models/report_model.dart';
 import 'notifications_screen.dart';
 import 'report_detail_screen.dart';
+import 'safety_map_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -75,6 +76,8 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       final verified = reports
           .where((r) =>
+            r.ruleStatus == 'classified' ||
+            r.ruleStatus == 'passed' ||
               r.ruleStatus == 'confirmed' ||
               r.ruleStatus == 'verified' ||
               r.ruleStatus == 'trusted')
@@ -279,67 +282,97 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMapPreview() {
-    return Container(
-      height: 180,
-      decoration: BoxDecoration(
-        color: AppColors.surface2,
-        border: Border.all(color: AppColors.border),
-        borderRadius: BorderRadius.circular(14),
+    final reportPoints = _recentReports
+        .take(12)
+        .map((r) => Offset(r.longitude, r.latitude))
+        .toList();
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const SafetyMapScreen()),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          if (_mapData != null)
-            CustomPaint(
-              size: Size.infinite,
-              painter: MusanzeMapPreviewPainter(
-                mapData: _mapData!,
-                userLatitude: _userLat,
-                userLongitude: _userLng,
+      child: Container(
+        height: 180,
+        decoration: BoxDecoration(
+          color: AppColors.surface2,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          children: [
+            if (_mapData != null)
+              CustomPaint(
+                size: Size.infinite,
+                painter: MusanzeMapPreviewPainter(
+                  mapData: _mapData!,
+                  userLatitude: _userLat,
+                  userLongitude: _userLng,
+                  reportPoints: reportPoints,
+                ),
+              )
+            else
+              const Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.accent, strokeWidth: 2)),
+            Positioned(
+              bottom: 8,
+              left: 10,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.bg.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  _userVillage != null
+                      ? '📍 ${_userVillage!.village}, ${_userVillage!.sector}'
+                      : 'Musanze District · ${_mapData?.sectors.length ?? 0} sectors',
+                  style: const TextStyle(
+                      fontSize: 9,
+                      color: AppColors.muted,
+                      fontFamily: 'monospace'),
+                ),
               ),
-            )
-          else
-            const Center(
-                child: CircularProgressIndicator(
-                    color: AppColors.accent, strokeWidth: 2)),
-          Positioned(
-            bottom: 8,
-            left: 10,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.bg.withValues(alpha: 0.85),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                _userVillage != null
-                    ? '📍 ${_userVillage!.village}, ${_userVillage!.sector}'
-                    : 'Musanze District · ${_mapData?.sectors.length ?? 0} sectors',
-                style: const TextStyle(
+            ),
+            Positioned(
+              bottom: 8,
+              right: 10,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.bg.withValues(alpha: 0.85),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '• ${reportPoints.length} reports',
+                  style: const TextStyle(
                     fontSize: 9,
-                    color: AppColors.muted,
-                    fontFamily: 'monospace'),
+                    color: AppColors.accent,
+                    fontFamily: 'monospace',
+                  ),
+                ),
               ),
             ),
-          ),
-          Positioned(
-            top: 9,
-            right: 9,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-              decoration: BoxDecoration(
-                color: AppColors.bg.withValues(alpha: 0.8),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: const Text(
-                'Tap to expand →',
-                style: TextStyle(fontSize: 9, color: AppColors.accent),
+            Positioned(
+              top: 9,
+              right: 9,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: AppColors.bg.withValues(alpha: 0.8),
+                  borderRadius: BorderRadius.circular(7),
+                ),
+                child: const Text(
+                  'Open map →',
+                  style: TextStyle(fontSize: 9, color: AppColors.accent),
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

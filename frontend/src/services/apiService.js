@@ -33,7 +33,48 @@ async function fetchWithAuth(url, options = {}) {
   return res.json();
 }
 
+async function fetchPublic(url, options = {}) {
+  const res = await fetch(url, options);
+  if (!res.ok) {
+    const text = await res.text();
+    let detail = `Request failed (${res.status})`;
+    try {
+      const j = JSON.parse(text);
+      if (typeof j.detail === "string") {
+        detail = j.detail;
+      } else if (Array.isArray(j.detail)) {
+        detail = j.detail
+          .map((d) => d.msg || d.message || JSON.stringify(d))
+          .join("; ");
+      }
+    } catch (_) {
+      if (text) detail = text;
+    }
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export const apiService = {
+  async getPublicMapIncidents(params = {}) {
+    const sp = new URLSearchParams();
+    if (params.incident_type_id != null) {
+      sp.set("incident_type_id", String(params.incident_type_id));
+    }
+    if (params.from_date != null) sp.set("from_date", params.from_date);
+    if (params.to_date != null) sp.set("to_date", params.to_date);
+    if (params.limit != null) sp.set("limit", String(params.limit));
+    const qs = sp.toString();
+    const url = qs
+      ? `${API_ENDPOINTS.publicMap.incidents}?${qs}`
+      : API_ENDPOINTS.publicMap.incidents;
+    return fetchPublic(url);
+  },
+
+  async getDevice(deviceId) {
+    return fetchWithAuth(API_ENDPOINTS.devices.get(deviceId));
+  },
+
   async getReports(params = {}) {
     const sp = new URLSearchParams();
     if (params.rule_status != null) sp.set("rule_status", params.rule_status);

@@ -44,6 +44,7 @@ from app.api.v1 import (
     system_config,
     public_hotspots,
     public_locations,
+    public_map,
 )
 from app.services.incident_type_importer import import_incident_types
 from app.services.admin_seeder import create_default_admin
@@ -115,6 +116,7 @@ app.include_router(stations.router, prefix="/api/v1")
 app.include_router(system_config.router, prefix="/api/v1")
 app.include_router(public_hotspots.router, prefix="/api/v1")
 app.include_router(public_locations.router, prefix="/api/v1")
+app.include_router(public_map.router, prefix="/api/v1")
 
 
 @app.get("/health")

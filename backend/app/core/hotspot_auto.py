@@ -7,6 +7,9 @@ from datetime import datetime, timezone, timedelta
 from decimal import Decimal
 from typing import Dict, Tuple, Any
 
+import numpy as np
+from sklearn.cluster import DBSCAN
+
 from sqlalchemy import insert
 from sqlalchemy.orm import Session, selectinload
 
@@ -18,7 +21,22 @@ from app.models.report import Report
 DEFAULT_TIME_WINDOW_HOURS = 24
 DEFAULT_MIN_INCIDENTS = 2
 DEFAULT_RADIUS_METERS = 500
-LAT_LONG_PRECISION = 3  # ~111m, used when we have no village
+LAT_LONG_PRECISION = 6
+EARTH_RADIUS_METERS = 6_371_000.0
+
+
+def _normalize_rule_status(status: Any) -> str:
+    value = str(status or "").strip().lower()
+    aliases = {
+        "passed": "classified",
+        "confirmed": "classified",
+        "verified": "classified",
+    }
+    return aliases.get(value, value)
+
+
+def _is_map_eligible_status(status: Any) -> bool:
+    return _normalize_rule_status(status) == "classified"
 
 
 def _weight_for_report(report: Report) -> Tuple[float, bool]:
@@ -31,8 +49,8 @@ def _weight_for_report(report: Report) -> Tuple[float, bool]:
     - rule_status rejected   -> 0.0
     - bonus for confirmed review: +0.7
     """
-    status = (report.rule_status or "").lower()
-    if status == "passed":
+    status = _normalize_rule_status(report.rule_status)
+    if status == "classified":
         base = 1.0
     elif status == "pending":
         base = 0.6
@@ -70,12 +88,14 @@ def create_hotspots_from_reports(
     radius_meters: float = DEFAULT_RADIUS_METERS,
 ) -> int:
     """
-    Group reports by:
-    - village_location_id + incident_type_id when village is known, OR
-    - lat/long bucket + incident_type_id when village is unknown.
+    Create hotspots using DBSCAN spatial clustering per incident type.
 
-    For each group with at least min_incidents, compute a weighted score
-    using rule_status and police reviews, then create a hotspot if none exists.
+    Only reports with map-eligible status (classified/passed aliases)
+    participate in clustering.
+
+    For each DBSCAN cluster with at least min_incidents, compute a weighted
+    score using normalized rule_status and police reviews, then create a
+    hotspot if none exists.
     """
     since = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
 
@@ -86,90 +106,95 @@ def create_hotspots_from_reports(
         .all()
     )
 
-    clusters: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
-
+    eligible_reports = []
     for r in reports:
+        if not _is_map_eligible_status(r.rule_status):
+            continue
         try:
-            lat = float(r.latitude)
-            lon = float(r.longitude)
+            float(r.latitude)
+            float(r.longitude)
         except (TypeError, ValueError):
             continue
+        eligible_reports.append(r)
 
-        if r.village_location_id is not None:
-            key = ("village", int(r.village_location_id), int(r.incident_type_id))
-        else:
-            lat_bucket = round(lat, LAT_LONG_PRECISION)
-            lon_bucket = round(lon, LAT_LONG_PRECISION)
-            key = ("bucket", lat_bucket, lon_bucket, int(r.incident_type_id))
-
-        cluster = clusters.setdefault(
-            key,
-            {
-                "reports": [],
-                "score": 0.0,
-                "confirmed_reports": 0,
-                "lats": [],
-                "lons": [],
-            },
-        )
-        w, has_confirmed = _weight_for_report(r)
-        cluster["reports"].append(r)
-        cluster["score"] += w
-        if has_confirmed:
-            cluster["confirmed_reports"] += 1
-        cluster["lats"].append(lat)
-        cluster["lons"].append(lon)
+    reports_by_incident_type: Dict[int, list[Report]] = {}
+    for r in eligible_reports:
+        incident_type_id = int(r.incident_type_id)
+        reports_by_incident_type.setdefault(incident_type_id, []).append(r)
 
     created = 0
-    for key, info in clusters.items():
-        reports_in_cluster = info["reports"]
-        incident_count = len(reports_in_cluster)
-        if incident_count < min_incidents:
+    eps_radians = float(radius_meters) / EARTH_RADIUS_METERS
+    for incident_type_id, type_reports in reports_by_incident_type.items():
+        if len(type_reports) < min_incidents:
             continue
 
-        score = float(info["score"])
-        confirmed_reports = int(info["confirmed_reports"])
+        coords_degrees = np.array(
+            [[float(r.latitude), float(r.longitude)] for r in type_reports],
+            dtype=float,
+        )
+        coords_radians = np.radians(coords_degrees)
 
-        avg_lat = sum(info["lats"]) / incident_count
-        avg_lon = sum(info["lons"]) / incident_count
-        center_lat = Decimal(str(round(avg_lat, LAT_LONG_PRECISION)))
-        center_long = Decimal(str(round(avg_lon, LAT_LONG_PRECISION)))
+        model = DBSCAN(
+            eps=eps_radians,
+            min_samples=min_incidents,
+            metric="haversine",
+            algorithm="ball_tree",
+        )
+        labels = model.fit_predict(coords_radians)
 
-        if key[0] == "village":
-            incident_type_id = key[2]
-        else:
-            incident_type_id = key[3]
+        unique_labels = {int(label) for label in labels.tolist() if int(label) >= 0}
+        for label in unique_labels:
+            cluster_reports = [r for i, r in enumerate(type_reports) if int(labels[i]) == label]
+            incident_count = len(cluster_reports)
+            if incident_count < min_incidents:
+                continue
 
-        existing = (
-            db.query(Hotspot)
-            .filter(
-                Hotspot.center_lat == center_lat,
-                Hotspot.center_long == center_long,
-                Hotspot.incident_type_id == incident_type_id,
-                Hotspot.time_window_hours == time_window_hours,
+            lats = [float(r.latitude) for r in cluster_reports]
+            lons = [float(r.longitude) for r in cluster_reports]
+            avg_lat = sum(lats) / incident_count
+            avg_lon = sum(lons) / incident_count
+
+            score = 0.0
+            confirmed_reports = 0
+            for r in cluster_reports:
+                w, has_confirmed = _weight_for_report(r)
+                score += w
+                if has_confirmed:
+                    confirmed_reports += 1
+
+            center_lat = Decimal(str(round(avg_lat, LAT_LONG_PRECISION)))
+            center_long = Decimal(str(round(avg_lon, LAT_LONG_PRECISION)))
+
+            existing = (
+                db.query(Hotspot)
+                .filter(
+                    Hotspot.center_lat == center_lat,
+                    Hotspot.center_long == center_long,
+                    Hotspot.incident_type_id == incident_type_id,
+                    Hotspot.time_window_hours == time_window_hours,
+                )
+                .first()
             )
-            .first()
-        )
-        if existing:
-            continue
+            if existing:
+                continue
 
-        hotspot = Hotspot(
-            center_lat=center_lat,
-            center_long=center_long,
-            radius_meters=Decimal(str(radius_meters)),
-            incident_count=incident_count,
-            risk_level=_risk_level_from_score(score, confirmed_reports),
-            time_window_hours=time_window_hours,
-            incident_type_id=incident_type_id,
-        )
-        db.add(hotspot)
-        db.flush()  # get hotspot_id
+            hotspot = Hotspot(
+                center_lat=center_lat,
+                center_long=center_long,
+                radius_meters=Decimal(str(radius_meters)),
+                incident_count=incident_count,
+                risk_level=_risk_level_from_score(score, confirmed_reports),
+                time_window_hours=time_window_hours,
+                incident_type_id=incident_type_id,
+            )
+            db.add(hotspot)
+            db.flush()  # get hotspot_id
 
-        db.execute(
-            insert(hotspot_reports_table),
-            [{"hotspot_id": hotspot.hotspot_id, "report_id": r.report_id} for r in reports_in_cluster],
-        )
-        created += 1
+            db.execute(
+                insert(hotspot_reports_table),
+                [{"hotspot_id": hotspot.hotspot_id, "report_id": r.report_id} for r in cluster_reports],
+            )
+            created += 1
 
     if created > 0:
         db.commit()

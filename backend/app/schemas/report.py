@@ -132,3 +132,15 @@ class ReportListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class PublicMapIncidentResponse(BaseModel):
+    report_id: UUID
+    incident_type_id: int
+    incident_type_name: Optional[str] = None
+    description: Optional[str] = None
+    latitude: Decimal
+    longitude: Decimal
+    reported_at: datetime
+    rule_status: str
+    village_name: Optional[str] = None

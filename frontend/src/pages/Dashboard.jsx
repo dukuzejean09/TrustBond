@@ -14,6 +14,7 @@ import "leaflet/dist/leaflet.css";
 
 const STATUS_BADGE = {
   pending: "b-blue",
+  classified: "b-green",
   passed: "b-green",
   flagged: "b-orange",
   rejected: "b-red",
@@ -68,7 +69,8 @@ export default function Dashboard() {
   }, [canSeeHotspots]);
 
   const pending = stats?.by_status?.pending ?? 0;
-  const passed = stats?.by_status?.passed ?? 0;
+  const passed =
+    (stats?.by_status?.classified ?? 0) + (stats?.by_status?.passed ?? 0);
   const flagged = stats?.by_status?.flagged ?? 0;
   const rejected = stats?.by_status?.rejected ?? 0;
   const total = stats?.total_reports ?? 0;
@@ -111,7 +113,12 @@ export default function Dashboard() {
 
   const statusColor = (s) => {
     const low = String(s).toLowerCase();
-    if (low === "passed" || low === "confirmed" || low === "verified")
+    if (
+      low === "classified" ||
+      low === "passed" ||
+      low === "confirmed" ||
+      low === "verified"
+    )
       return "#34d399";
     if (low === "flagged") return "#fb923c";
     if (low === "rejected") return "#f87171";
@@ -192,7 +199,7 @@ export default function Dashboard() {
               <div className="stat-change">Awaiting review</div>
             </div>
             <div className="stat-card c-green">
-              <div className="stat-label">Passed</div>
+              <div className="stat-label">Classified</div>
               <div className="stat-value sv-green">{passed}</div>
               <div className="stat-change">Verified credible</div>
             </div>
@@ -314,7 +321,7 @@ export default function Dashboard() {
                   </svg>
                   <div className="donut-center">
                     <span className="donut-pct">{passedPct}%</span>
-                    <span className="donut-sub">passed</span>
+                    <span className="donut-sub">classified</span>
                   </div>
                 </div>
                 <div className="legend">
@@ -323,7 +330,7 @@ export default function Dashboard() {
                       className="leg-circle"
                       style={{ background: "var(--green)" }}
                     />{" "}
-                    Passed — {passedPct}%
+                    Classified — {passedPct}%
                   </div>
                   <div className="leg-row">
                     <span
@@ -425,7 +432,7 @@ export default function Dashboard() {
                 </span>
                 <span className="leg-item">
                   <span className="leg-dot" style={{ background: "#34d399" }} />{" "}
-                  Passed
+                  Classified
                 </span>
                 <span className="leg-item">
                   <span className="leg-dot" style={{ background: "#fb923c" }} />{" "}

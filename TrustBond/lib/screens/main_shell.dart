@@ -40,6 +40,11 @@ class _MainShellState extends State<MainShell> {
       if (id != null && id.isNotEmpty) {
         await deviceService.saveDeviceId(id);
       }
+      // Persist the trust score assigned at registration
+      final rawScore = result['device_trust_score'];
+      if (rawScore != null) {
+        await deviceService.saveTrustScore((rawScore as num).toDouble());
+      }
     } catch (_) {
       // Will retry on next app launch
     }

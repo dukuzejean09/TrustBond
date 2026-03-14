@@ -26,32 +26,44 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _loadData() async {
-    final id = await DeviceService().getDeviceId();
+    final deviceService = DeviceService();
+    final apiService = ApiService();
+    final id = await deviceService.getDeviceId();
     if (id != null && id.isNotEmpty) {
       setState(() => _deviceHash = id.substring(0, id.length.clamp(0, 12)));
+      // Load device stats from backend for accurate trust score
       try {
-        final list = await ApiService().getMyReports(id);
-        final reports = list
-            .map((e) => ReportListItem.fromJson(e as Map<String, dynamic>))
-            .toList();
-        final verified = reports
-            .where((r) =>
-                r.ruleStatus == 'confirmed' ||
-                r.ruleStatus == 'verified' ||
-                r.ruleStatus == 'trusted')
-            .length;
+        final deviceStats = await apiService.getDeviceStats(id);
+        final rawScore = deviceStats['device_trust_score'];
+        final totalReports = (deviceStats['total_reports'] as num?)?.toInt() ?? 0;
+        final trustedReports = (deviceStats['trusted_reports'] as num?)?.toInt() ?? 0;
+        final score = rawScore != null ? (rawScore as num).toDouble() : 50.0;
+        // Also persist offline copy
+        await deviceService.saveTrustScore(score);
         setState(() {
-          _totalReports = reports.length;
-          _verifiedReports = verified;
-          _trustScore = reports.isEmpty
-              ? 50
-              : ((verified / reports.length) * 100).clamp(0, 100);
+          _totalReports = totalReports;
+          _verifiedReports = trustedReports;
+          _trustScore = score;
         });
       } catch (_) {
-        // Report loading failed
+        // Backend unreachable — fall back to cached score
+        final cached = await deviceService.getTrustScore();
+        if (cached != null) setState(() => _trustScore = cached);
+        // Still load reports for count
+        try {
+          final list = await apiService.getMyReports(id);
+          final reports = list
+              .map((e) => ReportListItem.fromJson(e as Map<String, dynamic>))
+              .toList();
+          final classified = reports
+              .where((r) => r.ruleStatus == 'classified' || r.ruleStatus == 'passed')
+              .length;
+          setState(() {
+            _totalReports = reports.length;
+            _verifiedReports = classified;
+          });
+        } catch (_) {}
       }
-    } else {
-      // No device ID
     }
   }
 

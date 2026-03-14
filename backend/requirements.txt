@@ -3,6 +3,11 @@ uvicorn
 sqlalchemy
 psycopg2-binary
 alembic
+numpy
+pandas
+joblib
+scikit-learn
+xgboost
 python-jose
 passlib
 python-multipart

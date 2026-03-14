@@ -219,12 +219,14 @@ class MusanzeMapPreviewPainter extends CustomPainter {
   final double padding;
   final double? userLatitude;
   final double? userLongitude;
+  final List<Offset> reportPoints;
 
   MusanzeMapPreviewPainter({
     required this.mapData,
     this.padding = 8,
     this.userLatitude,
     this.userLongitude,
+    this.reportPoints = const [],
   });
 
   @override
@@ -328,6 +330,23 @@ class MusanzeMapPreviewPainter extends CustomPainter {
             ..strokeWidth = 1.2,
         );
       }
+    }
+
+    // Draw recent report points on preview
+    final reportPaint = Paint()
+      ..color = AppColors.warn.withValues(alpha: 0.9)
+      ..style = PaintingStyle.fill;
+    final reportBorder = Paint()
+      ..color = Colors.white.withValues(alpha: 0.9)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.9;
+    for (final p in reportPoints) {
+      final pos = toScreen(ui.Offset(p.dx, p.dy));
+      if (pos.dx < 0 || pos.dx > size.width || pos.dy < 0 || pos.dy > size.height) {
+        continue;
+      }
+      canvas.drawCircle(pos, 2.6, reportPaint);
+      canvas.drawCircle(pos, 2.6, reportBorder);
     }
   }
 

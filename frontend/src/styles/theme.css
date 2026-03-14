@@ -21,8 +21,8 @@
   --text: #e2eaf8;
   --text-dim: #8da3c4;
   --muted: #5f7898;
-  --sidebar-w: 230px;
-  --topbar-h: 56px;
+  --sidebar-w: 240px;
+  --topbar-h: 58px;
   --r: 12px;
   --rs: 8px;
 }
@@ -184,13 +184,15 @@ a:hover {
   position: relative;
   overflow: hidden;
   transition:
-    transform 0.14s,
-    border-color 0.14s;
+    transform 0.18s,
+    border-color 0.18s,
+    box-shadow 0.18s;
   cursor: default;
 }
 .stat-card:hover {
-  transform: translateY(-2px);
+  transform: translateY(-3px);
   border-color: var(--accent);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
 }
 .stat-card::before {
   content: "";
@@ -198,8 +200,8 @@ a:hover {
   left: 0;
   top: 0;
   bottom: 0;
-  width: 3px;
-  border-radius: 3px 0 0 3px;
+  width: 4px;
+  border-radius: 4px 0 0 4px;
 }
 .c-blue::before {
   background: var(--accent);
@@ -225,7 +227,10 @@ a:hover {
   text-transform: uppercase;
   letter-spacing: 1px;
   color: var(--muted);
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
 }
 .stat-value {
   font-family: "Syne", sans-serif;
@@ -440,25 +445,31 @@ body.light-mode .b-cyan {
 
 /* ── Buttons ── */
 .btn {
-  padding: 7px 14px;
+  padding: 8px 15px;
   border-radius: var(--rs);
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
   font-family: inherit;
   border: none;
-  transition: all 0.14s;
+  transition: all 0.15s;
   display: inline-flex;
   align-items: center;
   gap: 5px;
   white-space: nowrap;
 }
+.btn:focus-visible {
+  outline: 2px solid rgba(79, 142, 247, 0.5);
+  outline-offset: 2px;
+}
 .btn-primary {
   background: var(--accent);
   color: #fff;
+  box-shadow: 0 2px 8px rgba(79, 142, 247, 0.3);
 }
 .btn-primary:hover {
-  filter: brightness(1.1);
+  filter: brightness(1.12);
+  box-shadow: 0 4px 14px rgba(79, 142, 247, 0.4);
 }
 .btn-outline {
   background: transparent;
@@ -500,17 +511,20 @@ body.light-mode .b-cyan {
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: var(--rs);
-  padding: 7px 11px;
-  font-size: 12px;
+  padding: 8px 12px;
+  font-size: 13px;
   color: var(--text);
   font-family: inherit;
   outline: none;
-  transition: border-color 0.14s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s;
   width: 100%;
 }
 .input:focus,
 .select-input:focus {
   border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(79, 142, 247, 0.15);
 }
 .input::placeholder {
   color: var(--muted);
@@ -518,9 +532,13 @@ body.light-mode .b-cyan {
 .filter-row {
   display: flex;
   gap: 8px;
-  margin-bottom: 14px;
+  margin-bottom: 16px;
   flex-wrap: wrap;
   align-items: center;
+  padding: 12px 14px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
 }
 .filter-row .input,
 .filter-row .select-input {
@@ -996,33 +1014,54 @@ textarea.input {
 /* ── Loading / Empty ── */
 .loading-center {
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   min-height: 200px;
   color: var(--muted);
   font-size: 13px;
+  gap: 12px;
+}
+.loading-center::before {
+  content: "";
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.75s linear infinite;
 }
 .empty-state {
   text-align: center;
-  padding: 40px 20px;
+  padding: 48px 20px;
   color: var(--muted);
 }
 .empty-state .empty-icon {
-  font-size: 40px;
-  margin-bottom: 10px;
-  opacity: 0.5;
+  font-size: 44px;
+  margin-bottom: 12px;
+  opacity: 0.45;
+  display: block;
 }
 .empty-state p {
   font-size: 13px;
+  margin: 0;
 }
 .error-box {
   border-radius: var(--rs);
-  padding: 10px 14px;
+  padding: 12px 16px;
   background: rgba(248, 113, 113, 0.08);
-  border: 1px solid rgba(248, 113, 113, 0.2);
+  border: 1px solid rgba(248, 113, 113, 0.25);
   color: var(--danger);
   font-size: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.error-box::before {
+  content: "⚠️";
+  font-size: 14px;
+  flex-shrink: 0;
 }
 
 /* ── Responsive ── */
@@ -1065,9 +1104,11 @@ textarea.input {
 @keyframes fadeIn {
   from {
     opacity: 0;
+    transform: translateY(-4px);
   }
   to {
     opacity: 1;
+    transform: translateY(0);
   }
 }
 @keyframes pulse {
@@ -1079,5 +1120,10 @@ textarea.input {
   50% {
     transform: scale(1.5);
     opacity: 0.4;
+  }
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
   }
 }

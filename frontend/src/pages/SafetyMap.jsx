@@ -16,6 +16,7 @@ import "./SafetyMap.css";
 
 const STATUS_COLORS = {
   pending: "#4f8ef7",
+  classified: "#34d399",
   passed: "#34d399",
   confirmed: "#34d399",
   verified: "#34d399",
@@ -25,9 +26,10 @@ const STATUS_COLORS = {
 
 const STATUS_LABELS = {
   pending: "Pending",
-  passed: "Passed",
-  confirmed: "Confirmed",
-  verified: "Verified",
+  classified: "Classified",
+  passed: "Classified",
+  confirmed: "Classified",
+  verified: "Classified",
   flagged: "Flagged",
   rejected: "Rejected",
 };
@@ -60,7 +62,7 @@ export default function SafetyMap() {
   const [hotspots, setHotspots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("classified");
   const [typeFilter, setTypeFilter] = useState("all");
   const [selectedReport, setSelectedReport] = useState(null);
 
@@ -95,16 +97,14 @@ export default function SafetyMap() {
     setLoading(true);
 
     Promise.all([
-      apiService.getReports({ limit: 500, offset: 0 }).catch(() => []),
+      apiService.getPublicMapIncidents({ limit: 1000 }).catch(() => []),
       canSeeHotspots
         ? apiService.getHotspots().catch(() => [])
         : Promise.resolve([]),
     ])
       .then(([reportsData, hotspotsData]) => {
         if (cancelled) return;
-        const raw =
-          reportsData?.items || (Array.isArray(reportsData) ? reportsData : []);
-        setReports(raw);
+        setReports(Array.isArray(reportsData) ? reportsData : []);
         setHotspots(Array.isArray(hotspotsData) ? hotspotsData : []);
       })
       .catch((err) => {
@@ -208,10 +208,7 @@ export default function SafetyMap() {
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               <option value="all">All Statuses</option>
-              <option value="pending">Pending</option>
-              <option value="passed">Passed</option>
-              <option value="flagged">Flagged</option>
-              <option value="rejected">Rejected</option>
+              <option value="classified">Classified</option>
             </select>
           </div>
           <div className="smp-filter-group">

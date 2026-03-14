@@ -15,6 +15,9 @@ export const API_ENDPOINTS = {
     forgotPassword: `${API_BASE_URL}/api/v1/auth/forgot-password`,
     resetPassword: `${API_BASE_URL}/api/v1/auth/reset-password`,
   },
+  devices: {
+    get: (id) => `${API_BASE_URL}/api/v1/devices/${id}`,
+  },
   policeUsers: {
     list: `${API_BASE_URL}/api/v1/police-users`,
     options: `${API_BASE_URL}/api/v1/police-users/options`,
@@ -43,6 +46,9 @@ export const API_ENDPOINTS = {
   hotspots: {
     list: `${API_BASE_URL}/api/v1/hotspots`,
     evidence: (id) => `${API_BASE_URL}/api/v1/hotspots/${id}/evidence`,
+  },
+  publicMap: {
+    incidents: `${API_BASE_URL}/api/v1/public/map/incidents`,
   },
   locations: {
     list: `${API_BASE_URL}/api/v1/locations`,

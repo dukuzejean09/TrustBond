@@ -55,6 +55,11 @@ class _ReportScreenState extends State<ReportScreen> {
         _deviceId = deviceData['device_id'];
       });
       await _deviceService.saveDeviceId(_deviceId!);
+      // Persist trust score assigned at registration
+      final rawScore = deviceData['device_trust_score'];
+      if (rawScore != null) {
+        await _deviceService.saveTrustScore((rawScore as num).toDouble());
+      }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to register device: $e')),

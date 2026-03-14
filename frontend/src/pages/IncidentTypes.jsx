@@ -65,7 +65,7 @@ export default function IncidentTypes() {
         type_name: form.type_name.trim(),
         description: form.description?.trim() || null,
         severity_weight: parseFloat(form.severity_weight) || 1,
-        is_active: form.is_active,
+        is_active: true,
       });
       resetForm();
       loadTypes();
@@ -183,16 +183,23 @@ export default function IncidentTypes() {
               />
             </div>
             <div className="form-row checkbox-row">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(e) =>
-                    setForm((f) => ({ ...f, is_active: e.target.checked }))
-                  }
-                />
-                Active (visible to citizens when submitting reports)
-              </label>
+              {editing ? (
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.is_active}
+                    onChange={(e) =>
+                      setForm((f) => ({ ...f, is_active: e.target.checked }))
+                    }
+                  />
+                  Active (visible to citizens when submitting reports)
+                </label>
+              ) : (
+                <span style={{ fontSize: 13, color: "#6b7280" }}>
+                  New types are created as active so they appear in the mobile
+                  report form immediately.
+                </span>
+              )}
             </div>
             <div className="form-actions">
               <button type="submit" className="btn btn-primary btn-sm">

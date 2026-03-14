@@ -9,6 +9,7 @@ const PAGE_SIZE = 20;
 
 const STATUS_BADGE = {
   pending: "b-blue",
+  classified: "b-green",
   passed: "b-green",
   flagged: "b-orange",
   rejected: "b-red",
@@ -116,7 +117,8 @@ export default function Reports() {
   const statusMeta = useMemo(
     () => ({
       pending: { label: "Pending", cls: "b-blue" },
-      passed: { label: "Passed", cls: "b-green" },
+      classified: { label: "Classified", cls: "b-green" },
+      passed: { label: "Classified", cls: "b-green" },
       flagged: { label: "Flagged", cls: "b-orange" },
       rejected: { label: "Rejected", cls: "b-red" },
     }),
@@ -262,7 +264,7 @@ export default function Reports() {
           >
             <option value="">All statuses</option>
             <option value="pending">Pending</option>
-            <option value="passed">Passed</option>
+            <option value="classified">Classified</option>
             <option value="flagged">Flagged</option>
             <option value="rejected">Rejected</option>
           </select>
@@ -330,6 +332,7 @@ export default function Reports() {
                       <div
                         key={id}
                         className={`report-card ${selectedId === id ? "selected" : ""}`}
+                        data-status={String(r.rule_status || "").toLowerCase()}
                         role="listitem"
                         tabIndex={0}
                         onClick={() => openPanel(id)}

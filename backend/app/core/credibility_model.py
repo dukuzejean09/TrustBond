@@ -1,4 +1,5 @@
 import json
+import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -18,6 +19,8 @@ from app.models.device import Device
 ROOT = Path(__file__).resolve().parents[2] / "musanze"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 META_PATH = ROOT / "TrustBond.json"
+
+logger = logging.getLogger(__name__)
 
 _MODEL = None
 _META: Optional[Dict[str, Any]] = None
@@ -224,6 +227,18 @@ def score_report_credibility(
 
         trust_score_pct = prob_real * 100.0
 
+        # Keep only one final prediction per report.
+        existing_finals = (
+            db.query(MLPrediction)
+            .filter(
+                MLPrediction.report_id == report.report_id,
+                MLPrediction.is_final == True,
+            )
+            .all()
+        )
+        for prev in existing_finals:
+            prev.is_final = False
+
         prediction = MLPrediction(
             prediction_id=uuid4(),
             report_id=report.report_id,
@@ -238,8 +253,9 @@ def score_report_credibility(
         )
         db.add(prediction)
         # Mark when features were extracted for this report
-        report.features_extracted_at = datetime.now(timezone.utc)
-    except Exception:
-        # Fail silently; this is an enhancement, not critical path
+        report.features_extracted = datetime.now(timezone.utc)
+    except Exception as exc:
+        # Do not break report submission if ML scoring fails.
+        logger.warning("ML scoring failed for report %s: %s", report.report_id, exc)
         return
 

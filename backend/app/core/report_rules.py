@@ -150,11 +150,25 @@ def apply_rule_based_status(
     if severity >= HIGH_SEVERITY_WEIGHT:
         return "flagged", True
 
-    # Rule 5: Pass — has reasonable description; optional evidence
+    # Rule 5: Classify — has reasonable description; optional evidence
     if has_description:
-        return "passed", False
+        return "classified", False
 
     # Default: pending (e.g. short description but has evidence)
     if has_evidence:
-        return "passed", False
+        return "classified", False
     return "pending", False
+
+
+def recalculate_device_trust_score(total_reports: int, trusted_reports: int, flagged_reports: int) -> float:
+    """
+    Compute device trust score (0-100) from aggregate report counts.
+    - Base: 50.0 (assigned at registration with no reports)
+    - Each classified report increases score; each flagged/rejected decreases it.
+    Formula: 50 + (trusted - flagged*1.5) / max(1, total) * 50, clamped [0, 100].
+    """
+    if total_reports == 0:
+        return 50.0
+    net = trusted_reports - flagged_reports * 1.5
+    score = 50.0 + (net / total_reports) * 50.0
+    return round(max(0.0, min(100.0, score)), 2)

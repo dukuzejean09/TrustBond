@@ -137,10 +137,11 @@ enum BadgeType { ok, warn, err, info, mute }
 /// Converts a rule_status string to a BadgeType.
 BadgeType badgeTypeFromStatus(String status) {
   return switch (status.toLowerCase()) {
-    'confirmed' || 'verified' || 'trusted' => BadgeType.ok,
+    'classified' || 'passed' || 'confirmed' || 'verified' || 'trusted' => BadgeType.ok,
     'investigating' || 'under_review' || 'flagged' => BadgeType.warn,
     'rejected' || 'false_report' => BadgeType.err,
     'ai_verified' => BadgeType.info,
+    'pending' => BadgeType.mute,
     _ => BadgeType.mute,
   };
 }
@@ -398,13 +399,25 @@ Color colorForIncidentType(String typeName) {
   return AppColors.accent;
 }
 
-/// Formats a snake_case rule status into Title Case.
+/// Formats a rule_status value into a user-friendly label.
 String formatStatus(String status) {
-  return status
-      .replaceAll('_', ' ')
-      .split(' ')
-      .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
-      .join(' ');
+  switch (status.toLowerCase()) {
+    case 'classified':
+    case 'passed':
+      return 'Classified';
+    case 'pending':
+      return 'Pending';
+    case 'flagged':
+      return 'Flagged';
+    case 'rejected':
+      return 'Rejected';
+    default:
+      return status
+          .replaceAll('_', ' ')
+          .split(' ')
+          .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
+          .join(' ');
+  }
 }
 
 /// Returns a human-readable time-ago string.

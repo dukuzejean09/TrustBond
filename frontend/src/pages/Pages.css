@@ -25,24 +25,45 @@
 .report-card {
   background: var(--surface);
   border: 1px solid var(--border);
+  border-left: 4px solid var(--border);
   border-radius: var(--r);
   padding: 14px;
   cursor: pointer;
   outline: none;
   transition:
-    border-color 0.14s,
-    transform 0.08s;
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.1s;
 }
 .report-card:hover {
   border-color: var(--accent);
-  transform: translateY(-1px);
+  border-left-color: var(--accent);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 .report-card.selected {
   border-color: var(--accent);
+  border-left-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(79, 142, 247, 0.3);
 }
+.report-card[data-status="pending"] {
+  border-left-color: var(--accent);
+}
+.report-card[data-status="classified"] {
+  border-left-color: var(--green);
+}
+.report-card[data-status="passed"] {
+  border-left-color: var(--green);
+}
+.report-card[data-status="flagged"] {
+  border-left-color: var(--orange);
+}
+.report-card[data-status="rejected"] {
+  border-left-color: var(--danger);
+}
 .report-card:focus-visible {
-  box-shadow: 0 0 0 2px rgba(79, 142, 247, 0.3);
+  outline: 2px solid rgba(79, 142, 247, 0.4);
+  outline-offset: 1px;
 }
 .report-card-header {
   display: flex;
@@ -233,8 +254,10 @@
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--r);
-  padding: 14px 16px;
+  padding: 16px 18px;
   min-height: 260px;
+  position: sticky;
+  top: 16px;
 }
 .side-panel-title {
   font-family: "Syne", sans-serif;

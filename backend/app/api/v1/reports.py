@@ -33,7 +33,8 @@ from app.models.report_assignment import ReportAssignment
 from app.models.police_review import PoliceReview
 from app.api.v1.auth import get_optional_user, get_current_user, get_current_admin_or_supervisor
 from app.api.v1.notifications import create_notification
-from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording
+from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording, recalculate_device_trust_score
+from app.core.credibility_model import score_report_credibility
 from app.core.audit import log_action
 from app.core.hotspot_auto import create_hotspots_from_reports
 from app.core.village_lookup import get_village_location_id, get_village_location_info
@@ -47,6 +48,15 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 
 UPLOAD_DIR = "uploads/evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+
+def _normalize_rule_status_filter(value: Optional[str]) -> Optional[list[str]]:
+    if not value:
+        return None
+    normalized = value.strip().lower()
+    if normalized in ("classified", "passed", "confirmed", "verified"):
+        return ["classified", "passed", "confirmed", "verified"]
+    return [normalized]
 
 
 
@@ -126,17 +136,26 @@ def create_report(
         )
         db.add(evidence)
 
-    # Rule-based verification (no ML; ML will be added later)
+    # Rule-based verification
     evidence_count = len(report_data.evidence_files)
     rule_status, is_flagged = apply_rule_based_status(report, evidence_count, db)
     report.rule_status = rule_status
     report.is_flagged = is_flagged
-    
-    # Update device stats
+
+    # Update device stats and recalculate trust score based on classification
     device.total_reports += 1
+    if rule_status == "classified":
+        device.trusted_reports = (device.trusted_reports or 0) + 1
+    elif rule_status in ("flagged", "rejected"):
+        device.flagged_reports = (device.flagged_reports or 0) + 1
+    device.device_trust_score = recalculate_device_trust_score(
+        device.total_reports,
+        device.trusted_reports or 0,
+        device.flagged_reports or 0,
+    )
 
     log_action(db, "report_created", entity_type="report", entity_id=str(report.report_id), actor_type="system", success=True)
-    
+
     db.commit()
     db.refresh(report)
 
@@ -163,7 +182,25 @@ def create_report(
         finally:
             session.close()
 
+    def run_ml_scoring(report_id: UUID, evidence_count: int):
+        session = SessionLocal()
+        try:
+            report_obj = session.query(Report).filter(Report.report_id == report_id).first()
+            if not report_obj:
+                return
+            device_obj = session.query(Device).filter(Device.device_id == report_obj.device_id).first()
+            if not device_obj:
+                return
+            score_report_credibility(session, report_obj, device_obj, evidence_count)
+            session.commit()
+        except Exception as exc:
+            session.rollback()
+            logger.warning("Background ML scoring failed for report %s: %s", report_id, exc)
+        finally:
+            session.close()
+
     background_tasks.add_task(run_hotspot_auto)
+    background_tasks.add_task(run_ml_scoring, report.report_id, evidence_count)
     return _build_report_response(report, db)
 
 
@@ -366,8 +403,9 @@ def list_reports(
         query = query.join(Report.assignments).filter(
             ReportAssignment.police_user_id == current_user.police_user_id
         ).distinct()
-    if rule_status:
-        query = query.filter(Report.rule_status == rule_status)
+    normalized_statuses = _normalize_rule_status_filter(rule_status)
+    if normalized_statuses:
+        query = query.filter(Report.rule_status.in_(normalized_statuses))
     if from_date is not None:
         query = query.filter(Report.reported_at >= from_date)
     if to_date is not None:
@@ -774,13 +812,16 @@ async def upload_evidence(
     db.commit()
     db.refresh(evidence)
 
-    # Re-run rule-based verification (evidence count changed; no ML)
+    # Re-run rule-based verification and ML scoring (evidence count changed)
     report_after = db.query(Report).filter(Report.report_id == report.report_id).first()
     if report_after:
         evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_after.report_id).count()
         rule_status, is_flagged = apply_rule_based_status(report_after, evidence_count, db)
         report_after.rule_status = rule_status
         report_after.is_flagged = is_flagged
+        device = db.query(Device).filter(Device.device_id == report_after.device_id).first()
+        if device:
+            score_report_credibility(db, report_after, device, evidence_count)
         db.commit()
     
     return {

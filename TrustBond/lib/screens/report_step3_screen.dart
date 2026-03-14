@@ -82,6 +82,23 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
       _error = null;
     });
     try {
+      final motionFuture = collectMotionSample()
+          .timeout(
+            const Duration(seconds: 2),
+            onTimeout: () => MotionSample(
+              motionLevel: 'low',
+              movementSpeed: 0.0,
+              wasStationary: true,
+            ),
+          )
+          .onError(
+            (_, __) => MotionSample(
+              motionLevel: 'low',
+              movementSpeed: 0.0,
+              wasStationary: true,
+            ),
+          );
+
       String? deviceId = await _deviceService.getDeviceId();
 
       // Auto-register device if not yet registered
@@ -92,6 +109,11 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
           deviceId = regResult['device_id']?.toString();
           if (deviceId != null && deviceId.isNotEmpty) {
             await _deviceService.saveDeviceId(deviceId);
+          }
+          // Persist the trust score assigned at registration
+          final rawScore = regResult['device_trust_score'];
+          if (rawScore != null) {
+            await _deviceService.saveTrustScore((rawScore as num).toDouble());
           }
         } catch (regErr) {
           setState(() {
@@ -110,14 +132,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
         return;
       }
 
-      // Collect motion/sensor data before submit (non-blocking)
-      MotionSample motion;
-      try {
-        motion = await collectMotionSample();
-      } catch (_) {
-        motion = MotionSample(
-            motionLevel: 'low', movementSpeed: 0.0, wasStationary: true);
-      }
+      final motion = await motionFuture;
 
       final reportData = <String, dynamic>{
         'device_id': deviceId,
@@ -146,28 +161,30 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
       }
 
       // The report is already stored at this point. Evidence upload feedback is non-blocking.
-      final List<String> uploadErrors = [];
-      for (int i = 0; i < _files.length; i++) {
-        final f = _files[i];
-        try {
-          final evidenceResult = await _apiService.uploadEvidence(
-            reportId,
-            deviceId,
-            f.path,
-            mediaLatitude: widget.latitude,
-            mediaLongitude: widget.longitude,
-            capturedAt: DateTime.now(),
-            isLiveCapture: f.isLive,
-          );
-          // Log verification status from backend
-          final status = evidenceResult['verification_status'] ?? 'unknown';
-          if (status == 'flagged') {
-            uploadErrors.add('File ${i + 1}: flagged for review');
+      final uploadResults = await Future.wait(
+        List.generate(_files.length, (i) async {
+          final f = _files[i];
+          try {
+            final evidenceResult = await _apiService.uploadEvidence(
+              reportId,
+              deviceId,
+              f.path,
+              mediaLatitude: widget.latitude,
+              mediaLongitude: widget.longitude,
+              capturedAt: DateTime.now(),
+              isLiveCapture: f.isLive,
+            );
+            final status = evidenceResult['verification_status'] ?? 'unknown';
+            if (status == 'flagged') {
+              return 'File ${i + 1}: flagged for review';
+            }
+            return null;
+          } catch (e) {
+            return 'File ${i + 1}: ${e.toString()}';
           }
-        } catch (e) {
-          uploadErrors.add('File ${i + 1}: ${e.toString()}');
-        }
-      }
+        }),
+      );
+      final uploadErrors = uploadResults.whereType<String>().toList();
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(

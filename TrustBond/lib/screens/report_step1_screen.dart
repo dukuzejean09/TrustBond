@@ -32,6 +32,7 @@ class _ReportStep1ScreenState extends State<ReportStep1Screen> {
         _types = List<Map<String, dynamic>>.from(
           data.map((e) => Map<String, dynamic>.from(e as Map)),
         );
+        _error = null;
         _loading = false;
       });
     } catch (e) {
@@ -125,36 +126,41 @@ class _ReportStep1ScreenState extends State<ReportStep1Screen> {
             style: TextStyle(color: AppColors.muted)),
       );
     }
-    return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('What type of incident?',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          const SizedBox(height: 4),
-          const Text('Select the category that best describes what happened',
-              style: TextStyle(fontSize: 12, color: AppColors.muted)),
-          const SizedBox(height: 16),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              childAspectRatio: 1.65,
+    return RefreshIndicator(
+      color: AppColors.accent,
+      onRefresh: _loadTypes,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('What type of incident?',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 4),
+            const Text('Select the category that best describes what happened',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 10,
+                crossAxisSpacing: 10,
+                childAspectRatio: 1.65,
+              ),
+              itemCount: _types.length,
+              itemBuilder: (context, index) {
+                final t = _types[index];
+                final id = t['incident_type_id'] as int? ?? 0;
+                final name = t['type_name'] as String? ?? '';
+                final sel = _selectedTypeId == id;
+                return _buildTypeCard(id, name, sel);
+              },
             ),
-            itemCount: _types.length,
-            itemBuilder: (context, index) {
-              final t = _types[index];
-              final id = t['incident_type_id'] as int? ?? 0;
-              final name = t['type_name'] as String? ?? '';
-              final sel = _selectedTypeId == id;
-              return _buildTypeCard(id, name, sel);
-            },
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

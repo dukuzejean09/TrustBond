@@ -31,8 +31,11 @@ class ApiService {
   }
 
   Future<List<dynamic>> getIncidentTypes() async {
+    final uri = Uri.parse('${ApiConfig.incidentTypesUrl}/').replace(
+      queryParameters: {'_ts': DateTime.now().millisecondsSinceEpoch.toString()},
+    );
     final response = await _client.get(
-      Uri.parse('${ApiConfig.incidentTypesUrl}/'),
+      uri,
       headers: _getHeaders,
     ).timeout(_timeout);
     
@@ -136,6 +139,18 @@ class ApiService {
       }
     } catch (_) {}
     throw EvidenceUploadException(message, response.statusCode);
+  }
+
+  /// Fetch device stats (trust score, report counts) by device UUID.
+  Future<Map<String, dynamic>> getDeviceStats(String deviceId) async {
+    final response = await _client.get(
+      Uri.parse('${ApiConfig.devicesUrl}/$deviceId'),
+      headers: _getHeaders,
+    ).timeout(_timeout);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    throw Exception('Failed to get device stats: ${response.statusCode}');
   }
 }
 

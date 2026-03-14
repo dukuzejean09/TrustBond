@@ -25,7 +25,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   String? _error;
 
-  static const _filters = ['All', 'Pending', 'Verified', 'Rejected'];
+  static const _filters = ['All', 'Pending', 'Classified', 'Rejected'];
 
   late TabController _tabCtrl;
 
@@ -84,8 +84,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     return _reports.where((r) {
       final s = r.ruleStatus.toLowerCase();
       if (key == 'pending') return s == 'pending' || s == 'processing';
-      if (key == 'verified') {
-        return s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed';
+      if (key == 'classified') {
+        return s == 'classified' || s == 'passed';
       }
       if (key == 'rejected') return s == 'rejected' || s == 'flagged';
       return true;

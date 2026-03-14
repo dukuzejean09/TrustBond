@@ -143,7 +143,7 @@ export default function Layout({ children }) {
               to="/dashboard"
               className={`nav-item${isActive("/dashboard") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">📊</span>
               <span className="nav-text">Dashboard</span>
             </Link>
           </div>
@@ -155,7 +155,7 @@ export default function Layout({ children }) {
               to="/reports"
               className={`nav-item${isActive("/reports") || location.pathname.startsWith("/reports/") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">📋</span>
               <span className="nav-text">
                 {isOfficer ? "My Assignments" : "Reports"}
               </span>
@@ -169,7 +169,7 @@ export default function Layout({ children }) {
               to="/safety-map"
               className={`nav-item${isActive("/safety-map") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">🗺️</span>
               <span className="nav-text">Safety Map</span>
             </Link>
             {canSeeHotspots && (
@@ -177,7 +177,7 @@ export default function Layout({ children }) {
                 to="/hotspots"
                 className={`nav-item${isActive("/hotspots") ? " active" : ""}`}
               >
-                <span className="nav-dot" />{" "}
+                <span className="nav-icon">🔥</span>
                 <span className="nav-text">Hotspots</span>
               </Link>
             )}
@@ -185,14 +185,14 @@ export default function Layout({ children }) {
               to="/cases"
               className={`nav-item${isActive("/cases") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">🗂️</span>
               <span className="nav-text">Case Management</span>
             </Link>
             <Link
               to="/notifications"
               className={`nav-item${isActive("/notifications") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">🔔</span>
               <span className="nav-text">Notifications</span>
             </Link>
           </div>
@@ -210,7 +210,7 @@ export default function Layout({ children }) {
                   to="/users"
                   className={`nav-item${isActive("/users") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">👥</span>
                   <span className="nav-text">Users</span>
                 </Link>
               )}
@@ -219,7 +219,7 @@ export default function Layout({ children }) {
                   to="/stations"
                   className={`nav-item${isActive("/stations") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">🏢</span>
                   <span className="nav-text">Stations</span>
                 </Link>
               )}
@@ -228,7 +228,7 @@ export default function Layout({ children }) {
                   to="/incident-types"
                   className={`nav-item${isActive("/incident-types") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">🏷️</span>
                   <span className="nav-text">Incident Types</span>
                 </Link>
               )}
@@ -237,7 +237,7 @@ export default function Layout({ children }) {
                   to="/device-trust"
                   className={`nav-item${isActive("/device-trust") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">🛡️</span>
                   <span className="nav-text">Device Trust</span>
                 </Link>
               )}
@@ -246,7 +246,7 @@ export default function Layout({ children }) {
                   to="/system-config"
                   className={`nav-item${isActive("/system-config") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">⚙️</span>
                   <span className="nav-text">System Config</span>
                 </Link>
               )}
@@ -255,7 +255,7 @@ export default function Layout({ children }) {
                   to="/audit"
                   className={`nav-item${isActive("/audit") ? " active" : ""}`}
                 >
-                  <span className="nav-dot" />{" "}
+                  <span className="nav-icon">📜</span>
                   <span className="nav-text">Audit Log</span>
                 </Link>
               )}
@@ -269,7 +269,7 @@ export default function Layout({ children }) {
               to="/change-password"
               className={`nav-item${isActive("/change-password") ? " active" : ""}`}
             >
-              <span className="nav-dot" />{" "}
+              <span className="nav-icon">🔐</span>
               <span className="nav-text">Change Password</span>
             </Link>
           </div>
@@ -300,6 +300,7 @@ export default function Layout({ children }) {
           <button
             className="hamburger"
             onClick={() => setSidebarOpen((o) => !o)}
+            aria-label="Toggle navigation"
           >
             &#9776;
           </button>
@@ -308,27 +309,36 @@ export default function Layout({ children }) {
             <button
               className="mode-toggle"
               onClick={() => setDarkMode((d) => !d)}
+              title={darkMode ? "Switch to light mode" : "Switch to dark mode"}
             >
-              {darkMode ? "☀ Light" : "🌙 Dark"}
+              {darkMode ? "☀️ Light" : "🌙 Dark"}
             </button>
-            <div className="tb-chip">{today}</div>
+            <div className="tb-chip">📅 {today}</div>
             <button
               className="notif-btn"
               onClick={() => setNotifOpen((o) => !o)}
+              aria-label={`Notifications${unreadCount > 0 ? ` (${unreadCount} unread)` : ""}`}
             >
-              🔔{" "}
+              🔔
               {unreadCount > 0 && (
                 <span className="notif-count">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
-              {unreadCount > 0 && <span className="notif-dot" />}
             </button>
             {notifOpen && (
               <div className="notif-dropdown">
-                <div className="notif-dd-header">Notifications</div>
+                <div className="notif-dd-header">
+                  🔔 Notifications
+                  {unreadCount > 0 && (
+                    <span className="notif-dd-badge">{unreadCount} new</span>
+                  )}
+                </div>
                 {notifications.length === 0 ? (
-                  <div className="notif-dd-empty">No notifications</div>
+                  <div className="notif-dd-empty">
+                    <span>✅</span>
+                    <p>All caught up!</p>
+                  </div>
                 ) : (
                   <ul className="notif-dd-list">
                     {notifications.map((n) => (
@@ -346,6 +356,7 @@ export default function Layout({ children }) {
                           }
                         }}
                       >
+                        {!n.is_read && <span className="notif-unread-dot" />}
                         <div className="notif-dd-title">{n.title}</div>
                         {n.message && (
                           <div className="notif-dd-msg">{n.message}</div>
@@ -359,8 +370,12 @@ export default function Layout({ children }) {
                 )}
               </div>
             )}
-            <button className="logout-btn" onClick={handleLogout}>
-              Logout
+            <button
+              className="logout-btn"
+              onClick={handleLogout}
+              title="Sign out"
+            >
+              ⬛ Logout
             </button>
           </div>
         </header>
