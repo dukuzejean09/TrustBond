@@ -9,6 +9,7 @@ from app.models.police_user import PoliceUser
 from app.models.police_review import PoliceReview
 from app.models.hotspot import Hotspot
 from app.models.incident_group import IncidentGroup
+from app.models.station import Station
 from app.models.report_assignment import ReportAssignment
 from app.models.notification import Notification
 from app.models.audit_log import AuditLog
@@ -29,6 +30,7 @@ __all__ = [
     "PoliceReview",
     "Hotspot",
     "IncidentGroup",
+    "Station",
     "ReportAssignment",
     "Notification",
     "AuditLog",
