@@ -10,7 +10,7 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        sync: false # Set manually to your Neon.tech PostgreSQL connection string
+        sync: false # Set manually to your Neon.tech PostgreSQL connection string (no wrapping quotes)
       - key: SECRET_KEY
         generateValue: true
       - key: CORS_ORIGINS

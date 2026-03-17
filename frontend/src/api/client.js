@@ -3,7 +3,7 @@
  */
 const BASE =
   (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-  "https://trustbondmobileapp.onrender.com";
+  "https://trustbond-backend.onrender.com";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
