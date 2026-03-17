@@ -6,10 +6,11 @@ import '../models/musanze_map_data.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/location_service.dart';
+import '../services/ml_service.dart';
 import '../models/report_model.dart';
 import 'notifications_screen.dart';
 import 'report_detail_screen.dart';
-import 'safety_map_screen.dart';
+import 'main_shell.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +23,7 @@ class _HomeScreenState extends State<HomeScreen> {
   final _apiService = ApiService();
   final _deviceService = DeviceService();
   final _locationService = LocationService();
+  final _mlService = MLService();
 
   String? _deviceId;
   List<ReportListItem> _recentReports = [];
@@ -35,6 +37,17 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLat;
   double? _userLng;
   VillageLocation? _userVillage;
+  String? _locationError;
+
+  // ML-related state
+  Map<String, MLPrediction> _mlPredictions = {};
+  List<MLInsight> _mlInsights = [];
+  double _mlTrustScore = 0;
+  String _mlStatus = 'Loading...';
+
+  // Hotspot data for sector-level overview
+  List<Map<String, dynamic>> _sectorHotspots = [];
+  bool _loadingHotspots = true;
 
   @override
   void initState() {
@@ -51,20 +64,30 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // Get user GPS location and village
     _locationService.getFullLocation().then((result) {
-      if (mounted && result.hasPosition) {
+      if (!mounted) return;
+      if (result.hasPosition) {
         setState(() {
           _userLat = result.latitude;
           _userLng = result.longitude;
           _userVillage = result.village;
+          _locationError = null;
+        });
+      } else {
+        setState(() {
+          _locationError = result.error;
         });
       }
     }).catchError((_) {});
 
-    final deviceId = await _deviceService.getDeviceId();
+    // Load sector-level hotspots for overview
+    _loadSectorHotspots();
+
+    final deviceId = await _deviceService.ensureDeviceId(apiService: _apiService);
     if (deviceId == null || deviceId.isEmpty) {
       setState(() {
         _loading = false;
         _deviceId = null;
+        _locationError ??= 'Could not register this device with server.';
       });
       return;
     }
@@ -76,12 +99,27 @@ class _HomeScreenState extends State<HomeScreen> {
           .toList();
       final verified = reports
           .where((r) =>
-            r.ruleStatus == 'classified' ||
-            r.ruleStatus == 'passed' ||
               r.ruleStatus == 'confirmed' ||
               r.ruleStatus == 'verified' ||
               r.ruleStatus == 'trusted')
           .length;
+
+      // Load ML predictions for recent reports
+      final reportIds = reports.take(3).map((r) => r.reportId).toList();
+      final mlPredictions = await _mlService.getBatchPredictions(reportIds, deviceId);
+      
+      // Load ML insights for home screen
+      final mlInsights = await _mlService.getHomeInsights(deviceId);
+      
+      // Calculate ML trust score from predictions
+      double mlTrustScore = 0;
+      if (mlPredictions.isNotEmpty) {
+        final totalScore = mlPredictions.values
+            .map((p) => p.trustScore)
+            .reduce((a, b) => a + b);
+        mlTrustScore = totalScore / mlPredictions.length;
+      }
+
       setState(() {
         _recentReports = reports.take(3).toList();
         _totalReports = reports.length;
@@ -89,11 +127,32 @@ class _HomeScreenState extends State<HomeScreen> {
         _trustScore = reports.isEmpty
             ? 50
             : ((verified / reports.length) * 100).clamp(0, 100);
+        _mlPredictions = mlPredictions;
+        _mlInsights = mlInsights;
+        _mlTrustScore = mlTrustScore;
+        _mlStatus = mlPredictions.isNotEmpty ? 'ML Analysis Complete' : 'No ML Data';
         _loading = false;
       });
     } catch (e) {
       debugPrint('Failed to load reports on home: $e');
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadSectorHotspots() async {
+    try {
+      final hotspots = await _apiService.getPublicHotspots();
+      if (mounted) {
+        setState(() {
+          _sectorHotspots = hotspots.cast<Map<String, dynamic>>();
+          _loadingHotspots = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Failed to load hotspots: $e');
+      if (mounted) {
+        setState(() => _loadingHotspots = false);
+      }
     }
   }
 
@@ -114,6 +173,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     _buildTrustScoreCard(),
                     const SizedBox(height: 4),
                     _buildStatsGrid(),
+                    if (_mlInsights.isNotEmpty) ...[
+                      const SizedBox(height: 11),
+                      const SectionHeader('AI Insights'),
+                      _buildMLInsights(),
+                    ],
                     const SectionHeader('Safety Overview'),
                     _buildMapPreview(),
                     const SizedBox(height: 11),
@@ -152,21 +216,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 Text(
                   _userVillage != null
                       ? '${_userVillage!.village}, ${_userVillage!.cell}'
-                      : 'Good morning,',
+                      : (_userLat != null && _userLng != null)
+                          ? '${_userLat!.toStringAsFixed(5)}, ${_userLng!.toStringAsFixed(5)}'
+                          : (_locationError ?? 'Detecting current location...'),
                   style: const TextStyle(fontSize: 11, color: AppColors.muted)),
                 RichText(
-                  text: const TextSpan(
-                    style:
-                        TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
-                    children: [
-                      TextSpan(
-                          text: 'Musanze ',
-                          style: TextStyle(color: AppColors.text)),
-                      TextSpan(
-                          text: 'District',
-                          style: TextStyle(color: AppColors.accent)),
-                    ],
-                  ),
+                  text: _userVillage != null
+                      ? const TextSpan(
+                          style:
+                              TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                          children: [
+                            TextSpan(
+                                text: 'Musanze ',
+                                style: TextStyle(color: AppColors.text)),
+                            TextSpan(
+                                text: 'District',
+                                style: TextStyle(color: AppColors.accent)),
+                          ],
+                        )
+                      : const TextSpan(
+                          style:
+                              TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                          children: [
+                            TextSpan(
+                                text: 'Location ',
+                                style: TextStyle(color: AppColors.text)),
+                            TextSpan(
+                                text: 'Unknown',
+                                style: TextStyle(color: AppColors.warn)),
+                          ],
+                        ),
                 ),
               ],
             ),
@@ -201,6 +280,10 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildTrustScoreCard() {
+    // Use ML trust score if available, otherwise fall back to rule-based score
+    final displayScore = _mlTrustScore > 0 ? _mlTrustScore : _trustScore;
+    final isMLBased = _mlTrustScore > 0;
+    
     return Container(
       padding: const EdgeInsets.all(15),
       margin: const EdgeInsets.only(bottom: 12),
@@ -209,52 +292,87 @@ class _HomeScreenState extends State<HomeScreen> {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [
-            AppColors.accent.withValues(alpha: 0.1),
-            AppColors.accent2.withValues(alpha: 0.05),
+            isMLBased 
+                ? AppColors.accent.withValues(alpha: 0.15)
+                : AppColors.accent.withValues(alpha: 0.1),
+            isMLBased
+                ? AppColors.accent2.withValues(alpha: 0.08)
+                : AppColors.accent2.withValues(alpha: 0.05),
           ],
         ),
-        border:
-            Border.all(color: AppColors.accent.withValues(alpha: 0.28)),
+        border: Border.all(
+            color: isMLBased 
+                ? AppColors.accent.withValues(alpha: 0.4)
+                : AppColors.accent.withValues(alpha: 0.28)
+        ),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         children: [
-          TrustScoreRing(score: _trustScore),
+          TrustScoreRing(score: displayScore),
           const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'DEVICE TRUST SCORE',
-                  style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.muted,
-                      letterSpacing: 0.8),
+                Row(
+                  children: [
+                    Text(
+                      isMLBased ? 'ML TRUST SCORE' : 'DEVICE TRUST SCORE',
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.muted,
+                          letterSpacing: 0.8),
+                    ),
+                    if (isMLBased) ...[
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: AppColors.accent.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          'AI',
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 2),
                 Row(
                   children: [
                     Text(
-                      _trustScore >= 70
-                          ? 'Good Standing'
-                          : _trustScore >= 40
+                      displayScore >= 70
+                          ? 'Excellent'
+                          : displayScore >= 40
                               ? 'Moderate'
-                              : 'Low',
+                              : 'Needs Improvement',
                       style: const TextStyle(
                           fontSize: 14, fontWeight: FontWeight.w600),
                     ),
-                    if (_trustScore >= 50)
-                      const Text(' ↑',
+                    if (displayScore >= 50)
+                      Text(isMLBased ? ' 🤖' : ' ↑',
                           style: TextStyle(color: AppColors.accent)),
                   ],
                 ),
                 const SizedBox(height: 2),
                 Text(
                   '$_totalReports reports · $_verifiedReports verified',
-                  style:
-                      const TextStyle(fontSize: 10, color: AppColors.muted),
+                  style: const TextStyle(fontSize: 10, color: AppColors.muted),
                 ),
+                if (isMLBased) ...[
+                  const SizedBox(height: 1),
+                  Text(
+                    _mlStatus,
+                    style: const TextStyle(fontSize: 9, color: AppColors.accent),
+                  ),
+                ],
               ],
             ),
           ),
@@ -282,15 +400,15 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildMapPreview() {
-    final reportPoints = _recentReports
-        .take(12)
-        .map((r) => Offset(r.longitude, r.latitude))
-        .toList();
-
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => const SafetyMapScreen()),
-      ),
+      onTap: () {
+        // Open the Map tab inside the main shell so the bottom nav stays visible.
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const MainShell(initialIndex: 1),
+          ),
+        );
+      },
       child: Container(
         height: 180,
         decoration: BoxDecoration(
@@ -308,7 +426,8 @@ class _HomeScreenState extends State<HomeScreen> {
                   mapData: _mapData!,
                   userLatitude: _userLat,
                   userLongitude: _userLng,
-                  reportPoints: reportPoints,
+                  userVillage: _userVillage,
+                  sectorHotspots: _sectorHotspots,
                 ),
               )
             else
@@ -328,30 +447,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Text(
                   _userVillage != null
                       ? '📍 ${_userVillage!.village}, ${_userVillage!.sector}'
-                      : 'Musanze District · ${_mapData?.sectors.length ?? 0} sectors',
+                    : (_userLat != null && _userLng != null)
+                      ? '📍 Current GPS location detected'
+                      : '📍 Detecting current location... · ${_mapData?.sectors.length ?? 0} sectors',
                   style: const TextStyle(
                       fontSize: 9,
                       color: AppColors.muted,
                       fontFamily: 'monospace'),
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 8,
-              right: 10,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.bg.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Text(
-                  '• ${reportPoints.length} reports',
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: AppColors.accent,
-                    fontFamily: 'monospace',
-                  ),
                 ),
               ),
             ),
@@ -366,7 +468,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(7),
                 ),
                 child: const Text(
-                  'Open map →',
+                  'Tap to expand →',
                   style: TextStyle(fontSize: 9, color: AppColors.accent),
                 ),
               ),
@@ -380,14 +482,22 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildReportItem(ReportListItem report) {
     final icon = iconForIncidentType(report.incidentTypeName ?? '');
     final bgColor = colorForIncidentType(report.incidentTypeName ?? '');
+    final mlPrediction = _mlPredictions[report.reportId];
+    
     return ReportItemCard(
       icon: icon,
       iconBg: bgColor.withValues(alpha: 0.1),
       typeName: report.incidentTypeName ?? 'Incident',
       description: report.description ?? 'No description',
       timeLabel: timeAgo(report.reportedAt),
-      statusLabel: formatStatus(report.ruleStatus),
-      statusType: badgeTypeFromStatus(report.ruleStatus),
+      statusLabel: mlPrediction != null 
+          ? '${mlPrediction.statusEmoji} ${mlPrediction.statusText}'
+          : formatStatus(report.ruleStatus),
+      statusType: mlPrediction != null 
+          ? _getMLBadgeType(mlPrediction.predictionLabel)
+          : badgeTypeFromStatus(report.ruleStatus),
+      reportNumber: report.reportNumber,
+      trustScore: report.trustScore ?? mlPrediction?.trustScore,
       onTap: () => Navigator.of(context).push(
         MaterialPageRoute(
           builder: (_) => ReportDetailScreen(
@@ -397,6 +507,125 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  BadgeType _getMLBadgeType(String predictionLabel) {
+    switch (predictionLabel) {
+      case 'likely_real':
+        return BadgeType.ok;
+      case 'suspicious':
+        return BadgeType.warn;
+      case 'fake':
+        return BadgeType.err;
+      default:
+        return BadgeType.info;
+    }
+  }
+
+  Widget _buildMLInsights() {
+    if (_mlInsights.isEmpty) return const SizedBox.shrink();
+    
+    return Column(
+      children: _mlInsights.take(3).map((insight) => Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: AppColors.surface2,
+          border: Border.all(color: AppColors.border.withValues(alpha: 0.5)),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: _getInsightColor(insight.type).withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                _getInsightEmoji(insight.type),
+                style: const TextStyle(fontSize: 16),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    insight.title,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.text,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    insight.description,
+                    style: const TextStyle(
+                      fontSize: 10,
+                      color: AppColors.muted,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            if (insight.score != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: _getScoreColor(insight.score!).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${insight.score!.toInt()}%',
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: _getScoreColor(insight.score!),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      )).toList(),
+    );
+  }
+
+  Color _getInsightColor(String type) {
+    switch (type) {
+      case 'trust':
+        return AppColors.accent;
+      case 'safety':
+        return AppColors.ok;
+      case 'pattern':
+        return AppColors.warn;
+      default:
+        return AppColors.muted;
+    }
+  }
+
+  String _getInsightEmoji(String type) {
+    switch (type) {
+      case 'trust':
+        return '🤖';
+      case 'safety':
+        return '🛡️';
+      case 'pattern':
+        return '📊';
+      default:
+        return '💡';
+    }
+  }
+
+  Color _getScoreColor(double score) {
+    if (score >= 70) return AppColors.ok;
+    if (score >= 40) return AppColors.warn;
+    return AppColors.danger;
   }
 
   Widget _buildEmptyState() {

@@ -22,6 +22,19 @@ class VillageLocation {
   String toString() => displayName;
 }
 
+/// Bounding box for the entire dataset.
+class MapBounds {
+  final double minLng;
+  final double maxLng;
+  final double minLat;
+  final double maxLat;
+
+  MapBounds(this.minLng, this.maxLng, this.minLat, this.maxLat);
+
+  double get lngSpan => maxLng - minLng;
+  double get latSpan => maxLat - minLat;
+}
+
 /// Parsed Musanze boundary feature (one village polygon).
 class MapFeature {
   final String sector;
@@ -37,21 +50,11 @@ class MapFeature {
   });
 }
 
-/// Bounding box for the entire dataset.
-class MapBounds {
-  final double minLng;
-  final double maxLng;
-  final double minLat;
-  final double maxLat;
-
-  MapBounds(this.minLng, this.maxLng, this.minLat, this.maxLat);
-
-  double get lngSpan => maxLng - minLng;
-  double get latSpan => maxLat - minLat;
-}
-
 /// Holds all parsed data for the Musanze map.
 class MusanzeMapData {
+  static MusanzeMapData? _cached;
+  static Future<MusanzeMapData>? _loadingFuture;
+
   final List<MapFeature> features;
   final MapBounds bounds;
   final List<String> sectors;
@@ -116,7 +119,7 @@ class MusanzeMapData {
     final exact = findVillage(latitude, longitude);
     if (exact != null) return exact;
 
-    // Fallback: find the closest village centroid
+    // Fallback: find the closest village centroid, but only if reasonably close
     final point = ui.Offset(longitude, latitude);
     double minDist = double.infinity;
     MapFeature? closest;
@@ -139,13 +142,18 @@ class MusanzeMapData {
       }
     }
 
-    if (closest != null) {
+    // Only return a location if the user is within a reasonable distance of Musanze
+    // Maximum distance: ~0.1 degrees (~11km) - this should cover the entire Musanze district
+    const double maxDistance = 0.1;
+    if (closest != null && minDist <= maxDistance) {
       return VillageLocation(
         village: closest.village,
         cell: closest.cell,
         sector: closest.sector,
       );
     }
+    
+    // User is outside Musanze district
     return null;
   }
 
@@ -174,8 +182,18 @@ class MusanzeMapData {
 
   /// Load and parse from bundled asset.
   static Future<MusanzeMapData> load() async {
-    final raw = await rootBundle.loadString('assets/musanze_boundaries.geojson');
-    return parse(raw);
+    if (_cached != null) return _cached!;
+    if (_loadingFuture != null) return _loadingFuture!;
+
+    _loadingFuture = () async {
+      final raw = await rootBundle.loadString('assets/musanze_boundaries.geojson');
+      final parsed = parse(raw);
+      _cached = parsed;
+      _loadingFuture = null;
+      return parsed;
+    }();
+
+    return _loadingFuture!;
   }
 
   /// Parse a GeoJSON string.
@@ -191,9 +209,10 @@ class MusanzeMapData {
     for (final raw in rawFeatures) {
       final props = raw['properties'] as Map<String, dynamic>;
       final geom = raw['geometry'] as Map<String, dynamic>;
-      final sector = props['Sector'] as String? ?? '';
-      final cell = props['Cell'] as String? ?? '';
-      final village = props['Village'] as String? ?? '';
+      // Support both asset keys (Sector/Cell/Village) and backend keys (sector/cell/village)
+      final sector = (props['Sector'] ?? props['sector'] ?? props['sector_name']) as String? ?? '';
+      final cell = (props['Cell'] ?? props['cell'] ?? props['cell_name']) as String? ?? '';
+      final village = (props['Village'] ?? props['village'] ?? props['village_name']) as String? ?? '';
       sectorSet.add(sector);
 
       final geoType = geom['type'] as String? ?? 'Polygon';
@@ -240,3 +259,4 @@ class MusanzeMapData {
     );
   }
 }
+

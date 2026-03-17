@@ -17,6 +17,22 @@ class ApiService {
   };
   static const Map<String, String> _getHeaders = {};
 
+  Never _throwHttpError(String prefix, http.Response response) {
+    String message = '$prefix: ${response.statusCode}';
+    try {
+      final body = jsonDecode(response.body);
+      if (body is Map && body['detail'] != null) {
+        final detail = body['detail'];
+        if (detail is String && detail.isNotEmpty) {
+          message = '$prefix: $detail';
+        } else if (detail != null) {
+          message = '$prefix: $detail';
+        }
+      }
+    } catch (_) {}
+    throw Exception(message);
+  }
+
   Future<Map<String, dynamic>> registerDevice(String deviceHash) async {
     final response = await _client.post(
       Uri.parse('${ApiConfig.devicesUrl}/register'),
@@ -27,22 +43,35 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
-    throw Exception('Failed to register device: ${response.statusCode}');
+    _throwHttpError('Failed to register device', response);
+  }
+
+  /// Fetch per-device profile stats for the mobile Profile screen.
+  /// Uses the anonymous device_hash (legacy-compatible).
+  Future<Map<String, dynamic>> getDeviceProfile(String deviceHash) async {
+    final response = await _client
+        .get(
+          Uri.parse('${ApiConfig.devicesUrl}/profile/$deviceHash'),
+          headers: _getHeaders,
+        )
+        .timeout(_timeout);
+
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    _throwHttpError('Failed to get device profile', response);
   }
 
   Future<List<dynamic>> getIncidentTypes() async {
-    final uri = Uri.parse('${ApiConfig.incidentTypesUrl}/').replace(
-      queryParameters: {'_ts': DateTime.now().millisecondsSinceEpoch.toString()},
-    );
     final response = await _client.get(
-      uri,
+      Uri.parse('${ApiConfig.incidentTypesUrl}/'),
       headers: _getHeaders,
     ).timeout(_timeout);
     
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
-    throw Exception('Failed to get incident types: ${response.statusCode}');
+    _throwHttpError('Failed to get incident types', response);
   }
 
   /// List reports for the given device (my reports).
@@ -54,7 +83,7 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body) as List<dynamic>;
     }
-    throw Exception('Failed to get my reports: ${response.statusCode}');
+    _throwHttpError('Failed to get my reports', response);
   }
 
   /// Get a single report; deviceId must match the report owner.
@@ -66,7 +95,7 @@ class ApiService {
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
     }
-    throw Exception('Failed to get report: ${response.statusCode}');
+    _throwHttpError('Failed to get report', response);
   }
 
   Future<Map<String, dynamic>> submitReport(Map<String, dynamic> reportData) async {
@@ -91,6 +120,47 @@ class ApiService {
       }
     } catch (_) {}
     throw Exception(message);
+  }
+
+  /// Public locations browser for mobile Safety Map.
+  /// locationType: sector | cell | village
+  Future<List<dynamic>> getPublicLocations({
+    String? locationType,
+    int? parentId,
+    int limit = 2000,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.publicLocationsUrl}/').replace(
+      queryParameters: {
+        if (locationType != null) 'location_type': locationType,
+        if (parentId != null) 'parent_id': parentId.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    final response = await _client.get(uri, headers: _getHeaders).timeout(_timeout);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as List<dynamic>;
+    }
+    _throwHttpError('Failed to load locations', response);
+  }
+
+  /// Fetch polygon boundaries from backend as GeoJSON FeatureCollection.
+  Future<Map<String, dynamic>> getPublicLocationsGeoJson({
+    String locationType = 'village',
+    int? parentId,
+    int limit = 10000,
+  }) async {
+    final uri = Uri.parse(ApiConfig.publicLocationsGeoJsonUrl).replace(
+      queryParameters: {
+        'location_type': locationType,
+        if (parentId != null) 'parent_id': parentId.toString(),
+        'limit': limit.toString(),
+      },
+    );
+    final response = await _client.get(uri, headers: _getHeaders).timeout(_timeout);
+    if (response.statusCode == 200) {
+      return jsonDecode(response.body) as Map<String, dynamic>;
+    }
+    _throwHttpError('Failed to load map polygons', response);
   }
 
   /// Upload evidence to an existing report (e.g. add evidence later). deviceId is required.
@@ -141,16 +211,22 @@ class ApiService {
     throw EvidenceUploadException(message, response.statusCode);
   }
 
-  /// Fetch device stats (trust score, report counts) by device UUID.
-  Future<Map<String, dynamic>> getDeviceStats(String deviceId) async {
-    final response = await _client.get(
-      Uri.parse('${ApiConfig.devicesUrl}/$deviceId'),
-      headers: _getHeaders,
-    ).timeout(_timeout);
+  /// Fetch public hotspots for safety map
+  Future<List<dynamic>> getPublicHotspots({
+    String? riskLevel,
+    int? limit,
+  }) async {
+    final uri = Uri.parse('${ApiConfig.publicHotspotsUrl}/').replace(
+      queryParameters: {
+        if (riskLevel != null) 'risk_level': riskLevel,
+        if (limit != null) 'limit': limit.toString(),
+      },
+    );
+    final response = await _client.get(uri, headers: _getHeaders).timeout(_timeout);
     if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
+      return jsonDecode(response.body) as List<dynamic>;
     }
-    throw Exception('Failed to get device stats: ${response.statusCode}');
+    _throwHttpError('Failed to load hotspots', response);
   }
 }
 

@@ -116,10 +116,10 @@ def apply_rule_based_status(
     report: Report,
     evidence_count: int,
     db: Session,
-) -> tuple[str, bool]:
+) -> tuple[str, bool, str | None]:
     """
     Apply rule-based logic to set rule_status and is_flagged.
-    Returns (rule_status, is_flagged).
+    Returns (rule_status, is_flagged, flag_reason or None).
     """
     description = (report.description or "").strip()
     has_description = len(description) >= MIN_DESCRIPTION_LENGTH
@@ -136,39 +136,25 @@ def apply_rule_based_status(
 
     # Rule 1: Reject — no description and no evidence (too sparse to be useful)
     if not has_short_description and not has_evidence:
-        return "rejected", True
+        return "rejected", True, "no_description_or_evidence"
 
     # Rule 2: Flag — has evidence but no/minimal description
     if has_evidence and not has_description:
-        return "flagged", True
+        return "flagged", True, "no_description_with_evidence"
 
     # Rule 3: Flag — very short description (even with evidence)
     if has_short_description and not has_description and has_evidence:
-        return "flagged", True
+        return "flagged", True, "minimal_description"
 
     # Rule 4: Flag — high severity incident type (needs review)
     if severity >= HIGH_SEVERITY_WEIGHT:
-        return "flagged", True
+        return "flagged", True, "high_severity_incident"
 
-    # Rule 5: Classify — has reasonable description; optional evidence
+    # Rule 5: Pass — has reasonable description; optional evidence
     if has_description:
-        return "classified", False
+        return "passed", False, None
 
     # Default: pending (e.g. short description but has evidence)
     if has_evidence:
-        return "classified", False
-    return "pending", False
-
-
-def recalculate_device_trust_score(total_reports: int, trusted_reports: int, flagged_reports: int) -> float:
-    """
-    Compute device trust score (0-100) from aggregate report counts.
-    - Base: 50.0 (assigned at registration with no reports)
-    - Each classified report increases score; each flagged/rejected decreases it.
-    Formula: 50 + (trusted - flagged*1.5) / max(1, total) * 50, clamped [0, 100].
-    """
-    if total_reports == 0:
-        return 50.0
-    net = trusted_reports - flagged_reports * 1.5
-    score = 50.0 + (net / total_reports) * 50.0
-    return round(max(0.0, min(100.0, score)), 2)
+        return "passed", False, None
+    return "pending", False, None

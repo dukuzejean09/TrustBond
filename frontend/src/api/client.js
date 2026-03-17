@@ -1,31 +1,29 @@
 /**
  * TrustBond API client – uses fetch with base URL and optional Bearer token.
- * Token key matches authService.js so both clients share the same stored token.
  */
-import { API_BASE_URL, formatApiLocation } from "../config/api.js";
-
-const BASE = API_BASE_URL;
-// Must match the key used in authService.js
-const TOKEN_KEY = "trustbond_auth_token";
+const BASE =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
+  "https://trustbondmobileapp.onrender.com";
 
 export function getToken() {
   if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY) || sessionStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem("tb_token") || localStorage.getItem("tb_token");
 }
 
 export function setToken(token, { remember = true } = {}) {
   if (typeof window === "undefined") return;
   if (!token) {
-    localStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(TOKEN_KEY);
+    sessionStorage.removeItem("tb_token");
+    localStorage.removeItem("tb_token");
     return;
   }
-  localStorage.removeItem(TOKEN_KEY);
-  sessionStorage.removeItem(TOKEN_KEY);
+  // Clear both and set according to remember flag
+  sessionStorage.removeItem("tb_token");
+  localStorage.removeItem("tb_token");
   if (remember) {
-    localStorage.setItem(TOKEN_KEY, token);
+    localStorage.setItem("tb_token", token);
   } else {
-    sessionStorage.setItem(TOKEN_KEY, token);
+    sessionStorage.setItem("tb_token", token);
   }
 }
 
@@ -41,18 +39,7 @@ async function request(method, path, body = null, { token = getToken() } = {}) {
     },
   };
   if (body && method !== "GET") opts.body = JSON.stringify(body);
-  let res;
-  try {
-    res = await fetch(url, opts);
-  } catch (err) {
-    const msg = err && err.message ? String(err.message) : "NetworkError";
-    if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
-      throw new Error(
-        `Cannot connect to backend. Check API URL: ${formatApiLocation()}`,
-      );
-    }
-    throw err;
-  }
+  const res = await fetch(url, opts);
   const text = await res.text();
   let data;
   try {
@@ -61,11 +48,13 @@ async function request(method, path, body = null, { token = getToken() } = {}) {
     data = null;
   }
   if (!res.ok) {
+    // Handle auth expiry: force logout on 401 so user is prompted to log in again
     if (res.status === 401) {
-      // Clear token and redirect to login — no alert popup
       setToken(null);
+      // Optional: simple reload to show login screen
       if (typeof window !== "undefined") {
-        window.location.href = "/login";
+        window.alert(data?.detail || "Session expired. Please log in again.");
+        window.location.reload();
       }
     }
     const err = new Error(data?.detail || res.statusText || "Request failed");

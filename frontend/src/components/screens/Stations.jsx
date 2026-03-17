@@ -1,14 +1,13 @@
-import React, { useEffect, useState } from "react";
-import api from "../../api/client";
+import React, { useEffect, useState } from 'react';
+import api from '../../api/client';
 
-const Stations = ({ openModal, refreshKey = 0 }) => {
+const Stations = ({ openModal }) => {
   const [stations, setStations] = useState([]);
   const [loading, setLoading] = useState(true);
 
   const load = () => {
     setLoading(true);
-    api
-      .get("/api/v1/stations")
+    api.get('/api/v1/stations')
       .then((res) => {
         setStations(res?.items || []);
         setLoading(false);
@@ -18,7 +17,36 @@ const Stations = ({ openModal, refreshKey = 0 }) => {
 
   useEffect(() => {
     load();
-  }, [refreshKey]);
+  }, []);
+
+  const handleToggleActive = async (station) => {
+    try {
+      const updated = await api.put(`/api/v1/stations/${station.station_id}`, {
+        is_active: !station.is_active,
+      });
+      setStations((prev) =>
+        prev.map((s) =>
+          s.station_id === updated.station_id ? updated : s
+        )
+      );
+    } catch (e) {
+      window.alert(e.message || 'Failed to update station status');
+    }
+  };
+
+  const handleDelete = async (station) => {
+    if (!window.confirm(`Delete station "${station.station_name}"? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await api.delete(`/api/v1/stations/${station.station_id}`);
+      setStations((prev) =>
+        prev.filter((s) => s.station_id !== station.station_id)
+      );
+    } catch (e) {
+      window.alert(e.message || 'Failed to delete station');
+    }
+  };
 
   return (
     <>
@@ -30,12 +58,7 @@ const Stations = ({ openModal, refreshKey = 0 }) => {
       <div className="card">
         <div className="card-header">
           <div className="card-title">Registered Stations</div>
-          <button
-            className="btn btn-primary btn-sm"
-            onClick={() => openModal("addStation")}
-          >
-            Add Station
-          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => openModal('addStation')}>Add Station</button>
         </div>
 
         <div className="tbl-wrap">
@@ -54,65 +77,53 @@ const Stations = ({ openModal, refreshKey = 0 }) => {
             <tbody>
               {stations.map((s) => (
                 <tr key={s.station_id}>
-                  <td>
-                    <span className="badge b-blue">{s.station_code}</span>
+                  <td><span className="badge b-blue">{s.station_code}</span></td>
+                  <td><strong>{s.station_name}</strong></td>
+                  <td style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.station_type}</td>
+                  <td style={{ fontSize: '11px', color: 'var(--muted)' }}>{s.location_name || '—'}</td>
+                  <td style={{ fontSize: '11px', color: 'var(--muted)' }}>
+                    {s.phone_number || '—'}
+                    {s.email ? ` · ${s.email}` : ''}
                   </td>
                   <td>
-                    <strong>{s.station_name}</strong>
-                  </td>
-                  <td style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {s.station_type}
-                  </td>
-                  <td style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {s.location_name || "—"}
-                  </td>
-                  <td style={{ fontSize: "11px", color: "var(--muted)" }}>
-                    {s.phone_number || "—"}
-                    {s.email ? ` · ${s.email}` : ""}
-                  </td>
-                  <td>
-                    <span
-                      className={`badge ${s.is_active ? "b-green" : "b-red"}`}
-                    >
-                      {s.is_active ? "Active" : "Inactive"}
+                    <span className={`badge ${s.is_active ? 'b-green' : 'b-red'}`}>
+                      {s.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
                   <td>
-                    <div style={{ display: "flex", gap: "4px" }}>
+                    <div style={{ display: 'flex', gap: '4px' }}>
                       <button
                         className="btn btn-outline btn-sm"
-                        onClick={() => openModal("editStation", s)}
+                        onClick={() => openModal('editStation', s)}
                       >
                         Edit
+                      </button>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        onClick={() => handleToggleActive(s)}
+                      >
+                        {s.is_active ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        className="btn btn-danger btn-sm"
+                        onClick={() => handleDelete(s)}
+                      >
+                        Delete
                       </button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {!stations.length && !loading && (
+              {(!stations.length && !loading) && (
                 <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      fontSize: "12px",
-                      color: "var(--muted)",
-                      textAlign: "center",
-                    }}
-                  >
+                  <td colSpan={7} style={{ fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
                     No stations registered yet.
                   </td>
                 </tr>
               )}
               {loading && (
                 <tr>
-                  <td
-                    colSpan={7}
-                    style={{
-                      fontSize: "12px",
-                      color: "var(--muted)",
-                      textAlign: "center",
-                    }}
-                  >
+                  <td colSpan={7} style={{ fontSize: '12px', color: 'var(--muted)', textAlign: 'center' }}>
                     Loading...
                   </td>
                 </tr>
@@ -126,3 +137,4 @@ const Stations = ({ openModal, refreshKey = 0 }) => {
 };
 
 export default Stations;
+

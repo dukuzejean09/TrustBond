@@ -1,5 +1,4 @@
 from typing import Annotated, Optional, List, Tuple, Dict, Any
-import logging
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, status
 from sqlalchemy.orm import Session, joinedload, selectinload
 from uuid import uuid4, UUID
@@ -7,7 +6,10 @@ from datetime import datetime, timedelta, timezone
 import io
 import os
 
-logger = logging.getLogger(__name__)
+import cloudinary
+import cloudinary.uploader
+from PIL import Image
+from PIL.ExifTags import TAGS, GPSTAGS
 
 from app.config import settings
 from app.database import get_db, SessionLocal
@@ -33,31 +35,142 @@ from app.models.report_assignment import ReportAssignment
 from app.models.police_review import PoliceReview
 from app.api.v1.auth import get_optional_user, get_current_user, get_current_admin_or_supervisor
 from app.api.v1.notifications import create_notification
-from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording, recalculate_device_trust_score
+from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording
 from app.core.credibility_model import score_report_credibility
 from app.core.audit import log_action
 from app.core.hotspot_auto import create_hotspots_from_reports
 from app.core.village_lookup import get_village_location_id, get_village_location_info
-from app.services.cloudinary_service import (
-    CLOUDINARY_ENABLED,
-    upload_to_cloudinary,
-    run_evidence_verification,
-)
+from sqlalchemy import text
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+def _generate_report_number(db: Session) -> str:
+    """Generate next report number RPT-YYYY-NNNN."""
+    year = datetime.now(timezone.utc).strftime("%Y")
+    prefix = f"RPT-{year}-"
+    row = db.execute(
+        text("""
+            SELECT COALESCE(MAX(
+                NULLIF(SUBSTRING(report_number FROM 'RPT-[0-9]{4}-([0-9]+)'), '')::INT
+            ), 0) + 1 AS next_num
+            FROM reports WHERE report_number LIKE :prefix
+        """),
+        {"prefix": f"{prefix}%"},
+    ).fetchone()
+    next_num = row[0] if row else 1
+    return f"{prefix}{next_num:04d}"
 
 UPLOAD_DIR = "uploads/evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _normalize_rule_status_filter(value: Optional[str]) -> Optional[list[str]]:
-    if not value:
-        return None
-    normalized = value.strip().lower()
-    if normalized in ("classified", "passed", "confirmed", "verified"):
-        return ["classified", "passed", "confirmed", "verified"]
-    return [normalized]
+# Configure Cloudinary using settings (Pydantic loads .env for us)
+cloudinary.config(
+    cloud_name=settings.cloudinary_cloud_name,
+    api_key=settings.cloudinary_api_key,
+    api_secret=settings.cloudinary_api_secret,
+    secure=True,
+)
 
+_CLOUDINARY_ENABLED = bool(settings.cloudinary_cloud_name)
+
+
+def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optional[float], Optional[datetime]]:
+    """Extract GPS latitude/longitude and capture time from image EXIF, if present."""
+    try:
+        image = Image.open(io.BytesIO(image_bytes))
+        # Try modern getexif() API first, fall back to _getexif()
+        exif_data = getattr(image, "getexif", lambda: None)()
+        if not exif_data:
+            exif_data = getattr(image, "_getexif", lambda: None)()
+
+        if not exif_data:
+            return None, None, None
+
+        exif = {TAGS.get(k, k): v for k, v in exif_data.items()}
+        # Debug: show that we actually saw EXIF keys
+        print(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
+
+        # Try to get GPS info in a robust way
+        gps_info = None
+
+        # 1) Best effort: use get_ifd if available (Pillow Exif object)
+        if hasattr(exif_data, "get_ifd"):
+            try:
+                gps_ifd = exif_data.get_ifd(34853)  # 34853 == GPSInfo tag
+                if gps_ifd:
+                    gps_info = gps_ifd
+            except Exception:
+                gps_info = None
+
+        # 2) Fallback: raw tag value 34853 or "GPSInfo"
+        if gps_info is None:
+            raw_gps = exif_data.get(34853) or exif.get("GPSInfo")
+            # Some cameras store an integer offset here; resolve via get_ifd
+            if isinstance(raw_gps, dict):
+                gps_info = raw_gps
+            elif isinstance(raw_gps, int) and hasattr(exif_data, "get_ifd"):
+                try:
+                    gps_info = exif_data.get_ifd(raw_gps)
+                except Exception:
+                    gps_info = None
+
+        dt_original = exif.get("DateTimeOriginal") or exif.get("DateTime")
+
+        lat = lon = None
+        print(f"[EXIF] raw GPSInfo: {gps_info!r}")
+        if gps_info:
+            gps_parsed = {GPSTAGS.get(k, k): v for k, v in gps_info.items()}
+            print(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
+
+            def _to_deg(value, ref):
+                """
+                Convert EXIF GPS coordinates to decimal degrees.
+
+                Handles both:
+                - Rational tuples: ((deg_num, deg_den), (min_num, min_den), (sec_num, sec_den))
+                - Simple float triplets: (deg_float, min_float, sec_float)
+                """
+                try:
+                    # Case 1: rational tuples
+                    if isinstance(value[0], (tuple, list)):
+                        d = value[0][0] / value[0][1]
+                        m = value[1][0] / value[1][1]
+                        s = value[2][0] / value[2][1]
+                    else:
+                        # Case 2: already simple floats (deg, min, sec)
+                        d, m, s = value
+
+                    result = d + (m / 60.0) + (s / 3600.0)
+                    if ref in ["S", "W"]:
+                        result = -result
+                    return float(result)
+                except Exception:
+                    return None
+
+            lat_val = gps_parsed.get("GPSLatitude")
+            lat_ref = gps_parsed.get("GPSLatitudeRef")
+            lon_val = gps_parsed.get("GPSLongitude")
+            lon_ref = gps_parsed.get("GPSLongitudeRef")
+
+            if lat_val and lat_ref:
+                lat = _to_deg(lat_val, lat_ref)
+            if lon_val and lon_ref:
+                lon = _to_deg(lon_val, lon_ref)
+
+        dt = None
+        if dt_original:
+            # EXIF datetime format: "YYYY:MM:DD HH:MM:SS"
+            try:
+                dt = datetime.strptime(dt_original, "%Y:%m:%d %H:%M:%S")
+            except Exception:
+                dt = None
+
+        return lat, lon, dt
+    except Exception:
+        # If EXIF parsing fails, just return Nones
+        return None, None, None
 
 
 @router.post("/", response_model=ReportResponse)
@@ -66,17 +179,27 @@ def create_report(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """Submit a new incident report"""
-    # Verify device exists, auto-register if not found
-    device = db.query(Device).filter(Device.device_id == report_data.device_id).first()
-    if not device:
-        device_hash = str(report_data.device_id)
-        device = Device(
-            device_id=report_data.device_id,
-            device_hash=device_hash,
+    """Submit a new incident report. Device can be identified by device_id or device_hash (find-or-create)."""
+    device = None
+    if report_data.device_id:
+        device = db.query(Device).filter(Device.device_id == report_data.device_id).first()
+        if not device:
+            raise HTTPException(status_code=404, detail="Device not found")
+    if device is None and report_data.device_hash and str(report_data.device_hash).strip():
+        device = (
+            db.query(Device)
+            .filter(Device.device_hash == report_data.device_hash.strip())
+            .first()
         )
-        db.add(device)
-        db.flush()
+        if not device:
+            device = Device(
+                device_id=uuid4(),
+                device_hash=report_data.device_hash.strip(),
+            )
+            db.add(device)
+            db.flush()
+    if not device:
+        raise HTTPException(status_code=400, detail="Either device_id or device_hash is required")
 
     # Verify incident type exists and is active
     incident_type = (
@@ -103,10 +226,11 @@ def create_report(
     except (TypeError, ValueError):
         raise HTTPException(status_code=400, detail="Invalid coordinates")
     
-    # Create report
+    report_num = _generate_report_number(db) if hasattr(Report, "report_number") else None
     report = Report(
         report_id=uuid4(),
-        device_id=report_data.device_id,
+        report_number=report_num,
+        device_id=device.device_id,
         incident_type_id=report_data.incident_type_id,
         description=report_data.description,
         latitude=report_data.latitude,
@@ -116,9 +240,18 @@ def create_report(
         movement_speed=report_data.movement_speed,
         was_stationary=report_data.was_stationary,
         rule_status="pending",  # Will be processed by verification engine
+        status="pending",
+        verification_status="pending",
+        context_tags=report_data.context_tags or [],
+        app_version=report_data.app_version,
+        network_type=report_data.network_type,
+        battery_level=report_data.battery_level,
     )
-    
+
+    # Wire location hierarchy: use the village row as both specific village_location_id
+    # and generic location_id so downstream queries can work with a single FK.
     report.village_location_id = village_id  # already looked up above (required for in-scope)
+    report.location_id = village_id
     db.add(report)
     db.flush()  # Get report_id
 
@@ -136,75 +269,52 @@ def create_report(
         )
         db.add(evidence)
 
-    # Rule-based verification
+    # Rule-based verification (no ML; ML will be added later)
     evidence_count = len(report_data.evidence_files)
-    rule_status, is_flagged = apply_rule_based_status(report, evidence_count, db)
+    rule_status, is_flagged, flag_reason = apply_rule_based_status(report, evidence_count, db)
     report.rule_status = rule_status
     report.is_flagged = is_flagged
+    if is_flagged and flag_reason:
+        report.flag_reason = flag_reason
+    if rule_status == "rejected":
+        report.status = "rejected"
+        report.verification_status = "rejected"
 
-    # Update device stats and recalculate trust score based on classification
+    # ML-based credibility scoring (best-effort; failures are ignored)
+    score_report_credibility(db, report, device, evidence_count)
+
+    # Update device stats
     device.total_reports += 1
-    if rule_status == "classified":
-        device.trusted_reports = (device.trusted_reports or 0) + 1
-    elif rule_status in ("flagged", "rejected"):
-        device.flagged_reports = (device.flagged_reports or 0) + 1
-    device.device_trust_score = recalculate_device_trust_score(
-        device.total_reports,
-        device.trusted_reports or 0,
-        device.flagged_reports or 0,
-    )
 
     log_action(db, "report_created", entity_type="report", entity_id=str(report.report_id), actor_type="system", success=True)
 
     db.commit()
     db.refresh(report)
 
-    # Eagerly load relationships for the response
-    report = (
-        db.query(Report)
-        .options(
-            joinedload(Report.incident_type),
-            joinedload(Report.village_location),
-            selectinload(Report.evidence_files),
-            selectinload(Report.hotspots),
-        )
-        .filter(Report.report_id == report.report_id)
-        .first()
-    )
-
     # Run hotspot auto-creation in background when criteria are met (no user intervention)
     def run_hotspot_auto():
         session = SessionLocal()
         try:
             create_hotspots_from_reports(session, time_window_hours=24, min_incidents=2, radius_meters=500)
-        except Exception as exc:
-            logger.warning("Hotspot auto-creation failed: %s", exc)  # Don't fail the request
-        finally:
-            session.close()
-
-    def run_ml_scoring(report_id: UUID, evidence_count: int):
-        session = SessionLocal()
-        try:
-            report_obj = session.query(Report).filter(Report.report_id == report_id).first()
-            if not report_obj:
-                return
-            device_obj = session.query(Device).filter(Device.device_id == report_obj.device_id).first()
-            if not device_obj:
-                return
-            score_report_credibility(session, report_obj, device_obj, evidence_count)
-            session.commit()
-        except Exception as exc:
-            session.rollback()
-            logger.warning("Background ML scoring failed for report %s: %s", report_id, exc)
+        except Exception:
+            pass  # Don't fail the request; hotspots can be created on next report
         finally:
             session.close()
 
     background_tasks.add_task(run_hotspot_auto)
-    background_tasks.add_task(run_ml_scoring, report.report_id, evidence_count)
-    return _build_report_response(report, db)
+    return report
 
 
 def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportResponse:
+    def _dt_sort_value(value: Optional[datetime]) -> float:
+        if value is None:
+            return float("-inf")
+        try:
+            dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            return float("-inf")
+
     village_name = None
     if getattr(r, "village_location", None) and r.village_location:
         village_name = r.village_location.location_name
@@ -218,7 +328,10 @@ def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportRes
             pass
 
     evidence_files = list(getattr(r, "evidence_files", None) or [])
-    evidence_files.sort(key=lambda x: (x.uploaded_at is None, x.uploaded_at), reverse=False)
+    evidence_files.sort(
+        key=lambda x: (_dt_sort_value(getattr(x, "uploaded_at", None)), str(getattr(x, "evidence_id", ""))),
+        reverse=False,
+    )
     evidence_preview = [
         EvidencePreview(evidence_id=ef.evidence_id, file_url=ef.file_url, file_type=ef.file_type)
         for ef in evidence_files[:3]
@@ -233,7 +346,11 @@ def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportRes
     if hotspots:
         risk_rank = {"low": 0, "medium": 1, "high": 2}
         hotspots.sort(
-            key=lambda h: (risk_rank.get((h.risk_level or "").lower(), 0), h.incident_count, h.detected_at),
+            key=lambda h: (
+                risk_rank.get((getattr(h, "risk_level", "") or "").lower(), 0),
+                int(getattr(h, "incident_count", 0) or 0),
+                _dt_sort_value(getattr(h, "detected_at", None)),
+            ),
             reverse=True,
         )
         h: Hotspot = hotspots[0]
@@ -244,8 +361,46 @@ def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportRes
         area_name = village_name or "this area"
         hotspot_label = f"{type_name} hotspot in {area_name}"
 
+    trust_score = None
+    if getattr(r, "device", None) and r.device:
+        trust_score = r.device.device_trust_score
+    if trust_score is None and getattr(r, "ml_predictions", None):
+        preds = [p for p in r.ml_predictions if p.is_final or p.trust_score is not None]
+        if preds:
+            preds.sort(
+                key=lambda p: _dt_sort_value(getattr(p, "evaluated_at", None)),
+                reverse=True,
+            )
+            trust_score = preds[0].trust_score
+
+    trust_score_out = None
+    if trust_score is not None:
+        try:
+            trust_score_out = float(trust_score)
+        except Exception:
+            trust_score_out = None
+
+    # Aggregate assignment priority/status for list views
+    assignment_priority = None
+    assignment_status = None
+    assignments = list(getattr(r, "assignments", None) or [])
+    if assignments:
+        pr_rank = {"urgent": 3, "high": 2, "medium": 1, "low": 0}
+        assignments.sort(
+            key=lambda a: pr_rank.get((a.priority or "").lower(), 0),
+            reverse=True,
+        )
+        top = assignments[0]
+        assignment_priority = top.priority
+        assignment_status = top.status
+
+    context_tags = getattr(r, "context_tags", None) or []
+    if context_tags is None:
+        context_tags = []
+
     return ReportResponse(
         report_id=r.report_id,
+        report_number=getattr(r, "report_number", None),
         device_id=r.device_id,
         incident_type_id=r.incident_type_id,
         description=r.description,
@@ -253,16 +408,88 @@ def _build_report_response(r: Report, db: Optional[Session] = None) -> ReportRes
         longitude=r.longitude,
         reported_at=r.reported_at,
         rule_status=r.rule_status,
+        status=getattr(r, "status", None),
+        verification_status=getattr(r, "verification_status", None),
         village_location_id=r.village_location_id,
         village_name=village_name,
         incident_type_name=r.incident_type.type_name if r.incident_type else None,
         evidence_count=len(evidence_files),
         evidence_preview=evidence_preview,
+        trust_score=trust_score_out,
         hotspot_id=hotspot_id,
         hotspot_risk_level=hotspot_risk_level,
         hotspot_incident_count=hotspot_incident_count,
         hotspot_label=hotspot_label,
+        is_flagged=getattr(r, "is_flagged", None),
+        flag_reason=getattr(r, "flag_reason", None),
+        verified_at=getattr(r, "verified_at", None),
+        context_tags=context_tags,
+        app_version=getattr(r, "app_version", None),
+        network_type=getattr(r, "network_type", None),
+        battery_level=float(r.battery_level) if getattr(r, "battery_level", None) is not None else None,
+        assignment_priority=assignment_priority,
+        assignment_status=assignment_status,
     )
+
+
+@router.get("/{report_id}/related", response_model=List[ReportResponse])
+def list_related_reports(
+    report_id: UUID,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    limit: int = Query(5, ge=1, le=20),
+):
+    """
+    Return reports related to this one:
+    - Same incident_type_id
+    - Same village (when known)
+    - Reported within a 3 day window around this report
+    """
+    base: Report | None = (
+        db.query(Report)
+        .options(
+            joinedload(Report.incident_type),
+            joinedload(Report.village_location),
+            joinedload(Report.device),
+            joinedload(Report.ml_predictions),
+            joinedload(Report.hotspots).joinedload(Hotspot.incident_type),
+        )
+        .filter(Report.report_id == report_id)
+        .first()
+    )
+    if not base:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    # Time window +/- 3 days
+    window = timedelta(days=3)
+    from_time = (base.reported_at or datetime.now(timezone.utc)) - window
+    to_time = (base.reported_at or datetime.now(timezone.utc)) + window
+
+    q = db.query(Report).options(
+        joinedload(Report.incident_type),
+        joinedload(Report.village_location),
+        joinedload(Report.device),
+        joinedload(Report.ml_predictions),
+        joinedload(Report.hotspots).joinedload(Hotspot.incident_type),
+    )
+
+    q = q.filter(
+        Report.report_id != base.report_id,
+        Report.incident_type_id == base.incident_type_id,
+        Report.reported_at >= from_time,
+        Report.reported_at <= to_time,
+    )
+
+    if base.village_location_id is not None:
+        q = q.filter(Report.village_location_id == base.village_location_id)
+
+    related = (
+        q.order_by(Report.reported_at.desc())
+        .limit(limit)
+        .all()
+    )
+
+    return [_build_report_response(r, db) for r in related]
 
 
 def _float_or_none(val) -> Optional[float]:
@@ -369,43 +596,73 @@ def list_reports(
     device_id: Optional[UUID] = Query(None, description="Device ID for 'my reports' (mobile). If omitted, auth required for all reports."),
     current_user: Annotated[Optional[PoliceUser], Depends(get_optional_user)] = None,
     db: Session = Depends(get_db),
-    rule_status: Optional[str] = Query(None, description="Filter by rule_status: pending, passed, flagged (suspicious/needs review), rejected."),
+    rule_status: Optional[str] = Query(None, description="Filter by rule_status: pending, passed, flagged, rejected."),
+    incident_type_id: Optional[int] = Query(None, description="Filter by incident type."),
+    village_location_id: Optional[int] = Query(None, description="Filter by village/location."),
     from_date: Optional[datetime] = Query(None, description="Reports reported on or after this date (ISO)."),
     to_date: Optional[datetime] = Query(None, description="Reports reported on or before this date (ISO)."),
     limit: int = Query(20, ge=1, le=100, description="Page size (police list only)."),
     offset: int = Query(0, ge=0, description="Skip N items (police list only)."),
 ):
-    """List reports. With device_id: list for that device (mobile). Without: auth required. Officers see only reports assigned to them; supervisors/admins see all."""
+    """List reports.
+
+    - With device_id: list for that device (mobile).
+    - Without device_id: auth required.
+      * Officers: only reports assigned to them.
+      * Supervisors: reports in their assigned location (if set).
+      * Admins: all reports.
+    """
     if device_id is not None:
         reports = (
             db.query(Report)
             .options(
+                joinedload(Report.device),
                 joinedload(Report.incident_type),
                 joinedload(Report.village_location),
                 selectinload(Report.evidence_files),
                 selectinload(Report.hotspots),
+                selectinload(Report.assignments),
+                selectinload(Report.ml_predictions),
             )
             .filter(Report.device_id == device_id)
             .order_by(Report.reported_at.desc())
             .all()
         )
-        return [_build_report_response(r, db) for r in reports]
+        items: list[ReportResponse] = []
+        for r in reports:
+            try:
+                items.append(_build_report_response(r, db))
+            except Exception:
+                # Skip malformed rows instead of failing the whole mobile list.
+                continue
+        return items
     if current_user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
     query = db.query(Report).options(
+        joinedload(Report.device),
         joinedload(Report.incident_type),
         joinedload(Report.village_location),
         selectinload(Report.evidence_files),
         selectinload(Report.hotspots),
+        selectinload(Report.assignments),
+        selectinload(Report.ml_predictions),
     )
+    role = getattr(current_user, "role", None)
+
     # Officers see only reports assigned to them
-    if getattr(current_user, "role", None) == "officer":
+    if role == "officer":
         query = query.join(Report.assignments).filter(
             ReportAssignment.police_user_id == current_user.police_user_id
         ).distinct()
-    normalized_statuses = _normalize_rule_status_filter(rule_status)
-    if normalized_statuses:
-        query = query.filter(Report.rule_status.in_(normalized_statuses))
+    # Supervisors see reports in their assigned location (if configured)
+    elif role == "supervisor" and getattr(current_user, "assigned_location_id", None):
+        query = query.filter(Report.village_location_id == current_user.assigned_location_id)
+    if rule_status:
+        query = query.filter(Report.rule_status == rule_status)
+    if incident_type_id is not None:
+        query = query.filter(Report.incident_type_id == incident_type_id)
+    if village_location_id is not None:
+        query = query.filter(Report.village_location_id == village_location_id)
     if from_date is not None:
         query = query.filter(Report.reported_at >= from_date)
     if to_date is not None:
@@ -417,8 +674,14 @@ def list_reports(
         .limit(limit)
         .all()
     )
+    items: list[ReportResponse] = []
+    for r in reports:
+        try:
+            items.append(_build_report_response(r, db))
+        except Exception:
+            continue
     return ReportListResponse(
-        items=[_build_report_response(r, db) for r in reports],
+        items=items,
         total=total,
         limit=limit,
         offset=offset,
@@ -436,7 +699,12 @@ def get_report(
     if device_id is not None:
         report = (
             db.query(Report)
-            .options(joinedload(Report.incident_type), joinedload(Report.evidence_files))
+            .options(
+                joinedload(Report.incident_type),
+                joinedload(Report.evidence_files),
+                joinedload(Report.device),
+                selectinload(Report.ml_predictions),
+            )
             .filter(Report.report_id == report_id, Report.device_id == device_id)
             .first()
         )
@@ -465,6 +733,15 @@ def get_report(
         if not assigned_to_me:
             raise HTTPException(status_code=403, detail="You can only view reports assigned to you")
 
+    def _dt_sort_value(value: Optional[datetime]) -> float:
+        if value is None:
+            return float("-inf")
+        try:
+            dt = value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return dt.timestamp()
+        except Exception:
+            return float("-inf")
+
     assignment_list = []
     if device_id is None and getattr(report, "assignments", None):
         for a in report.assignments:
@@ -483,7 +760,7 @@ def get_report(
                     officer_name=officer_name,
                 )
             )
-        assignment_list.sort(key=lambda x: x.assigned_at, reverse=True)
+        assignment_list.sort(key=lambda x: _dt_sort_value(x.assigned_at), reverse=True)
 
     review_list = []
     if device_id is None and getattr(report, "police_reviews", None):
@@ -502,12 +779,30 @@ def get_report(
                     reviewer_name=reviewer_name,
                 )
             )
-        review_list.sort(key=lambda x: x.reviewed_at, reverse=True)
+        review_list.sort(key=lambda x: _dt_sort_value(x.reviewed_at), reverse=True)
 
     incident_lat, incident_lon, incident_source, incident_location_info = _compute_incident_location_with_villages(report, db)
 
+    # Trust score for mobile: device or ML (same as list)
+    trust_score = None
+    if getattr(report, "device", None) and report.device.device_trust_score is not None:
+        trust_score = report.device.device_trust_score
+    if trust_score is None and getattr(report, "ml_predictions", None):
+        preds = [p for p in report.ml_predictions if p.is_final or (p.trust_score is not None)]
+        preds.sort(key=lambda p: _dt_sort_value(getattr(p, "evaluated_at", None)), reverse=True)
+        if preds:
+            trust_score = preds[0].trust_score
+    trust_score_out = None
+    if trust_score is not None:
+        try:
+            trust_score_out = float(trust_score)
+        except Exception:
+            trust_score_out = None
+    context_tags_list = getattr(report, "context_tags", None) or []
+
     return ReportDetailResponse(
         report_id=report.report_id,
+        report_number=getattr(report, "report_number", None),
         device_id=report.device_id,
         incident_type_id=report.incident_type_id,
         description=report.description,
@@ -517,6 +812,10 @@ def get_report(
         rule_status=report.rule_status,
         village_location_id=report.village_location_id,
         incident_type_name=report.incident_type.type_name if report.incident_type else None,
+        trust_score=trust_score_out,
+        context_tags=context_tags_list,
+        is_flagged=getattr(report, "is_flagged", None),
+        flag_reason=getattr(report, "flag_reason", None),
         incident_latitude=float(incident_lat) if incident_lat is not None else None,
         incident_longitude=float(incident_lon) if incident_lon is not None else None,
         incident_location_source=incident_source,
@@ -532,6 +831,9 @@ def get_report(
                 uploaded_at=ef.uploaded_at,
                 media_latitude=float(ef.media_latitude) if ef.media_latitude is not None else None,
                 media_longitude=float(ef.media_longitude) if ef.media_longitude is not None else None,
+                blur_score=float(ef.blur_score) if getattr(ef, "blur_score", None) is not None else None,
+                tamper_score=float(ef.tamper_score) if getattr(ef, "tamper_score", None) is not None else None,
+                ai_quality_label=getattr(ef, "ai_quality_label", None),
             )
             for ef in report.evidence_files
         ],
@@ -544,27 +846,59 @@ def get_report(
 def add_review(
     report_id: UUID,
     body: ReviewCreate,
-    current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)] = None,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)] = None,
     db: Session = Depends(get_db),
 ):
-    """Add a police review (decision + note). Admin or supervisor only."""
+    """
+    Add a police review (decision + note).
+
+    - Admin / Supervisor: any report they can see.
+    - Officer: only for reports assigned to them.
+    """
     if body.decision not in ("confirmed", "rejected", "investigation"):
         raise HTTPException(status_code=400, detail="decision must be confirmed, rejected, or investigation")
+
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # Persist reviewer decision onto the report so all clients (dashboard/mobile)
-    # observe the same final moderation status.
-    if body.decision == "rejected":
-        report.rule_status = "rejected"
-        report.is_flagged = True
-    elif body.decision == "confirmed":
-        report.rule_status = "classified"
+    role = getattr(current_user, "role", None)
+    if role == "officer":
+        assigned = (
+            db.query(ReportAssignment)
+            .filter(
+                ReportAssignment.report_id == report_id,
+                ReportAssignment.police_user_id == current_user.police_user_id,
+            )
+            .first()
+        )
+        if not assigned:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only review reports assigned to you",
+            )
+
+    # Update report verification and status when police confirms or rejects
+    now_utc = datetime.now(timezone.utc)
+    if body.decision == "confirmed":
+        report.verification_status = "verified"
+        report.verified_by = current_user.police_user_id
+        report.verified_at = now_utc
+        report.status = "verified"
         report.is_flagged = False
-    elif body.decision == "investigation":
-        report.rule_status = "flagged"
+        report.flag_reason = None
+    elif body.decision == "rejected":
+        report.verification_status = "rejected"
+        report.verified_by = current_user.police_user_id
+        report.verified_at = now_utc
+        report.status = "rejected"
         report.is_flagged = True
+        report.flag_reason = body.review_note or "rejected_by_reviewer"
+    else:
+        # investigation
+        report.verification_status = "under_review"
+        if body.review_note:
+            report.flag_reason = body.review_note
 
     review = PoliceReview(
         review_id=uuid4(),
@@ -605,18 +939,39 @@ def assign_report(
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)] = None,
     db: Session = Depends(get_db),
 ):
-    """Assign this report to an officer. Admin or supervisor only."""
+    """Assign this report to an officer. Admin or supervisor only.
+
+    - Admin: can assign to any active officer.
+    - Supervisor: can assign only to officers in their own station (if they have one).
+    """
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    officer = db.query(PoliceUser).filter(
-        PoliceUser.police_user_id == body.police_user_id,
-        PoliceUser.is_active == True,
-    ).first()
+    officer = (
+        db.query(PoliceUser)
+        .filter(
+            PoliceUser.police_user_id == body.police_user_id,
+            PoliceUser.is_active == True,
+        )
+        .first()
+    )
     if not officer:
         raise HTTPException(status_code=400, detail="Officer not found or inactive")
+
+    # Supervisors can only assign to officers in their station.
+    if current_user.role == "supervisor" and current_user.station_id is not None:
+        if officer.station_id != current_user.station_id:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only assign reports to officers in your station",
+            )
     if body.priority not in ("low", "medium", "high", "urgent"):
         raise HTTPException(status_code=400, detail="priority must be low, medium, high, or urgent")
+
+    # Set handling_station_id when assigning to an officer with a station
+    if officer.station_id is not None:
+        report.handling_station_id = officer.station_id
+
     assignment = ReportAssignment(
         assignment_id=uuid4(),
         report_id=report_id,
@@ -750,17 +1105,27 @@ async def upload_evidence(
         )
 
     # Cloudinary upload if configured, otherwise save locally
-    if CLOUDINARY_ENABLED:
+    if _CLOUDINARY_ENABLED:
+        upload_opts = {"folder": "trustbond/evidence"}
+        # Cloudinary uses resource_type="video" for both video and audio
+        if not is_image:
+            upload_opts["resource_type"] = "video"
+
         try:
-            upload_result = upload_to_cloudinary(
-                content, file.filename or f"{uuid4()}.{file_ext or 'bin'}", is_image
-            )
+            # Wrap bytes in a file-like object so Cloudinary treats it as an uploaded file
+            file_obj = io.BytesIO(content)
+            # Give Cloudinary a sensible name (helps with type detection / extensions)
+            file_obj.name = file.filename or f"{uuid4()}.{file_ext or 'bin'}"
+
+            upload_result = cloudinary.uploader.upload(file_obj, **upload_opts)
             file_url = upload_result.get("secure_url") or upload_result.get("url")
         except Exception as e:
-            logger.error("Cloudinary upload error for report %s: %s", report_id, e)
-            raise HTTPException(status_code=500, detail="Evidence upload failed. Please try again.")
+            # In production mode with Cloudinary configured, we do NOT write to local disk.
+            # The client (mobile app) should handle offline/low-network by queuing uploads locally.
+            print(f"[Cloudinary] upload error for report {report_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {e}")
     else:
-        # Dev mode without Cloudinary: save to local disk
+        # Dev mode without Cloudinary configured: save to local disk
         safe_ext = file_ext or "bin"
         file_name = f"{uuid4()}.{safe_ext}"
         file_path = os.path.join(UPLOAD_DIR, file_name)
@@ -768,48 +1133,25 @@ async def upload_evidence(
             f.write(content)
         file_url = f"/uploads/evidence/{file_name}"
 
-    # Run evidence verification pipeline (EXIF, freshness, screenshot, duplicates)
-    verification = run_evidence_verification(
-        content=content,
-        filename=file.filename or "",
-        is_image=is_image,
-        report_reported_at=report.reported_at,
-    )
+    # EXIF-based metadata extraction for images
+    exif_lat = exif_lon = None
+    exif_dt = None
+    if is_image:
+        exif_lat, exif_lon, exif_dt = _extract_exif_metadata(content)
 
-    exif_meta = verification["exif"]
+    final_lat = exif_lat if exif_lat is not None else media_latitude
+    final_lon = exif_lon if exif_lon is not None else media_longitude
 
-    # Reject stale evidence (older than 24 hours)
-    if verification["verification_status"] == "rejected":
-        raise HTTPException(
-            status_code=400,
-            detail=verification["rejection_reason"],
-        )
-
-    # Check for duplicate evidence (same perceptual hash in this report)
-    if verification["perceptual_hash"]:
-        existing_dup = (
-            db.query(EvidenceFile)
-            .filter(
-                EvidenceFile.report_id == report.report_id,
-                EvidenceFile.perceptual_hash == verification["perceptual_hash"],
-            )
-            .first()
-        )
-        if existing_dup:
-            raise HTTPException(
-                status_code=400,
-                detail="This evidence appears to be a duplicate of an already uploaded file.",
-            )
-
-    # Use EXIF GPS if available, otherwise fall back to form values
-    final_lat = exif_meta["gps_latitude"] if exif_meta["gps_latitude"] is not None else media_latitude
-    final_lon = exif_meta["gps_longitude"] if exif_meta["gps_longitude"] is not None else media_longitude
-
-    # Captured time: EXIF > client-provided > report time (for live captures)
-    final_captured_at = exif_meta["captured_at"] if exif_meta["captured_at"] is not None else captured_at
+    # captured_at priority:
+    # 1) EXIF DateTimeOriginal / DateTime (true capture time if present)
+    # 2) Client-provided captured_at (from mobile app)
+    # 3) Optional fallback to report.reported_at for live captures only
+    final_captured_at = exif_dt if exif_dt is not None else captured_at
     if final_captured_at is None and is_live_capture:
+        # For true live captures (camera in app), if we somehow didn't get
+        # EXIF or client timestamp, approximate with report time.
         final_captured_at = report.reported_at
-
+    
     evidence = EvidenceFile(
         evidence_id=uuid4(),
         report_id=report.report_id,
@@ -819,28 +1161,20 @@ async def upload_evidence(
         media_longitude=final_lon,
         captured_at=final_captured_at,
         is_live_capture=is_live_capture,
-        perceptual_hash=verification["perceptual_hash"],
     )
     db.add(evidence)
     db.commit()
     db.refresh(evidence)
 
-    # Re-run rule-based verification and ML scoring (evidence count changed)
+    # Re-run rule-based verification (evidence count changed; no ML)
     report_after = db.query(Report).filter(Report.report_id == report.report_id).first()
     if report_after:
         evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_after.report_id).count()
-        rule_status, is_flagged = apply_rule_based_status(report_after, evidence_count, db)
+        rule_status, is_flagged, flag_reason = apply_rule_based_status(report_after, evidence_count, db)
         report_after.rule_status = rule_status
         report_after.is_flagged = is_flagged
-        device = db.query(Device).filter(Device.device_id == report_after.device_id).first()
-        if device:
-            score_report_credibility(db, report_after, device, evidence_count)
+        if is_flagged and flag_reason:
+            report_after.flag_reason = flag_reason
         db.commit()
     
-    return {
-        "evidence_id": str(evidence.evidence_id),
-        "file_url": file_url,
-        "verification_status": verification["verification_status"],
-        "camera_model": exif_meta.get("camera_model"),
-        "freshness": verification["freshness"],
-    }
+    return {"evidence_id": str(evidence.evidence_id), "file_url": file_url}

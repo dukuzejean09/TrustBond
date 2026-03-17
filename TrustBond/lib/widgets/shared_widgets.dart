@@ -137,11 +137,10 @@ enum BadgeType { ok, warn, err, info, mute }
 /// Converts a rule_status string to a BadgeType.
 BadgeType badgeTypeFromStatus(String status) {
   return switch (status.toLowerCase()) {
-    'classified' || 'passed' || 'confirmed' || 'verified' || 'trusted' => BadgeType.ok,
+    'confirmed' || 'verified' || 'trusted' => BadgeType.ok,
     'investigating' || 'under_review' || 'flagged' => BadgeType.warn,
     'rejected' || 'false_report' => BadgeType.err,
     'ai_verified' => BadgeType.info,
-    'pending' => BadgeType.mute,
     _ => BadgeType.mute,
   };
 }
@@ -156,6 +155,8 @@ class ReportItemCard extends StatelessWidget {
   final String statusLabel;
   final BadgeType statusType;
   final VoidCallback? onTap;
+  final String? reportNumber;
+  final double? trustScore;
 
   const ReportItemCard({
     super.key,
@@ -167,6 +168,8 @@ class ReportItemCard extends StatelessWidget {
     required this.statusLabel,
     required this.statusType,
     this.onTap,
+    this.reportNumber,
+    this.trustScore,
   });
 
   @override
@@ -206,6 +209,20 @@ class ReportItemCard extends StatelessWidget {
                       color: AppColors.text,
                     ),
                   ),
+                  if (reportNumber != null || trustScore != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      [
+                        if (reportNumber != null) reportNumber,
+                        if (trustScore != null) '${(trustScore ?? 0).round()}/100',
+                      ].join(' · '),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.muted,
+                        fontFamily: 'monospace',
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     description,
@@ -399,25 +416,13 @@ Color colorForIncidentType(String typeName) {
   return AppColors.accent;
 }
 
-/// Formats a rule_status value into a user-friendly label.
+/// Formats a snake_case rule status into Title Case.
 String formatStatus(String status) {
-  switch (status.toLowerCase()) {
-    case 'classified':
-    case 'passed':
-      return 'Classified';
-    case 'pending':
-      return 'Pending';
-    case 'flagged':
-      return 'Flagged';
-    case 'rejected':
-      return 'Rejected';
-    default:
-      return status
-          .replaceAll('_', ' ')
-          .split(' ')
-          .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
-          .join(' ');
-  }
+  return status
+      .replaceAll('_', ' ')
+      .split(' ')
+      .map((w) => w.isEmpty ? '' : '${w[0].toUpperCase()}${w.substring(1)}')
+      .join(' ');
 }
 
 /// Returns a human-readable time-ago string.

@@ -3,18 +3,18 @@
 /// **Production:** Uses Render-hosted backend (auto-deployed from GitHub).
 /// **Override:** flutter run --dart-define=API_BASE_URL=https://YOUR_URL/api/v1
 class ApiConfig {
-  /// Backend URL selection strategy:
-  /// - API_BASE_URL (dart-define) when provided
-  /// - otherwise default to Render backend in all build modes
-  static String get baseUrl {
-    const overridden = String.fromEnvironment('API_BASE_URL', defaultValue: '');
-    if (overridden.isNotEmpty) return _url(overridden);
-    return 'https://trustbond-backend.onrender.com/api/v1';
-  }
+  /// Backend URL — deployed on Render.com (auto-deploys on git push).
+  static const String baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://trustbondmobileapp.onrender.com/api/v1',
+  );
 
   static String get devicesUrl => _url('$baseUrl/devices');
   static String get reportsUrl => _url('$baseUrl/reports');
   static String get incidentTypesUrl => _url('$baseUrl/incident-types');
+  static String get publicLocationsUrl => _url('$baseUrl/public/locations');
+  static String get publicLocationsGeoJsonUrl => _url('$baseUrl/public/locations/geojson');
+  static String get publicHotspotsUrl => _url('$baseUrl/public/hotspots');
 
   static String _url(String url) {
     if (url.startsWith('http://') || url.startsWith('https://')) return url;

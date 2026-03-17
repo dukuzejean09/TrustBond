@@ -20,14 +20,8 @@ from xgboost import XGBClassifier
 
 ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "report_credibility_training.csv"
-SYNTHETIC_PATH = ROOT / "report_credibility_training.csv"
-REAL_PATH = ROOT / "real_training_data.csv"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 METADATA_PATH = ROOT / "TrustBond.json"
-
-
-# Minimum number of real-world rows before training on real data alone
-MIN_REAL_ROWS = 200
 
 
 def load_data(path: Path) -> pd.DataFrame:
@@ -40,44 +34,6 @@ def load_data(path: Path) -> pd.DataFrame:
     # Drop any obviously broken rows
     df = df.dropna(subset=["ground_truth_label"])
     return df
-
-
-def load_training_data() -> tuple[pd.DataFrame, str]:
-    """
-    Pick the best available training data:
-      - If real_training_data.csv has >= MIN_REAL_ROWS → use real data only
-      - If real_training_data.csv exists but is small → merge with synthetic
-      - Otherwise → fall back to synthetic data
-    Returns (dataframe, data_source_description).
-    """
-    real_df = None
-    if REAL_PATH.exists():
-        real_df = load_data(REAL_PATH)
-
-    synthetic_df = None
-    if SYNTHETIC_PATH.exists():
-        synthetic_df = load_data(SYNTHETIC_PATH)
-
-    if real_df is not None and len(real_df) >= MIN_REAL_ROWS:
-        return real_df, f"real-only ({len(real_df)} rows)"
-
-    if real_df is not None and len(real_df) > 0 and synthetic_df is not None:
-        # Hybrid: real data is weighted 3x to dominate gradient updates
-        real_upsampled = pd.concat([real_df] * 3, ignore_index=True)
-        merged = pd.concat([real_upsampled, synthetic_df], ignore_index=True)
-        return merged, (
-            f"hybrid (real={len(real_df)} x3 + synthetic={len(synthetic_df)}, "
-            f"total={len(merged)})"
-        )
-
-    if synthetic_df is not None:
-        return synthetic_df, f"synthetic-only ({len(synthetic_df)} rows)"
-
-    raise SystemExit(
-        "No training data found. Run:\n"
-        "  python -m scripts.export_real_training_data   (for real data)\n"
-        "  python musanze/generate_report_credibility_training.py (for synthetic)"
-    )
 
 
 def prepare_features(df: pd.DataFrame):

@@ -1,8 +1,7 @@
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -21,7 +20,6 @@ router = APIRouter(prefix="/incident-types", tags=["incident-types"])
 @router.get("/", response_model=List[IncidentTypeResponse])
 def get_incident_types(
     include_inactive: bool = Query(False, description="Include inactive types (admin only)."),
-    response: Response = None,
     db: Session = Depends(get_db),
     current_user: Annotated[Optional[PoliceUser], Depends(get_optional_user)] = None,
 ):
@@ -29,8 +27,6 @@ def get_incident_types(
     List incident types. By default returns only active (for mobile app).
     If include_inactive=true, requires admin; returns all types.
     """
-    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
-
     if include_inactive:
         if not current_user or current_user.role != "admin":
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
@@ -47,21 +43,14 @@ def create_incident_type(
     current_user: Annotated[PoliceUser, Depends(get_current_admin)] = None,
 ):
     """Create a new incident type (admin only)."""
-    name = payload.type_name.strip()
-    existing = (
-        db.query(IncidentType)
-        .filter(func.lower(IncidentType.type_name) == name.lower())
-        .first()
-    )
+    existing = db.query(IncidentType).filter(IncidentType.type_name == payload.type_name.strip()).first()
     if existing:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An incident type with this name already exists")
-
     obj = IncidentType(
-        type_name=name,
+        type_name=payload.type_name.strip(),
         description=payload.description.strip() if payload.description else None,
         severity_weight=payload.severity_weight,
-        # New incident types must immediately appear in mobile report flow.
-        is_active=True,
+        is_active=payload.is_active,
     )
     db.add(obj)
     db.commit()
@@ -94,14 +83,7 @@ def update_incident_type(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Incident type not found")
     if payload.type_name is not None:
         name = payload.type_name.strip()
-        other = (
-            db.query(IncidentType)
-            .filter(
-                func.lower(IncidentType.type_name) == name.lower(),
-                IncidentType.incident_type_id != incident_type_id,
-            )
-            .first()
-        )
+        other = db.query(IncidentType).filter(IncidentType.type_name == name, IncidentType.incident_type_id != incident_type_id).first()
         if other:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="An incident type with this name already exists")
         obj.type_name = name
@@ -115,3 +97,25 @@ def update_incident_type(
     db.commit()
     db.refresh(obj)
     return obj
+
+
+@router.delete("/{incident_type_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_incident_type(
+    incident_type_id: int,
+    db: Session = Depends(get_db),
+    current_user: Annotated[PoliceUser, Depends(get_current_admin)] = None,
+):
+    """Hard-delete an incident type (admin only)."""
+    obj = (
+        db.query(IncidentType)
+        .filter(IncidentType.incident_type_id == incident_type_id)
+        .first()
+    )
+    if not obj:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Incident type not found",
+        )
+    db.delete(obj)
+    db.commit()
+    return {}

@@ -5,6 +5,9 @@ import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../models/report_model.dart';
 import 'settings_screen.dart';
+import 'privacy_security_screen.dart';
+import 'help_faq_screen.dart';
+import 'about_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -14,10 +17,15 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  String _deviceHash = '...';
+  String _deviceHashShort = '...';
   int _totalReports = 0;
   int _verifiedReports = 0;
   double _trustScore = 0;
+  Map<String, bool>? _achievements;
+  bool _isBlacklisted = false;
+  String? _blacklistReason;
+  String? _lastSeenAt;
+  int _spamFlags = 0;
 
   @override
   void initState() {
@@ -25,45 +33,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadData();
   }
 
+  String _formatLastSeen(String iso) {
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return 'Last active: —';
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 60) return 'Last active: ${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return 'Last active: ${diff.inHours}h ago';
+    if (diff.inDays < 7) return 'Last active: ${diff.inDays}d ago';
+    return 'Last active: ${dt.month}/${dt.day}';
+  }
+
   Future<void> _loadData() async {
-    final deviceService = DeviceService();
-    final apiService = ApiService();
-    final id = await deviceService.getDeviceId();
-    if (id != null && id.isNotEmpty) {
-      setState(() => _deviceHash = id.substring(0, id.length.clamp(0, 12)));
-      // Load device stats from backend for accurate trust score
-      try {
-        final deviceStats = await apiService.getDeviceStats(id);
-        final rawScore = deviceStats['device_trust_score'];
-        final totalReports = (deviceStats['total_reports'] as num?)?.toInt() ?? 0;
-        final trustedReports = (deviceStats['trusted_reports'] as num?)?.toInt() ?? 0;
-        final score = rawScore != null ? (rawScore as num).toDouble() : 50.0;
-        // Also persist offline copy
-        await deviceService.saveTrustScore(score);
-        setState(() {
-          _totalReports = totalReports;
-          _verifiedReports = trustedReports;
-          _trustScore = score;
-        });
-      } catch (_) {
-        // Backend unreachable — fall back to cached score
-        final cached = await deviceService.getTrustScore();
-        if (cached != null) setState(() => _trustScore = cached);
-        // Still load reports for count
-        try {
-          final list = await apiService.getMyReports(id);
-          final reports = list
-              .map((e) => ReportListItem.fromJson(e as Map<String, dynamic>))
-              .toList();
-          final classified = reports
-              .where((r) => r.ruleStatus == 'classified' || r.ruleStatus == 'passed')
-              .length;
-          setState(() {
-            _totalReports = reports.length;
-            _verifiedReports = classified;
-          });
-        } catch (_) {}
-      }
+    // Use anonymous device hash (legacy-compatible with backend).
+    final hash = await DeviceService().getDeviceHash();
+    if (hash.isEmpty) return;
+
+    setState(() {
+      _deviceHashShort = hash.length >= 12
+          ? '${hash.substring(0, 8)}...${hash.substring(hash.length - 4)}'
+          : hash;
+    });
+
+    try {
+      final profile = await ApiService().getDeviceProfile(hash);
+      setState(() {
+        _totalReports = (profile['total_reports'] as num?)?.toInt() ?? 0;
+        _verifiedReports =
+            (profile['trusted_reports'] as num?)?.toInt() ?? 0;
+        _trustScore =
+            (profile['device_trust_score'] as num?)?.toDouble() ?? 50.0;
+        final a = profile['achievements'] as Map<String, dynamic>?;
+        _achievements = a != null
+            ? Map<String, bool>.from(a.map((k, v) => MapEntry(k, v == true)))
+            : null;
+        _isBlacklisted = profile['is_blacklisted'] as bool? ?? false;
+        _blacklistReason = profile['blacklist_reason'] as String?;
+        _lastSeenAt = profile['last_seen_at'] as String?;
+        _spamFlags = (profile['spam_flags'] as num?)?.toInt() ?? 0;
+      });
+    } catch (e) {
+      debugPrint('Failed to load profile: $e');
     }
   }
 
@@ -166,7 +175,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         style:
                             TextStyle(fontSize: 11, color: AppColors.muted)),
                     Text(
-                      _deviceHash,
+                      _deviceHashShort,
                       style: const TextStyle(
                           fontSize: 11,
                           fontFamily: 'monospace',
@@ -174,8 +183,28 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
                 ),
+                if (_lastSeenAt != null) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    _formatLastSeen(_lastSeenAt!),
+                    style: const TextStyle(fontSize: 10, color: AppColors.muted),
+                  ),
+                ],
                 const SizedBox(height: 4),
-                const StatusBadge(label: 'Verified Device', type: BadgeType.ok),
+                _isBlacklisted
+                    ? StatusBadge(
+                        label: _blacklistReason ?? 'Under review',
+                        type: BadgeType.warn,
+                      )
+                    : StatusBadge(label: 'Verified Device', type: BadgeType.ok),
+                if (_spamFlags > 0)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      'Spam flags: $_spamFlags',
+                      style: const TextStyle(fontSize: 10, color: AppColors.warn),
+                    ),
+                  ),
               ],
             ),
           ),
@@ -197,8 +226,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildTrustBreakdown() {
-    final quality = _totalReports > 0 ? (_verifiedReports / _totalReports).clamp(0.0, 1.0) : 0.0;
-    final score = _trustScore / 100;
+    final quality = _totalReports > 0
+        ? (_verifiedReports / _totalReports).clamp(0.0, 1.0)
+        : 0.0;
+    final score = (_trustScore / 100).clamp(0.0, 1.0);
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -255,12 +286,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildAchievements() {
+    // Prefer backend/ML achievements when available; fallback to local logic
+    final a = _achievements;
     final badges = [
-      _Badge('🛡️', 'First Report', _totalReports >= 1),
-      _Badge('⭐', '5 Verified', _verifiedReports >= 5),
-      _Badge('🏆', '10 Reports', _totalReports >= 10),
-      _Badge('🔥', 'Streak x7', _totalReports >= 7),
-      _Badge('💎', 'Top Reporter', _totalReports >= 20),
+      _Badge('🛡️', 'First Report', a?['first_report'] ?? _totalReports >= 1),
+      _Badge('⭐', '5 Verified', a?['five_verified'] ?? _verifiedReports >= 5),
+      _Badge('🏆', '10 Reports', a?['ten_reports'] ?? _totalReports >= 10),
+      _Badge('🔥', 'Streak x7', a?['streak_x7'] ?? _totalReports >= 7),
+      _Badge('💎', 'Top Reporter', a?['top_reporter'] ?? _totalReports >= 20),
     ];
     return Container(
       padding: const EdgeInsets.all(16),
@@ -320,9 +353,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget _buildMenuItems() {
     return Column(
       children: [
-        _menuItem(Icons.security, 'Privacy & Security', () {}),
-        _menuItem(Icons.help_outline, 'Help & FAQ', () {}),
-        _menuItem(Icons.info_outline, 'About TrustBond', () {}),
+        _menuItem(Icons.security, 'Privacy & Security', () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const PrivacySecurityScreen()));
+        }),
+        _menuItem(Icons.help_outline, 'Help & FAQ', () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpFaqScreen()));
+        }),
+        _menuItem(Icons.info_outline, 'About TrustBond', () {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => const AboutScreen()));
+        }),
       ],
     );
   }
@@ -347,7 +386,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   style: const TextStyle(
                       fontSize: 13, fontWeight: FontWeight.w500)),
             ),
-            const Icon(Icons.chevron_right, size: 18, color: AppColors.muted),
+            const Icon(Icons.chevron_right_rounded,
+                size: 18, color: AppColors.muted),
           ],
         ),
       ),

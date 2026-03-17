@@ -1,13 +1,23 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'dart:ui' as ui;
 import '../config/theme.dart';
 import '../models/musanze_map_data.dart';
 import '../services/location_service.dart';
+import '../services/api_service.dart';
 import '../widgets/musanze_map_painter.dart' show sectorColor;
 
 class SafetyMapScreen extends StatefulWidget {
-  const SafetyMapScreen({super.key});
+  final bool showDetailedView;
+  final String? initialSectorId;
+  
+  const SafetyMapScreen({
+    super.key, 
+    this.showDetailedView = false,
+    this.initialSectorId,
+  });
 
   @override
   State<SafetyMapScreen> createState() => _SafetyMapScreenState();
@@ -16,11 +26,19 @@ class SafetyMapScreen extends StatefulWidget {
 class _SafetyMapScreenState extends State<SafetyMapScreen> {
   MusanzeMapData? _mapData;
   String? _selectedSector;
+  int? _selectedSectorId;
+  int? _selectedCellId;
+  String? _selectedCellName;
   bool _loading = true;
   String? _error;
 
+  // Detail level management
+  bool _showDetailedView = false;
+  String _currentDetailLevel = 'sector'; // 'sector', 'cell', 'village'
+
   // GPS location state
   final _locationService = LocationService();
+  final _api = ApiService();
   double? _userLat;
   double? _userLng;
   VillageLocation? _userVillage;
@@ -32,11 +50,94 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   static const _musanzeCenter = LatLng(-1.4975, 29.6347);
   static const double _initialZoom = 13.0;
 
+  // Backend hierarchy lists
+  List<Map<String, dynamic>> _sectors = [];
+  List<Map<String, dynamic>> _cells = [];
+  List<Map<String, dynamic>> _villages = [];
+  bool _loadingHierarchy = false;
+
   @override
   void initState() {
     super.initState();
+    _showDetailedView = widget.showDetailedView;
     _loadMap();
+    _loadSectorsFromBackend();
     _getUserLocation();
+    
+    // If coming from home screen with detailed view, show all sectors initially
+    if (_showDetailedView) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        // Start with a slightly zoomed in view for better detail
+        _mapController.move(_musanzeCenter, 14.0);
+        setState(() {
+          _currentDetailLevel = 'sector'; // Start at sector level for detailed view
+        });
+      });
+    }
+  }
+
+  Future<void> _loadSectorsFromBackend() async {
+    setState(() => _loadingHierarchy = true);
+    try {
+      final res = await _api.getPublicLocations(locationType: 'sector', limit: 1000);
+      if (!mounted) return;
+      debugPrint('Loaded ${res.length} sectors from backend');
+      setState(() {
+        _sectors = res.cast<Map<String, dynamic>>();
+        _loadingHierarchy = false;
+      });
+    } catch (e) {
+      debugPrint('Failed to load sectors: $e');
+      if (!mounted) return;
+      setState(() => _loadingHierarchy = false);
+    }
+  }
+
+  Future<void> _loadCells(int sectorId) async {
+    setState(() {
+      _loadingHierarchy = true;
+      _cells = [];
+      _villages = [];
+      _selectedCellId = null;
+      _selectedCellName = null;
+    });
+    try {
+      final res = await _api.getPublicLocations(locationType: 'cell', parentId: sectorId, limit: 2000);
+      if (!mounted) return;
+      setState(() {
+        _cells = res.cast<Map<String, dynamic>>();
+        _loadingHierarchy = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingHierarchy = false);
+    }
+  }
+
+  Future<void> _loadVillages(int cellId) async {
+    setState(() {
+      _loadingHierarchy = true;
+      _villages = [];
+    });
+    try {
+      final res = await _api.getPublicLocations(locationType: 'village', parentId: cellId, limit: 2000);
+      if (!mounted) return;
+      setState(() {
+        _villages = res.cast<Map<String, dynamic>>();
+        _loadingHierarchy = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _loadingHierarchy = false);
+    }
+  }
+
+  void _moveToCentroid(Map<String, dynamic> loc, double zoom) {
+    final lat = loc['centroid_lat'];
+    final lng = loc['centroid_long'];
+    if (lat is num && lng is num) {
+      _mapController.move(LatLng(lat.toDouble(), lng.toDouble()), zoom);
+    }
   }
 
   Future<void> _getUserLocation() async {
@@ -60,17 +161,33 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
 
   Future<void> _loadMap() async {
     try {
-      final data = await MusanzeMapData.load();
-      setState(() {
-        _mapData = data;
-        _loading = false;
-      });
+      debugPrint('Starting to load map data...');
+      MusanzeMapData data;
+      try {
+        final geo = await _api.getPublicLocationsGeoJson(locationType: 'village', limit: 10000);
+        debugPrint('Loaded GeoJSON with ${geo.length} features');
+        data = MusanzeMapData.parse(jsonEncode(geo));
+        debugPrint('Parsed map data with ${data.sectors.length} sectors');
+      } catch (e) {
+        debugPrint('Failed to load GeoJSON, falling back to bundled data: $e');
+        data = await MusanzeMapData.load();
+        debugPrint('Loaded bundled map data with ${data.sectors.length} sectors');
+      }
+      if (mounted) {
+        setState(() {
+          _mapData = data;
+          _loading = false;
+        });
+        debugPrint('Map data loaded and state updated');
+      }
     } catch (e) {
       debugPrint('Failed to load map: $e');
-      setState(() {
-        _error = e.toString();
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -195,8 +312,14 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
           children: [
             _buildHeader(),
             _buildSectorFilters(),
-            Expanded(child: _buildMap()),
-            _buildSectorInfo(),
+            Expanded(
+              flex: 3,
+              child: _buildMap(),
+            ),
+            Container(
+              height: 150,
+              child: _buildSectorInfo(),
+            ),
           ],
         ),
       ),
@@ -248,7 +371,18 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
 
   Widget _buildSectorFilters() {
     if (_mapData == null) return const SizedBox.shrink();
-    final sectors = ['All', ..._mapData!.sectors];
+    
+    // Use backend sectors if available, otherwise use map data sectors
+    final sectorNames = _sectors.isNotEmpty
+        ? _sectors
+            .map((s) => (s['location_name'] ?? '').toString())
+            .where((n) => n.isNotEmpty)
+            .toList()
+        : _mapData!.sectors;
+    
+    final sectors = ['All', ...sectorNames];
+    debugPrint('Building sector filters with ${sectors.length} sectors');
+    
     return Container(
       height: 34,
       margin: const EdgeInsets.symmetric(horizontal: 20),
@@ -264,11 +398,31 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
               i == 0 ? AppColors.accent2 : sectorColor(name);
           return GestureDetector(
             onTap: () {
-              setState(() => _selectedSector = i == 0 ? null : name);
+              final newSector = i == 0 ? null : name;
+              int? sectorId;
+              if (newSector != null && _sectors.isNotEmpty) {
+                final match = _sectors.firstWhere(
+                  (s) => (s['location_name'] ?? '').toString() == newSector,
+                  orElse: () => const {},
+                );
+                final id = match['location_id'];
+                if (id is int) sectorId = id;
+              }
+              setState(() {
+                _selectedSector = newSector;
+                _selectedSectorId = sectorId;
+                _selectedCellId = null;
+                _selectedCellName = null;
+                _cells = [];
+                _villages = [];
+              });
               if (i > 0 && _mapData != null) {
                 final centroid = _mapData!.sectorCentroid(name);
                 _mapController.move(
                     LatLng(centroid.dy, centroid.dx), 14.5);
+                if (sectorId != null) {
+                  _loadCells(sectorId);
+                }
               } else {
                 _mapController.move(_musanzeCenter, _initialZoom);
               }
@@ -513,16 +667,41 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   }
 
   Widget _buildSectorInfo() {
-    if (_mapData == null) return const SizedBox.shrink();
-
-    final sectors = _selectedSector != null
-        ? [_selectedSector!]
-        : _mapData!.sectors;
-
+    // Always return a visible container that fills the space
     return Container(
-      constraints: const BoxConstraints(maxHeight: 170),
-      child: ListView.builder(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+      height: 150,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surface2,
+        border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
+      ),
+      child: _buildSectorContent(),
+    );
+  }
+
+  Widget _buildSectorContent() {
+    if (_mapData == null) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
+            SizedBox(height: 8),
+            Text('Loading map data...', style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          ],
+        ),
+      );
+    }
+
+    // Drill-down (old UI style):
+    // - No sector selected: show sector cards.
+    // - Sector selected: show cells list from backend; tap cell to show villages list.
+    // - Cell selected: show villages list from backend; tap village to move camera.
+
+    if (_selectedSector == null) {
+      final sectors = _mapData!.sectors;
+      debugPrint('Showing ${sectors.length} sectors in info panel');
+      return ListView.builder(
         itemCount: sectors.length,
         itemBuilder: (context, i) {
           final name = sectors[i];
@@ -531,15 +710,27 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
           final color = sectorColor(name);
           return GestureDetector(
             onTap: () {
-              final newSector =
-                  _selectedSector == name ? null : name;
-              setState(() => _selectedSector = newSector);
-              if (newSector != null) {
-                final centroid = _mapData!.sectorCentroid(newSector);
-                _mapController.move(
-                    LatLng(centroid.dy, centroid.dx), 14.5);
-              } else {
-                _mapController.move(_musanzeCenter, _initialZoom);
+              int? sectorId;
+              if (_sectors.isNotEmpty) {
+                final match = _sectors.firstWhere(
+                  (s) => (s['location_name'] ?? '').toString() == name,
+                  orElse: () => {},
+                );
+                final id = match['location_id'];
+                if (id is int) sectorId = id;
+              }
+              setState(() {
+                _selectedSector = name;
+                _selectedSectorId = sectorId;
+                _selectedCellId = null;
+                _selectedCellName = null;
+                _cells = [];
+                _villages = [];
+              });
+              final centroid = _mapData!.sectorCentroid(name);
+              _mapController.move(LatLng(centroid.dy, centroid.dx), 14.5);
+              if (sectorId != null) {
+                _loadCells(sectorId);
               }
             },
             child: Container(
@@ -547,10 +738,7 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: AppColors.card,
-                border: Border.all(
-                    color: _selectedSector == name
-                        ? color.withValues(alpha: 0.4)
-                        : AppColors.border),
+                border: Border.all(color: AppColors.border),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Row(
@@ -562,44 +750,171 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
                       shape: BoxShape.circle,
                       color: color.withValues(alpha: 0.12),
                     ),
-                    child: Icon(Icons.location_on_rounded,
-                        size: 18, color: color),
+                    child: Icon(Icons.location_on_rounded, size: 18, color: color),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(name,
-                            style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600)),
+                        Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
                         Text(
-                            '${cells.length} cells · ${villages.length} villages',
-                            style: const TextStyle(
-                                fontSize: 10, color: AppColors.muted)),
+                          '${cells.length} cells · ${villages.length} villages',
+                          style: const TextStyle(fontSize: 10, color: AppColors.muted),
+                        ),
                       ],
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: color.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text('${villages.length}',
-                        style: TextStyle(
-                            fontSize: 10,
-                            color: color,
-                            fontWeight: FontWeight.w600)),
+                    child: Text(
+                      '${villages.length}',
+                      style: TextStyle(fontSize: 10, color: color, fontWeight: FontWeight.w600),
+                    ),
                   ),
                 ],
               ),
             ),
           );
         },
-      ),
+      );
+    }
+
+    // When a sector is selected, show cells or villages
+    final sectorColorC = sectorColor(_selectedSector!);
+    final showingVillages = _selectedCellId != null;
+    final items = showingVillages ? _villages : _cells;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Row(
+            children: [
+              Text(
+                showingVillages ? 'Villages in $_selectedCellName' : 'Cells in $_selectedSector',
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.text),
+              ),
+              const Spacer(),
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedSector = null;
+                    _selectedSectorId = null;
+                    _selectedCellId = null;
+                    _selectedCellName = null;
+                    _cells = [];
+                    _villages = [];
+                  });
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.muted.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: const Text('Back', style: TextStyle(fontSize: 10, color: AppColors.muted)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: items.isEmpty
+              ? const Center(
+                  child: Text('No data available', style: TextStyle(fontSize: 11, color: AppColors.muted)),
+                )
+              : ListView.builder(
+                  itemCount: items.length,
+                  itemBuilder: (context, index) {
+                    final item = items[index];
+                    final name = item['location_name']?.toString() ?? 'Unknown';
+                    return GestureDetector(
+                      onTap: () {
+                        if (showingVillages) {
+                          // Move to village location
+                          final lat = item['latitude'] as double?;
+                          final lng = item['longitude'] as double?;
+                          if (lat != null && lng != null) {
+                            _mapController.move(LatLng(lat, lng), 16.0);
+                          }
+                        } else {
+                          // Load villages for this cell
+                          final cellId = item['location_id'] as int?;
+                          if (cellId != null) {
+                            _loadVillages(cellId);
+                            setState(() {
+                              _selectedCellId = cellId;
+                              _selectedCellName = name;
+                            });
+                          }
+                        }
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 4),
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: AppColors.card,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: sectorColorC.withValues(alpha: 0.12),
+                              ),
+                              child: showingVillages 
+                                  ? Icon(Icons.home_outlined, size: 12, color: sectorColorC)
+                                  : Icon(Icons.grid_view_outlined, size: 12, color: sectorColorC),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(name, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
+
+  Future<void> _loadDetailedView(String sectorId) async {
+    try {
+      // Parse sector ID to int if needed
+      final sectorIdInt = int.tryParse(sectorId);
+      if (sectorIdInt != null) {
+        await _loadCells(sectorIdInt);
+        setState(() {
+          _currentDetailLevel = 'cell';
+          _selectedSectorId = sectorIdInt;
+        });
+        
+        // Zoom to sector level
+        final sector = _sectors.firstWhere((s) => s['location_id'] == sectorIdInt, 
+            orElse: () => {});
+        if (sector.isNotEmpty) {
+          final lat = sector['latitude'] as double?;
+          final lng = sector['longitude'] as double?;
+          if (lat != null && lng != null) {
+            _mapController.move(LatLng(lat, lng), 14.0);
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading detailed view: $e');
+    }
+  }
 }
+

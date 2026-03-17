@@ -25,7 +25,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
 
   String? _error;
 
-  static const _filters = ['All', 'Pending', 'Classified', 'Rejected'];
+  static const _filters = ['All', 'Pending', 'Verified', 'Rejected'];
 
   late TabController _tabCtrl;
 
@@ -52,11 +52,12 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       _loading = true;
       _error = null;
     });
-    final deviceId = await _deviceService.getDeviceId();
+    final deviceId = await _deviceService.ensureDeviceId(apiService: _apiService);
     if (deviceId == null || deviceId.isEmpty) {
       setState(() {
         _loading = false;
         _deviceId = null;
+        _error = 'Could not register this device with server.';
       });
       return;
     }
@@ -84,8 +85,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     return _reports.where((r) {
       final s = r.ruleStatus.toLowerCase();
       if (key == 'pending') return s == 'pending' || s == 'processing';
-      if (key == 'classified') {
-        return s == 'classified' || s == 'passed';
+      if (key == 'verified') {
+        return s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed';
       }
       if (key == 'rejected') return s == 'rejected' || s == 'flagged';
       return true;
@@ -217,6 +218,8 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             timeLabel: timeAgo(r.reportedAt),
             statusLabel: formatStatus(r.ruleStatus),
             statusType: badgeTypeFromStatus(r.ruleStatus),
+            reportNumber: r.reportNumber,
+            trustScore: r.trustScore,
             onTap: () => Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => ReportDetailScreen(

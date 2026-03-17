@@ -3,11 +3,11 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'api_service.dart';
 
 class DeviceService {
   static const String _deviceHashKey = 'device_hash';
   static const String _deviceIdKey = 'device_id';
-  static const String _trustScoreKey = 'device_trust_score';
 
   Future<String> getDeviceHash() async {
     final prefs = await SharedPreferences.getInstance();
@@ -53,13 +53,23 @@ class DeviceService {
     await prefs.setString(_deviceIdKey, deviceId);
   }
 
-  Future<double?> getTrustScore() async {
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getDouble(_trustScoreKey);
-  }
+  /// Ensure a backend device_id exists and is cached locally.
+  /// Returns null if registration could not be completed.
+  Future<String?> ensureDeviceId({ApiService? apiService}) async {
+    final existing = await getDeviceId();
+    if (existing != null && existing.isNotEmpty) {
+      return existing;
+    }
 
-  Future<void> saveTrustScore(double score) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setDouble(_trustScoreKey, score);
+    final hash = await getDeviceHash();
+    if (hash.isEmpty) return null;
+
+    final api = apiService ?? ApiService();
+    final result = await api.registerDevice(hash);
+    final id = result['device_id']?.toString();
+    if (id == null || id.isEmpty) return null;
+
+    await saveDeviceId(id);
+    return id;
   }
 }

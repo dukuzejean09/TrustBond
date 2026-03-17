@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MapContainer, TileLayer, CircleMarker, Tooltip, ZoomControl } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Tooltip, ZoomControl, Polygon } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import api from '../../api/client';
 
@@ -9,6 +9,8 @@ const SafetyMap = () => {
   const [hotspots, setHotspots] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState('all'); // 'all' | incident_type_name
+  const [polygons, setPolygons] = useState([]);
+  const [incidentTypes, setIncidentTypes] = useState([]);
 
   useEffect(() => {
     let mounted = true;
@@ -22,6 +24,70 @@ const SafetyMap = () => {
       .catch(() => {
         if (!mounted) setLoading(false);
       });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load incident types from backend so filters match DB
+  useEffect(() => {
+    let mounted = true;
+    api
+      .get('/api/v1/incident-types')
+      .then((res) => {
+        if (!mounted || !Array.isArray(res)) return;
+        setIncidentTypes(res);
+      })
+      .catch(() => {
+        /* non-fatal; buttons fall back to just "All Types" */
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  // Load village polygons from public GeoJSON for district boundaries
+  useEffect(() => {
+    let mounted = true;
+    api
+      .get('/api/v1/public/locations/geojson?location_type=village&limit=4000')
+      .then((geo) => {
+        if (!mounted || !geo?.features) return;
+        const feats = geo.features || [];
+
+        const polys = feats.map((f) => {
+          const props = f.properties || {};
+          const sector = props.sector || 'Unknown';
+          const geom = f.geometry || {};
+          const type = geom.type;
+          const coords = geom.coordinates || [];
+
+          const toLatLngRings = (rings) =>
+            rings.map((ring) =>
+              ring.map(([lng, lat]) => [Number(lat), Number(lng)]),
+            );
+
+          let positions = [];
+          if (type === 'Polygon') {
+            positions = toLatLngRings(coords);
+          } else if (type === 'MultiPolygon') {
+            positions = coords.map((poly) => toLatLngRings(poly));
+          }
+
+          return {
+            id: props.location_id || `${sector}-${Math.random()}`,
+            sector,
+            positions,
+          };
+        });
+
+        // Filter out any empty geometry
+        setPolygons(polys.filter((p) => p.positions && p.positions.length));
+      })
+      .catch(() => {
+        /* non-fatal: hotspots map still works */
+      });
+
     return () => {
       mounted = false;
     };
@@ -56,6 +122,29 @@ const SafetyMap = () => {
     return '#34d399';                                              // Normal (green)
   };
 
+  const getSectorColor = (sector) => {
+    const palette = [
+      '#00e5b4',
+      '#0099ff',
+      '#ff6b35',
+      '#6c63ff',
+      '#00ced1',
+      '#ff3b5c',
+      '#ffd700',
+      '#48b8d0',
+      '#f472b6',
+      '#34d399',
+      '#a78bfa',
+      '#fbbf24',
+      '#38bdf8',
+      '#f87171',
+      '#818cf8',
+    ];
+    if (!sector) return palette[0];
+    const hash = Array.from(sector).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    return palette[hash % palette.length];
+  };
+
   return (
     <>
       <div className="page-header">
@@ -72,27 +161,21 @@ const SafetyMap = () => {
             >
               All Types
             </button>
-            <button
-              className={`btn btn-sm ${typeFilter === 'Assault' ? 'btn-primary' : 'btn-outline'}`}
-              style={{ background: 'rgba(15, 22, 35, 0.85)' }}
-              onClick={() => setTypeFilter('Assault')}
-            >
-              Assault
-            </button>
-            <button
-              className={`btn btn-sm ${typeFilter === 'Theft' ? 'btn-primary' : 'btn-outline'}`}
-              style={{ background: 'rgba(15, 22, 35, 0.85)' }}
-              onClick={() => setTypeFilter('Theft')}
-            >
-              Theft
-            </button>
-            <button
-              className={`btn btn-sm ${typeFilter === 'Drug Activity' ? 'btn-primary' : 'btn-outline'}`}
-              style={{ background: 'rgba(15, 22, 35, 0.85)' }}
-              onClick={() => setTypeFilter('Drug Activity')}
-            >
-              Drug
-            </button>
+            {incidentTypes.map((t) => {
+              const name = t.type_name || t.incident_type_name || '';
+              if (!name) return null;
+              const active = typeFilter === name;
+              return (
+                <button
+                  key={t.incident_type_id || name}
+                  className={`btn btn-sm ${active ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ background: 'rgba(15, 22, 35, 0.85)' }}
+                  onClick={() => setTypeFilter(name)}
+                >
+                  {name}
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ width: '100%', height: '100%', position: 'relative', overflow: 'hidden', borderRadius: '14px' }}>
@@ -111,11 +194,28 @@ const SafetyMap = () => {
               />
               <ZoomControl position="topright" />
 
+              {polygons.map((p) => {
+                const color = getSectorColor(p.sector);
+                return (
+                  <Polygon
+                    // positions can be Polygon or MultiPolygon-style arrays
+                    key={p.id}
+                    positions={p.positions}
+                    pathOptions={{
+                      color,
+                      weight: 1,
+                      fillColor: color,
+                      fillOpacity: 0.15,
+                    }}
+                  />
+                );
+              })}
+
               {filteredHotspots.map((h) => {
                 if (!h.center_lat || !h.center_long) return null;
                 const pos = [Number(h.center_lat), Number(h.center_long)];
                 const count = h.incident_count || 0;
-                const radius = 12 + Math.min(count, 20); // px radius
+                const radius = 14 + Math.min(count, 24); // visual radius
                 const color = getCircleColor(h.risk_level);
                 return (
                   <CircleMarker
@@ -125,10 +225,19 @@ const SafetyMap = () => {
                     pathOptions={{
                       color,
                       fillColor: color,
-                      fillOpacity: 0.7,
+                      fillOpacity: 0.8,
                       weight: 2,
                     }}
                   >
+                    {/* Number label in the bubble, like your design */}
+                    <Tooltip
+                      permanent
+                      direction="center"
+                      className="cluster-count-label"
+                    >
+                      <span>{count}</span>
+                    </Tooltip>
+                    {/* Hover tooltip with extra detail */}
                     <Tooltip direction="top" offset={[0, -4]} opacity={0.9}>
                       <div style={{ fontSize: '11px' }}>
                         <strong>{h.incident_type_name || 'Cluster'}</strong>

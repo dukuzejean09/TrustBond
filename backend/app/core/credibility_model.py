@@ -1,5 +1,4 @@
 import json
-import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -19,8 +18,6 @@ from app.models.device import Device
 ROOT = Path(__file__).resolve().parents[2] / "musanze"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 META_PATH = ROOT / "TrustBond.json"
-
-logger = logging.getLogger(__name__)
 
 _MODEL = None
 _META: Optional[Dict[str, Any]] = None
@@ -227,18 +224,6 @@ def score_report_credibility(
 
         trust_score_pct = prob_real * 100.0
 
-        # Keep only one final prediction per report.
-        existing_finals = (
-            db.query(MLPrediction)
-            .filter(
-                MLPrediction.report_id == report.report_id,
-                MLPrediction.is_final == True,
-            )
-            .all()
-        )
-        for prev in existing_finals:
-            prev.is_final = False
-
         prediction = MLPrediction(
             prediction_id=uuid4(),
             report_id=report.report_id,
@@ -252,25 +237,149 @@ def score_report_credibility(
             processing_time=None,
         )
         db.add(prediction)
-
-        # Keep rule_status conservative: ML fake/suspicious should not stay classified.
-        # Human review can still finalize as confirmed/rejected later.
-        current_status = (getattr(report, "rule_status", "") or "").lower()
-        if prediction_label in ("fake", "suspicious") and current_status in (
-            "pending",
-            "classified",
-            "passed",
-            "confirmed",
-            "verified",
-            "trusted",
-        ):
-            report.rule_status = "flagged"
-            report.is_flagged = True
-
         # Mark when features were extracted for this report
-        report.features_extracted = datetime.now(timezone.utc)
-    except Exception as exc:
-        # Do not break report submission if ML scoring fails.
-        logger.warning("ML scoring failed for report %s: %s", report.report_id, exc)
+        report.features_extracted_at = datetime.now(timezone.utc)
+    except Exception:
+        # Fail silently; this is an enhancement, not critical path
         return
+
+
+# API Functions for ML endpoints
+def get_report_prediction(db: Session, report_id: str, device_id: str):
+    """Get ML prediction for a specific report"""
+    # Verify the report belongs to the device
+    report = db.query(Report).filter(
+        Report.report_id == report_id,
+        Report.device_id == device_id
+    ).first()
+    
+    if not report:
+        return None
+    
+    # Get the latest ML prediction
+    prediction = db.query(MLPrediction).filter(
+        MLPrediction.report_id == report_id,
+        MLPrediction.is_final == True
+    ).order_by(MLPrediction.evaluated_at.desc()).first()
+    
+    return prediction
+
+
+def get_home_insights(db: Session, device_id: str):
+    """Get ML-powered insights for the home dashboard"""
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        return []
+    
+    insights = []
+    
+    # Get device statistics
+    total_reports = db.query(Report).filter(Report.device_id == device_id).count()
+    verified_reports = db.query(Report).filter(
+        Report.device_id == device_id,
+        (Report.status == 'verified') | (Report.rule_status == 'passed')
+    ).count()
+    
+    # Get recent ML predictions
+    recent_predictions = db.query(MLPrediction).join(Report).filter(
+        Report.device_id == device_id,
+        MLPrediction.is_final == True
+    ).order_by(MLPrediction.evaluated_at.desc()).limit(10).all()
+    
+    if recent_predictions:
+        avg_confidence = sum(float(p.confidence) for p in recent_predictions) / len(recent_predictions)
+        credible_reports = sum(1 for p in recent_predictions if p.prediction_label == 'likely_real')
+        
+        insights.append({
+            'title': 'ML Credibility Score',
+            'description': f'Your recent reports have {avg_confidence:.1%} average confidence',
+            'type': 'trust',
+            'score': avg_confidence * 100,
+            'timestamp': datetime.now(timezone.utc).isoformat()
+        })
+        
+        if credible_reports > 0:
+            insights.append({
+                'title': 'Credible Reporting Pattern',
+                'description': f'{credible_reports} of your last {len(recent_predictions)} reports are highly credible',
+                'type': 'pattern',
+                'score': (credible_reports / len(recent_predictions)) * 100,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+    
+    # Device trust score insight
+    if device.device_trust_score is not None:
+        trust_score = float(device.device_trust_score)
+        if trust_score >= 70:
+            insights.append({
+                'title': 'Excellent Trust Score',
+                'description': 'Your device has an excellent trust score. Keep up the good work!',
+                'type': 'safety',
+                'score': trust_score,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+        elif trust_score >= 40:
+            insights.append({
+                'title': 'Moderate Trust Score',
+                'description': 'Continue submitting accurate reports to improve your trust score',
+                'type': 'safety',
+                'score': trust_score,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+        else:
+            insights.append({
+                'title': 'Build Trust',
+                'description': 'Submit detailed reports with evidence to improve your credibility',
+                'type': 'safety',
+                'score': trust_score,
+                'timestamp': datetime.now(timezone.utc).isoformat()
+            })
+    
+    return insights
+
+
+def get_device_ml_stats(db: Session, device_id: str):
+    """Get ML statistics for a specific device"""
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        return None
+    
+    # Get all predictions for this device
+    predictions = db.query(MLPrediction).join(Report).filter(
+        Report.device_id == device_id,
+        MLPrediction.is_final == True
+    ).all()
+    
+    # Calculate statistics
+    total_predictions = len(predictions)
+    if total_predictions == 0:
+        return {
+            'device_id': device_id,
+            'total_predictions': 0,
+            'average_trust_score': 0.0,
+            'credible_reports': 0,
+            'suspicious_reports': 0,
+            'fake_reports': 0,
+            'model_versions': [],
+            'last_prediction': None
+        }
+    
+    avg_trust_score = sum(float(p.trust_score) for p in predictions) / total_predictions
+    credible_count = sum(1 for p in predictions if p.prediction_label == 'likely_real')
+    suspicious_count = sum(1 for p in predictions if p.prediction_label == 'suspicious')
+    fake_count = sum(1 for p in predictions if p.prediction_label == 'fake')
+    
+    model_versions = list(set(p.model_version for p in predictions))
+    last_prediction = max(p.evaluated_at for p in predictions)
+    
+    return {
+        'device_id': device_id,
+        'total_predictions': total_predictions,
+        'average_trust_score': avg_trust_score,
+        'credible_reports': credible_count,
+        'suspicious_reports': suspicious_count,
+        'fake_reports': fake_count,
+        'model_versions': model_versions,
+        'last_prediction': last_prediction.isoformat() if last_prediction else None
+    }
 

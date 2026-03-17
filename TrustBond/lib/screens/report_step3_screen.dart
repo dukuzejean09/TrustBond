@@ -6,6 +6,7 @@ import '../widgets/shared_widgets.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/motion_service.dart';
+import '../services/device_status_service.dart';
 import 'report_success_screen.dart';
 
 class ReportStep3Screen extends StatefulWidget {
@@ -36,6 +37,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
   final _apiService = ApiService();
   final _deviceService = DeviceService();
   final _picker = ImagePicker();
+  final _statusService = DeviceStatusService();
 
   final List<_EvidenceFile> _files = [];
   bool _submitting = false;
@@ -82,67 +84,46 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
       _error = null;
     });
     try {
-      final motionFuture = collectMotionSample()
-          .timeout(
-            const Duration(seconds: 2),
-            onTimeout: () => MotionSample(
-              motionLevel: 'low',
-              movementSpeed: 0.0,
-              wasStationary: true,
-            ),
-          )
-          .onError(
-            (_, __) => MotionSample(
-              motionLevel: 'low',
-              movementSpeed: 0.0,
-              wasStationary: true,
-            ),
-          );
-
       String? deviceId = await _deviceService.getDeviceId();
+      final deviceHash = await _deviceService.getDeviceHash();
 
-      // Auto-register device if not yet registered
+      // Auto-register to get device_id when possible; backend can also resolve by device_hash
       if (deviceId == null || deviceId.isEmpty) {
         try {
-          final hash = await _deviceService.getDeviceHash();
-          final regResult = await _apiService.registerDevice(hash);
+          final regResult = await _apiService.registerDevice(deviceHash);
           deviceId = regResult['device_id']?.toString();
           if (deviceId != null && deviceId.isNotEmpty) {
             await _deviceService.saveDeviceId(deviceId);
           }
-          // Persist the trust score assigned at registration
-          final rawScore = regResult['device_trust_score'];
-          if (rawScore != null) {
-            await _deviceService.saveTrustScore((rawScore as num).toDouble());
-          }
-        } catch (regErr) {
-          setState(() {
-            _error = 'Could not register device. Check your internet connection.';
-            _submitting = false;
-          });
-          return;
+        } catch (_) {
+          // Continue: submit with device_hash only; backend will find-or-create device
         }
       }
 
-      if (deviceId == null || deviceId.isEmpty) {
-        setState(() {
-          _error = 'Device not registered. Please restart the app and try again.';
-          _submitting = false;
-        });
-        return;
+      // Collect motion/sensor data before submit (non-blocking)
+      MotionSample motion;
+      try {
+        motion = await collectMotionSample();
+      } catch (_) {
+        motion = MotionSample(
+            motionLevel: 'low', movementSpeed: 0.0, wasStationary: true);
       }
 
-      final resolvedDeviceId = deviceId;
+      // Collect network and battery status (best-effort; failures are not fatal)
+      final networkType = await _statusService.getNetworkType();
+      final batteryLevel = await _statusService.getBatteryLevel();
 
-      final motion = await motionFuture;
-
+      // Always send device_hash so backend can find-or-create device (fixes "Device not found")
       final reportData = <String, dynamic>{
-        'device_id': resolvedDeviceId,
+        'device_hash': deviceHash,
         'incident_type_id': widget.incidentTypeId,
         'description': widget.description,
         'latitude': widget.latitude,
         'longitude': widget.longitude,
       };
+      if (deviceId != null && deviceId.isNotEmpty) {
+        reportData['device_id'] = deviceId;
+      }
       // Only send optional fields if they have values
       if (widget.gpsAccuracy != null) {
         reportData['gps_accuracy'] = widget.gpsAccuracy;
@@ -153,47 +134,71 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
         reportData['movement_speed'] = motion.movementSpeed;
       }
       reportData['was_stationary'] = motion.wasStationary;
-
-      final result = await _apiService.submitReport(reportData);
-      final reportId = result['report_id']?.toString() ?? '';
-      final ruleStatus = result['rule_status']?.toString() ?? 'pending';
-
-      if (reportId.isEmpty) {
-        throw Exception('Report was created but no report ID was returned.');
+      // Contextual tags from Step 2 (e.g. Night-time, Weapons involved)
+      reportData['context_tags'] = widget.tags;
+      // Client metadata
+      reportData['app_version'] = '1.0.0'; // later can be from package_info_plus
+      if (networkType != null) {
+        reportData['network_type'] = networkType;
+      }
+      if (batteryLevel != null) {
+        reportData['battery_level'] = batteryLevel;
       }
 
-      // The report is already stored at this point. Evidence upload feedback is non-blocking.
-      final uploadResults = await Future.wait(
-        List.generate(_files.length, (i) async {
-          final f = _files[i];
-          try {
-            final evidenceResult = await _apiService.uploadEvidence(
-              reportId,
-              resolvedDeviceId,
-              f.path,
-              mediaLatitude: widget.latitude,
-              mediaLongitude: widget.longitude,
-              capturedAt: DateTime.now(),
-              isLiveCapture: f.isLive,
-            );
-            final status = evidenceResult['verification_status'] ?? 'unknown';
-            if (status == 'flagged') {
-              return 'File ${i + 1}: flagged for review';
-            }
-            return null;
-          } catch (e) {
-            return 'File ${i + 1}: ${e.toString()}';
+      Map<String, dynamic> result;
+      try {
+        result = await _apiService.submitReport(reportData);
+      } catch (e) {
+        final msg = e.toString();
+        if (msg.contains('Device not found') && deviceId != null && deviceId.isNotEmpty) {
+          await _deviceService.saveDeviceId(''); // clear stale id
+          reportData.remove('device_id');
+          result = await _apiService.submitReport(reportData);
+          deviceId = result['device_id']?.toString();
+          if (deviceId != null && deviceId.isNotEmpty) {
+            await _deviceService.saveDeviceId(deviceId);
           }
-        }),
-      );
-      final uploadErrors = uploadResults.whereType<String>().toList();
+        } else {
+          rethrow;
+        }
+      }
+      final reportId = result['report_id']?.toString() ?? '';
+      if (deviceId == null || deviceId.isEmpty) {
+        deviceId = result['device_id']?.toString();
+        if (deviceId != null && deviceId.isNotEmpty) {
+          await _deviceService.saveDeviceId(deviceId);
+        }
+      }
+
+      // Upload evidence files with verification feedback
+      final List<String> uploadErrors = [];
+      for (int i = 0; i < _files.length; i++) {
+        final f = _files[i];
+        try {
+          final evidenceResult = await _apiService.uploadEvidence(
+            reportId,
+            deviceId ?? '',
+            f.path,
+            mediaLatitude: widget.latitude,
+            mediaLongitude: widget.longitude,
+            capturedAt: DateTime.now(),
+            isLiveCapture: f.isLive,
+          );
+          // Log verification status from backend
+          final status = evidenceResult['verification_status'] ?? 'unknown';
+          if (status == 'flagged') {
+            uploadErrors.add('File ${i + 1}: flagged for review');
+          }
+        } catch (e) {
+          uploadErrors.add('File ${i + 1}: ${e.toString()}');
+        }
+      }
 
       if (mounted) {
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
               builder: (_) => ReportSuccessScreen(
                     reportId: reportId,
-                    ruleStatus: ruleStatus,
                     incidentTypeName: widget.incidentTypeName,
                     evidenceWarnings: uploadErrors,
                   )),

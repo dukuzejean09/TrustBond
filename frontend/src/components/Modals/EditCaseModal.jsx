@@ -1,75 +1,91 @@
-import React, { useEffect, useState } from "react";
-import api from "../../api/client";
-import { useAuth } from "../../contexts/AuthContext.jsx";
+import React, { useEffect, useState } from 'react';
+import api from '../../api/client';
+import { useAuth } from '../../context/AuthContext';
 
 const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
   const { user: me } = useAuth();
-  const role = me?.role || "officer";
-  const isAdminOrSupervisor = role === "admin" || role === "supervisor";
+  const role = me?.role || 'officer';
+  const isAdminOrSupervisor = role === 'admin' || role === 'supervisor';
 
-  const [status, setStatus] = useState(caseItem?.status || "open");
-  const [priority, setPriority] = useState(caseItem?.priority || "medium");
-  const [description, setDescription] = useState(caseItem?.description || "");
-  const [outcome, setOutcome] = useState(caseItem?.outcome || "");
+  const [status, setStatus] = useState(caseItem?.status || 'open');
+  const [priority, setPriority] = useState(caseItem?.priority || 'medium');
+  const [description, setDescription] = useState(caseItem?.description || '');
+  const [outcome, setOutcome] = useState(caseItem?.outcome || '');
+  const [assignedToId, setAssignedToId] = useState(caseItem?.assigned_to_id || '');
+  const [officers, setOfficers] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!isOpen || !caseItem) return;
-    setStatus(caseItem.status || "open");
-    setPriority(caseItem.priority || "medium");
-    setDescription(caseItem.description || "");
-    setOutcome(caseItem.outcome || "");
-    setError("");
+    setStatus(caseItem.status || 'open');
+    setPriority(caseItem.priority || 'medium');
+    setDescription(caseItem.description || '');
+    setOutcome(caseItem.outcome || '');
+    setAssignedToId(caseItem.assigned_to_id || '');
+    setError('');
     setSaving(false);
   }, [isOpen, caseItem]);
+
+  // Load officer options for assignment when admin/supervisor.
+  useEffect(() => {
+    if (!isOpen || !isAdminOrSupervisor) return;
+    let cancelled = false;
+    api
+      .get('/api/v1/police-users/options')
+      .then((res) => {
+        if (cancelled) return;
+        setOfficers(res || []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setOfficers([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, isAdminOrSupervisor]);
 
   if (!isOpen || !caseItem) return null;
 
   const submit = async () => {
     setSaving(true);
-    setError("");
+    setError('');
     const payload = {
       status,
       description,
       outcome,
-      ...(isAdminOrSupervisor ? { priority } : {}),
+      ...(isAdminOrSupervisor ? { priority, assigned_to_id: assignedToId || null } : {}),
     };
     try {
       await api.patch(`/api/v1/cases/${caseItem.case_id}`, payload);
       onSaved?.();
       onClose?.();
     } catch (e) {
-      setError(e?.message || "Failed to update case.");
+      setError(e?.message || 'Failed to update case.');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div
-      className="modal-overlay open"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
+    <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
           <div className="modal-title">
-            Update Case —{" "}
-            {caseItem.case_number || String(caseItem.case_id).slice(0, 8)}
+            Update Case — {caseItem.case_number || String(caseItem.case_id).slice(0, 8)}
           </div>
-          <div className="modal-close" onClick={onClose}>
-            ✕
-          </div>
+          <div className="modal-close" onClick={onClose}>✕</div>
         </div>
 
         {error && (
-          <div className="alert alert-danger" style={{ marginBottom: "10px" }}>
+          <div className="alert alert-danger" style={{ marginBottom: '10px' }}>
             <span className="alert-icon">!</span>
             <div>{error}</div>
           </div>
         )}
 
-        <div className="form-grid" style={{ marginBottom: "12px" }}>
+        <div className="form-grid" style={{ marginBottom: '12px' }}>
           <div className="input-group">
             <div className="input-label">Status</div>
             <select
@@ -95,6 +111,23 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
               <option value="low">low</option>
             </select>
           </div>
+          {isAdminOrSupervisor && (
+            <div className="input-group">
+              <div className="input-label">Assign Officer</div>
+              <select
+                className="select"
+                value={assignedToId}
+                onChange={(e) => setAssignedToId(e.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {officers.map((o) => (
+                  <option key={o.police_user_id} value={o.police_user_id}>
+                    {o.first_name} {o.last_name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         <div className="input-group">
@@ -117,27 +150,12 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
           ></textarea>
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            justifyContent: "flex-end",
-            marginTop: "10px",
-          }}
-        >
-          <button
-            className="btn btn-outline"
-            onClick={onClose}
-            disabled={saving}
-          >
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '10px' }}>
+          <button className="btn btn-outline" onClick={onClose} disabled={saving}>
             Cancel
           </button>
-          <button
-            className="btn btn-primary"
-            onClick={submit}
-            disabled={saving}
-          >
-            {saving ? "Saving…" : "Save Changes"}
+          <button className="btn btn-primary" onClick={submit} disabled={saving}>
+            {saving ? 'Saving…' : 'Save Changes'}
           </button>
         </div>
       </div>
@@ -146,3 +164,4 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
 };
 
 export default EditCaseModal;
+
