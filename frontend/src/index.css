@@ -95,6 +95,7 @@ body {
   border: 1px solid var(--border);
   border-radius: var(--r);
   padding: clamp(14px, 2vw, 20px);
+  min-width: 0;
 }
 
 .card-header {
@@ -170,7 +171,9 @@ body {
   padding: clamp(12px, 2vw, 18px);
   position: relative;
   overflow: hidden;
-  transition: transform 0.14s, border-color 0.14s;
+  transition:
+    transform 0.14s,
+    border-color 0.14s;
   cursor: default;
 }
 
@@ -351,6 +354,7 @@ td {
   font-size: 12px;
   border-bottom: 1px solid var(--border2);
   vertical-align: middle;
+  min-width: 0;
 }
 
 tr:last-child td {
@@ -359,6 +363,63 @@ tr:last-child td {
 
 tbody tr:hover td {
   background: var(--surface2);
+}
+
+.text-break {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.mono-break {
+  display: inline-block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  line-height: 1.35;
+}
+
+.evidence-media {
+  width: 100%;
+  max-height: 120px;
+  border-radius: 8px;
+  border: 1px solid var(--border2);
+  background: var(--surface3);
+  object-fit: cover;
+}
+
+.dash-evidence-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+
+.dash-evidence-thumb {
+  width: 56px;
+  height: 40px;
+  border-radius: 6px;
+  border: 1px solid var(--border2);
+  object-fit: cover;
+  background: var(--surface3);
+}
+
+.dash-evidence-video {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  color: var(--muted);
+  letter-spacing: 0.6px;
+}
+
+.dash-evidence-meta {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.dash-evidence-none {
+  font-size: 10px;
+  color: var(--muted);
 }
 
 /* ── BADGES ── */
@@ -884,7 +945,9 @@ textarea:focus {
   flex-direction: column;
   align-items: center;
   gap: 5px;
-  transition: transform 0.14s, border-color 0.14s;
+  transition:
+    transform 0.14s,
+    border-color 0.14s;
   border: 1px solid var(--border);
   background: var(--surface2);
   color: var(--text-dim);
@@ -1264,7 +1327,9 @@ textarea:focus {
   border-radius: var(--r);
   padding: 14px;
   cursor: pointer;
-  transition: border-color 0.14s, transform 0.14s;
+  transition:
+    border-color 0.14s,
+    transform 0.14s;
 }
 
 .case-card:hover {
@@ -1448,37 +1513,37 @@ textarea:focus {
 /* Tablet and mobile optimizations */
 @media (max-width: 900px) {
   /* Improve touch targets on mobile */
-  .nav-item, 
-  .btn, 
+  .nav-item,
+  .btn,
   .card-action,
   .page-btn,
   .modal-close {
     cursor: pointer;
     -webkit-tap-highlight-color: transparent;
   }
-  
+
   /* Better spacing for filter rows */
   .filter-row {
     gap: 12px;
   }
-  
+
   .filter-row .input,
   .filter-row .select {
     min-width: 120px;
     flex: 1 1 auto;
   }
-  
+
   /* Stack grid layouts */
   .responsive-grid.g31,
   .responsive-grid.g13 {
     grid-template-columns: 1fr;
   }
-  
+
   /* Better mobile card padding */
   .card {
     padding: 16px;
   }
-  
+
   /* Improve modal on mobile */
   .modal {
     max-width: 90%;
@@ -1493,89 +1558,90 @@ textarea:focus {
     grid-template-columns: repeat(2, 1fr);
     gap: 8px;
   }
-  
+
   /* Full width inputs on mobile */
   .filter-row {
     flex-direction: column;
     align-items: stretch;
   }
-  
+
   .filter-row .input,
   .filter-row .select,
   .filter-row .btn {
     width: 100%;
     min-width: 100%;
   }
-  
+
   /* Compact tables */
   .tbl-wrap table {
     min-width: 400px;
   }
-  
-  th, td {
+
+  th,
+  td {
     padding: 8px 6px;
     font-size: 11px;
   }
-  
+
   /* Better quick actions grid */
   .qa-grid {
     grid-template-columns: repeat(3, 1fr);
     gap: 6px;
   }
-  
+
   .qa-btn {
     padding: 10px 4px;
     font-size: 10px;
   }
-  
+
   /* Hide less important elements */
   .tb-chip {
     display: none;
   }
-  
+
   /* Adjust detail layouts */
   .detail-grid {
     grid-template-columns: 1fr 1fr;
     gap: 8px;
   }
-  
+
   /* Better map on mobile */
   .map-container {
     grid-template-columns: 1fr;
     height: auto;
   }
-  
+
   .map-box {
     height: 350px;
   }
-  
+
   .map-side {
     max-height: 300px;
   }
-  
+
   /* Pagination improvements */
   .pagination {
     justify-content: center;
     width: 100%;
   }
-  
+
   .page-btn {
     width: 36px;
     height: 36px;
     font-size: 13px;
   }
-  
+
   /* Notification items stack */
   .notif-item {
     flex-wrap: wrap;
   }
-  
+
   .notif-icon {
     width: 32px;
     height: 32px;
     font-size: 9px;
   }
-  
+
   /* Case cards full width */
   .case-card {
     padding: 12px;
@@ -1587,42 +1653,42 @@ textarea:focus {
   .stats-row {
     grid-template-columns: 1fr;
   }
-  
+
   /* 2-column quick actions */
   .qa-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  
+
   /* Smaller header */
   #page-title {
     font-size: 14px;
   }
-  
+
   /* Compact donut chart */
   .donut-wrap {
     flex-direction: column;
     align-items: center;
   }
-  
+
   /* Modal adjustments */
   .modal {
     padding: 14px;
   }
-  
+
   .form-grid {
     grid-template-columns: 1fr;
   }
-  
+
   /* Hide some table columns if needed */
   .hide-mobile {
     display: none;
   }
-  
+
   /* Better trust bars */
   .trust-wrap {
     min-width: 60px;
   }
-  
+
   .trust-val {
     min-width: 20px;
   }
@@ -1633,11 +1699,11 @@ textarea:focus {
   #sidebar {
     width: 200px;
   }
-  
+
   .map-container {
     height: 300px;
   }
-  
+
   .modal {
     max-height: 85vh;
   }
@@ -1649,15 +1715,15 @@ textarea:focus {
     --sidebar-w: 260px;
     --topbar-h: 64px;
   }
-  
+
   html {
     font-size: 16px;
   }
-  
+
   .card {
     padding: 24px;
   }
-  
+
   .stat-value {
     font-size: 32px;
   }
@@ -1672,27 +1738,27 @@ textarea:focus {
   .pagination {
     display: none !important;
   }
-  
+
   #main {
     overflow: visible;
   }
-  
+
   .screen {
     display: block !important;
     padding: 0;
   }
-  
+
   .card {
     break-inside: avoid;
     border: 1px solid #ccc;
     box-shadow: none;
   }
-  
+
   body {
     background: white;
     color: black;
   }
-  
+
   :root {
     --bg: white;
     --surface: white;

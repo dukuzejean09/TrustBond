@@ -37,6 +37,10 @@ from app.api.v1.auth import get_optional_user, get_current_user, get_current_adm
 from app.api.v1.notifications import create_notification
 from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording
 from app.core.credibility_model import score_report_credibility
+from app.core.incident_consistency import (
+    analyze_description_consistency,
+    analyze_image_incident_consistency,
+)
 from app.core.audit import log_action
 from app.core.hotspot_auto import create_hotspots_from_reports
 from app.core.village_lookup import get_village_location_id, get_village_location_info
@@ -74,6 +78,24 @@ cloudinary.config(
 )
 
 _CLOUDINARY_ENABLED = bool(settings.cloudinary_cloud_name)
+
+
+def _merge_consistency_in_feature_vector(report: Report, payload: Dict[str, Any]) -> None:
+    current = report.feature_vector if isinstance(report.feature_vector, dict) else {}
+    consistency = current.get("consistency") if isinstance(current.get("consistency"), dict) else {}
+    consistency.update(payload)
+    current["consistency"] = consistency
+    report.feature_vector = current
+
+
+def _append_flag_reason(existing_reason: Optional[str], new_reason: str) -> str:
+    if not existing_reason:
+        return new_reason
+    parts = [p.strip() for p in str(existing_reason).split(";") if p.strip()]
+    if new_reason in parts:
+        return existing_reason
+    parts.append(new_reason)
+    return ";".join(parts)
 
 
 def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optional[float], Optional[datetime]]:
@@ -282,6 +304,17 @@ def create_report(
 
     # ML-based credibility scoring (best-effort; failures are ignored)
     score_report_credibility(db, report, device, evidence_count)
+
+    # Description/incident consistency check (always run for ML review context).
+    desc_consistency = analyze_description_consistency(
+        report.description,
+        incident_type.type_name if incident_type else None,
+    )
+    _merge_consistency_in_feature_vector(report, {"description": desc_consistency})
+    if desc_consistency.get("status") == "mismatch":
+        report.rule_status = "flagged"
+        report.is_flagged = True
+        report.flag_reason = _append_flag_reason(report.flag_reason, "description_incident_mismatch")
 
     # Update device stats
     device.total_reports += 1
@@ -1166,7 +1199,7 @@ async def upload_evidence(
     db.commit()
     db.refresh(evidence)
 
-    # Re-run rule-based verification (evidence count changed; no ML)
+    # Re-run rule-based verification (evidence count changed) and ML review.
     report_after = db.query(Report).filter(Report.report_id == report.report_id).first()
     if report_after:
         evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_after.report_id).count()
@@ -1175,6 +1208,53 @@ async def upload_evidence(
         report_after.is_flagged = is_flagged
         if is_flagged and flag_reason:
             report_after.flag_reason = flag_reason
+
+        # Ensure every report is reviewed by ML after evidence updates.
+        device = db.query(Device).filter(Device.device_id == report_after.device_id).first()
+        if device:
+            score_report_credibility(db, report_after, device, evidence_count)
+
+        # Description consistency (re-evaluate after updates).
+        incident_type = (
+            db.query(IncidentType)
+            .filter(IncidentType.incident_type_id == report_after.incident_type_id)
+            .first()
+        )
+        desc_consistency = analyze_description_consistency(
+            report_after.description,
+            incident_type.type_name if incident_type else None,
+        )
+
+        consistency_payload: Dict[str, Any] = {"description": desc_consistency}
+
+        # Image/incident consistency for imported photos.
+        if is_image:
+            image_consistency = analyze_image_incident_consistency(
+                content,
+                incident_type.type_name if incident_type else None,
+            )
+            consistency_payload["last_image"] = image_consistency
+
+            if image_consistency.get("status") == "mismatch":
+                evidence.ai_quality_label = "suspicious"
+                report_after.rule_status = "flagged"
+                report_after.is_flagged = True
+                report_after.flag_reason = _append_flag_reason(
+                    report_after.flag_reason,
+                    "image_incident_mismatch",
+                )
+            elif image_consistency.get("status") == "likely_match" and not evidence.ai_quality_label:
+                evidence.ai_quality_label = "good"
+
+        if desc_consistency.get("status") == "mismatch":
+            report_after.rule_status = "flagged"
+            report_after.is_flagged = True
+            report_after.flag_reason = _append_flag_reason(
+                report_after.flag_reason,
+                "description_incident_mismatch",
+            )
+
+        _merge_consistency_in_feature_vector(report_after, consistency_payload)
         db.commit()
     
     return {"evidence_id": str(evidence.evidence_id), "file_url": file_url}

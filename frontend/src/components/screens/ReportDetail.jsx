@@ -1,31 +1,47 @@
-import React, { useEffect, useState } from 'react';
-import api from '../../api/client';
-import { useAuth } from '../../context/AuthContext';
+import React, { useEffect, useState } from "react";
+import api from "../../api/client";
+import { useAuth } from "../../context/AuthContext";
+
+const API_BASE =
+  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
+  "https://trustbond-backend.onrender.com";
+
+function resolveEvidenceUrl(fileUrl) {
+  if (!fileUrl) return "";
+  if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
+  return `${API_BASE}${fileUrl.startsWith("/") ? "" : "/"}${fileUrl}`;
+}
 
 const ReportDetail = ({ goToScreen, openModal, reportId }) => {
   const { user: me } = useAuth();
-  const role = me?.role || 'officer';
-  const canTriage = role === 'admin' || role === 'supervisor';
+  const role = me?.role || "officer";
+  const canTriage = role === "admin" || role === "supervisor";
 
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [savingDecision, setSavingDecision] = useState('');
+  const [error, setError] = useState("");
+  const [savingDecision, setSavingDecision] = useState("");
   const [mlPrediction, setMlPrediction] = useState(null);
   const [mlLoading, setMlLoading] = useState(false);
   const [relatedReports, setRelatedReports] = useState([]);
   const [relatedLoading, setRelatedLoading] = useState(false);
 
+  const resolvedReportId =
+    reportId ||
+    (typeof window !== "undefined"
+      ? new URLSearchParams(window.location.search || "").get("report_id")
+      : null);
+
   useEffect(() => {
-    if (!reportId) {
-      setError('No report selected.');
+    if (!resolvedReportId) {
+      setError("No report selected.");
       setLoading(false);
       return;
     }
     let mounted = true;
     setLoading(true);
     api
-      .get(`/api/v1/reports/${reportId}`)
+      .get(`/api/v1/reports/${resolvedReportId}`)
       .then((res) => {
         if (!mounted) return;
         setReport(res);
@@ -33,13 +49,13 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
       })
       .catch((err) => {
         if (!mounted) return;
-        setError(err?.data?.detail || err?.message || 'Failed to load report.');
+        setError(err?.data?.detail || err?.message || "Failed to load report.");
         setLoading(false);
       });
     return () => {
       mounted = false;
     };
-  }, [reportId]);
+  }, [resolvedReportId]);
 
   // Load ML prediction for this report
   useEffect(() => {
@@ -90,39 +106,39 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
   }, [report]);
 
   const reload = async () => {
-    if (!reportId) return;
+    if (!resolvedReportId) return;
     setLoading(true);
-    setError('');
+    setError("");
     try {
-      const res = await api.get(`/api/v1/reports/${reportId}`);
+      const res = await api.get(`/api/v1/reports/${resolvedReportId}`);
       setReport(res);
     } catch (err) {
-      setError(err?.data?.detail || err?.message || 'Failed to load report.');
+      setError(err?.data?.detail || err?.message || "Failed to load report.");
     } finally {
       setLoading(false);
     }
   };
 
   const submitReview = async (decision) => {
-    if (!reportId) return;
+    if (!resolvedReportId) return;
     setSavingDecision(decision);
-    setError('');
+    setError("");
     try {
-      await api.post(`/api/v1/reports/${reportId}/reviews`, {
+      await api.post(`/api/v1/reports/${resolvedReportId}/reviews`, {
         decision,
-        review_note: '',
+        review_note: "",
       });
       await reload();
     } catch (e) {
-      setError(e?.message || 'Failed to submit review.');
+      setError(e?.message || "Failed to submit review.");
     } finally {
-      setSavingDecision('');
+      setSavingDecision("");
     }
   };
 
   if (loading) {
     return (
-      <div style={{ padding: 16, fontSize: 13, color: 'var(--muted)' }}>
+      <div style={{ padding: 16, fontSize: 13, color: "var(--muted)" }}>
         Loading report…
       </div>
     );
@@ -133,39 +149,41 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
       <div style={{ padding: 16 }}>
         <button
           className="btn btn-outline btn-sm"
-          onClick={() => goToScreen('reports', 1)}
+          onClick={() => goToScreen("reports", 1)}
         >
           Back to Reports
         </button>
-        <div style={{ marginTop: 12, color: 'var(--danger)', fontSize: 13 }}>
-          {error || 'Report not found.'}
+        <div style={{ marginTop: 12, color: "var(--danger)", fontSize: 13 }}>
+          {error || "Report not found."}
         </div>
       </div>
     );
   }
 
   const idLabel = report.report_number || String(report.report_id).slice(0, 8);
-  const deviceShort = report.device_id ? String(report.device_id).slice(0, 4) : 'DEV';
+  const deviceShort = report.device_id
+    ? String(report.device_id).slice(0, 4)
+    : "DEV";
   const trustScore = report.trust_score ?? 0;
   const createdAt = report.reported_at
     ? new Date(report.reported_at).toLocaleString()
-    : '—';
+    : "—";
   const assignments = report.assignments || [];
 
   return (
     <>
       <div
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '10px',
-          marginBottom: '16px',
-          flexWrap: 'wrap',
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          marginBottom: "16px",
+          flexWrap: "wrap",
         }}
       >
         <button
           className="btn btn-outline btn-sm"
-          onClick={() => goToScreen('reports', 1)}
+          onClick={() => goToScreen("reports", 1)}
         >
           Back to Reports
         </button>
@@ -173,56 +191,56 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
           style={{
             fontFamily: '"Syne", sans-serif',
             fontWeight: 800,
-            fontSize: '18px',
+            fontSize: "18px",
           }}
         >
           {idLabel}
         </div>
         <span
           className="badge b-green"
-          style={{ fontSize: '12px', padding: '4px 10px' }}
+          style={{ fontSize: "12px", padding: "4px 10px" }}
         >
           {report.rule_status}
         </span>
         <div
           style={{
-            marginLeft: 'auto',
-            display: 'flex',
-            gap: '6px',
-            flexWrap: 'wrap',
+            marginLeft: "auto",
+            display: "flex",
+            gap: "6px",
+            flexWrap: "wrap",
           }}
         >
           {canTriage && (
             <>
               <button
                 className="btn btn-success btn-sm"
-                onClick={() => submitReview('confirmed')}
+                onClick={() => submitReview("confirmed")}
                 disabled={!!savingDecision}
               >
-                {savingDecision === 'confirmed' ? 'Saving…' : 'Confirm'}
+                {savingDecision === "confirmed" ? "Saving…" : "Confirm"}
               </button>
               <button
                 className="btn btn-danger btn-sm"
-                onClick={() => submitReview('rejected')}
+                onClick={() => submitReview("rejected")}
                 disabled={!!savingDecision}
               >
-                {savingDecision === 'rejected' ? 'Saving…' : 'Flag'}
+                {savingDecision === "rejected" ? "Saving…" : "Flag"}
               </button>
               <button
                 className="btn btn-outline btn-sm"
-                onClick={() => openModal('assign')}
+                onClick={() => openModal("assign")}
               >
                 Assign Officer
               </button>
               <button
                 className="btn btn-primary btn-sm"
-                onClick={() => openModal('newCase')}
+                onClick={() => openModal("newCase")}
               >
                 Create Case
               </button>
               <button
                 className="btn btn-warn btn-sm"
-                onClick={() => openModal('linkCase')}
+                onClick={() => openModal("linkCase")}
               >
                 Link to Case
               </button>
@@ -240,30 +258,28 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
             <div className="detail-grid">
               <div className="detail-field">
                 <div className="dfl">Incident Type</div>
-                <div className="dfv" style={{ color: 'var(--danger)' }}>
-                  {report.incident_type_name || '—'}
+                <div className="dfv" style={{ color: "var(--danger)" }}>
+                  {report.incident_type_name || "—"}
                 </div>
               </div>
               <div className="detail-field">
                 <div className="dfl">Location</div>
                 <div className="dfv">
-                  {report.incident_village_name ||
-                    report.village_name ||
-                    '—'}
+                  {report.incident_village_name || report.village_name || "—"}
                 </div>
               </div>
               <div className="detail-field">
                 <div className="dfl">GPS Coords</div>
                 <div
                   className="dfv"
-                  style={{ fontSize: '11px', fontFamily: 'monospace' }}
+                  style={{ fontSize: "11px", fontFamily: "monospace" }}
                 >
                   {report.latitude}, {report.longitude}
                 </div>
               </div>
               <div className="detail-field">
                 <div className="dfl">Submitted At</div>
-                <div className="dfv" style={{ fontSize: '12px' }}>
+                <div className="dfv" style={{ fontSize: "12px" }}>
                   {createdAt}
                 </div>
               </div>
@@ -271,7 +287,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                 <div className="dfl">Device</div>
                 <div
                   className="dfv"
-                  style={{ fontSize: '11px', fontFamily: 'monospace' }}
+                  style={{ fontSize: "11px", fontFamily: "monospace" }}
                 >
                   {deviceShort}
                 </div>
@@ -279,26 +295,26 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
             </div>
             <div
               style={{
-                background: 'var(--surface2)',
-                borderRadius: 'var(--rs)',
-                padding: '11px',
-                border: '1px solid var(--border2)',
+                background: "var(--surface2)",
+                borderRadius: "var(--rs)",
+                padding: "11px",
+                border: "1px solid var(--border2)",
               }}
             >
               <div
                 style={{
-                  fontSize: '10px',
-                  color: 'var(--muted)',
-                  marginBottom: '5px',
+                  fontSize: "10px",
+                  color: "var(--muted)",
+                  marginBottom: "5px",
                   fontWeight: 700,
-                  textTransform: 'uppercase',
-                  letterSpacing: '0.5px',
+                  textTransform: "uppercase",
+                  letterSpacing: "0.5px",
                 }}
               >
                 Description
               </div>
-              <div style={{ fontSize: '12px', lineHeight: 1.6 }}>
-                {report.description || 'No description.'}
+              <div style={{ fontSize: "12px", lineHeight: 1.6 }}>
+                {report.description || "No description."}
               </div>
             </div>
           </div>
@@ -312,54 +328,74 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
             </div>
             <div
               style={{
-                display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
-                gap: '10px',
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr",
+                gap: "10px",
               }}
             >
               {(report.evidence_files || []).map((ef) => (
                 <div
                   key={ef.evidence_id}
                   style={{
-                    background: 'var(--surface2)',
-                    borderRadius: 'var(--rs)',
-                    border: '1px solid var(--border2)',
-                    padding: '12px',
-                    textAlign: 'center',
+                    background: "var(--surface2)",
+                    borderRadius: "var(--rs)",
+                    border: "1px solid var(--border2)",
+                    padding: "12px",
+                    textAlign: "center",
                   }}
                 >
+                  {ef.file_type === "photo" ? (
+                    <img
+                      src={resolveEvidenceUrl(ef.file_url)}
+                      alt="Evidence"
+                      className="evidence-media"
+                    />
+                  ) : (
+                    <video
+                      controls
+                      className="evidence-media"
+                      src={resolveEvidenceUrl(ef.file_url)}
+                    />
+                  )}
                   <div
                     style={{
-                      fontSize: '11px',
+                      fontSize: "11px",
                       fontWeight: 700,
-                      marginBottom: '4px',
-                      color: 'var(--muted)',
-                      textTransform: 'uppercase',
-                      letterSpacing: '1px',
+                      marginTop: "8px",
+                      marginBottom: "4px",
+                      color: "var(--muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "1px",
                     }}
                   >
                     {ef.file_type}
                   </div>
-                  <div style={{ fontSize: '11px', fontWeight: 600 }}>
+                  <div
+                    className="text-break"
+                    style={{ fontSize: "11px", fontWeight: 600 }}
+                    title={ef.file_url}
+                  >
                     {ef.file_url}
                   </div>
                   <div
                     style={{
-                      fontSize: '10px',
-                      color: 'var(--muted)',
-                      margin: '3px 0',
+                      fontSize: "10px",
+                      color: "var(--muted)",
+                      margin: "3px 0",
                     }}
                   >
                     {ef.uploaded_at
                       ? new Date(ef.uploaded_at).toLocaleString()
-                      : ''}
+                      : ""}
                   </div>
-                  {(ef.ai_quality_label || ef.blur_score || ef.tamper_score) && (
+                  {(ef.ai_quality_label ||
+                    ef.blur_score ||
+                    ef.tamper_score) && (
                     <div
                       style={{
-                        marginTop: '6px',
-                        fontSize: '10px',
-                        color: 'var(--muted)',
+                        marginTop: "6px",
+                        fontSize: "10px",
+                        color: "var(--muted)",
                       }}
                     >
                       {ef.ai_quality_label && (
@@ -367,25 +403,27 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                           <strong>Quality:</strong> {ef.ai_quality_label}
                         </div>
                       )}
-                      {typeof ef.blur_score !== 'undefined' && ef.blur_score !== null && (
-                        <div>
-                          <strong>Blur:</strong> {Number(ef.blur_score).toFixed(2)}
-                        </div>
-                      )}
-                      {typeof ef.tamper_score !== 'undefined' && ef.tamper_score !== null && (
-                        <div>
-                          <strong>Tamper:</strong> {Number(ef.tamper_score).toFixed(2)}
-                        </div>
-                      )}
+                      {typeof ef.blur_score !== "undefined" &&
+                        ef.blur_score !== null && (
+                          <div>
+                            <strong>Blur:</strong>{" "}
+                            {Number(ef.blur_score).toFixed(2)}
+                          </div>
+                        )}
+                      {typeof ef.tamper_score !== "undefined" &&
+                        ef.tamper_score !== null && (
+                          <div>
+                            <strong>Tamper:</strong>{" "}
+                            {Number(ef.tamper_score).toFixed(2)}
+                          </div>
+                        )}
                     </div>
                   )}
                 </div>
               ))}
               {(!report.evidence_files ||
                 report.evidence_files.length === 0) && (
-                <div
-                  style={{ fontSize: '12px', color: 'var(--muted)' }}
-                >
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                   No evidence uploaded.
                 </div>
               )}
@@ -402,8 +440,8 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
               </div>
               <div
                 style={{
-                  display: 'grid',
-                  gap: '8px',
+                  display: "grid",
+                  gap: "8px",
                 }}
               >
                 {assignments.map((a) => {
@@ -411,33 +449,33 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                     me?.police_user_id &&
                     a.police_user_id === me.police_user_id;
                   const statusBadge =
-                    a.status === 'closed'
-                      ? 'b-green'
-                      : a.status === 'resolved'
-                      ? 'b-green'
-                      : a.status === 'investigating'
-                      ? 'b-blue'
-                      : 'b-orange';
+                    a.status === "closed"
+                      ? "b-green"
+                      : a.status === "resolved"
+                        ? "b-green"
+                        : a.status === "investigating"
+                          ? "b-blue"
+                          : "b-orange";
                   const priorityBadge =
-                    a.priority === 'high'
-                      ? 'b-red'
-                      : a.priority === 'medium'
-                      ? 'b-orange'
-                      : 'b-gray';
+                    a.priority === "high"
+                      ? "b-red"
+                      : a.priority === "medium"
+                        ? "b-orange"
+                        : "b-gray";
                   return (
                     <div
                       key={a.assignment_id}
                       style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '8px 10px',
-                        borderRadius: 'var(--rs)',
-                        border: '1px solid var(--border2)',
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        padding: "8px 10px",
+                        borderRadius: "var(--rs)",
+                        border: "1px solid var(--border2)",
                         background: isMine
-                          ? 'rgba(79, 142, 247, 0.06)'
-                          : 'var(--surface2)',
-                        fontSize: '11px',
+                          ? "rgba(79, 142, 247, 0.06)"
+                          : "var(--surface2)",
+                        fontSize: "11px",
                       }}
                     >
                       <div>
@@ -447,13 +485,13 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                             marginBottom: 2,
                           }}
                         >
-                          {a.officer_name || 'Officer'}
+                          {a.officer_name || "Officer"}
                           {isMine && (
                             <span
                               style={{
                                 marginLeft: 6,
-                                fontSize: '10px',
-                                color: 'var(--primary)',
+                                fontSize: "10px",
+                                color: "var(--primary)",
                               }}
                             >
                               (you)
@@ -462,40 +500,38 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                         </div>
                         <div
                           style={{
-                            color: 'var(--muted)',
+                            color: "var(--muted)",
                           }}
                         >
-                          Assigned{' '}
+                          Assigned{" "}
                           {a.assigned_at
                             ? new Date(a.assigned_at).toLocaleString()
-                            : '—'}
+                            : "—"}
                           {a.completed_at && (
                             <>
-                              {' · '}Completed{' '}
-                              {new Date(
-                                a.completed_at,
-                              ).toLocaleString()}
+                              {" · "}Completed{" "}
+                              {new Date(a.completed_at).toLocaleString()}
                             </>
                           )}
                         </div>
                       </div>
                       <div
                         style={{
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'flex-end',
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "flex-end",
                           gap: 4,
                         }}
                       >
                         <span
                           className={`badge ${priorityBadge}`}
-                          style={{ fontSize: '10px' }}
+                          style={{ fontSize: "10px" }}
                         >
                           {a.priority}
                         </span>
                         <span
                           className={`badge ${statusBadge}`}
-                          style={{ fontSize: '10px' }}
+                          style={{ fontSize: "10px" }}
                         >
                           {a.status}
                         </span>
@@ -513,34 +549,32 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
             <div className="card-header">
               <div className="card-title">Trust Scores</div>
             </div>
-            <div style={{ marginBottom: '12px' }}>
+            <div style={{ marginBottom: "12px" }}>
               {/* Report-level ML trust */}
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '4px',
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "4px",
                 }}
               >
-                <span
-                  style={{ fontSize: '11px', color: 'var(--muted)' }}
-                >
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                   Report Trust Score
                 </span>
                 <span
                   style={{
                     fontFamily: '"Syne", sans-serif',
                     fontWeight: 800,
-                    fontSize: '17px',
-                    color: 'var(--success)',
+                    fontSize: "17px",
+                    color: "var(--success)",
                   }}
                 >
                   {mlPrediction
                     ? Math.round(mlPrediction.trust_score ?? 0)
-                    : '—'}
+                    : "—"}
                 </span>
               </div>
-              <div className="prog-bar" style={{ marginBottom: '8px' }}>
+              <div className="prog-bar" style={{ marginBottom: "8px" }}>
                 <div
                   className="prog-fill"
                   style={{
@@ -548,14 +582,11 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                       mlPrediction
                         ? Math.max(
                             0,
-                            Math.min(
-                              100,
-                              mlPrediction.trust_score ?? 0,
-                            ),
+                            Math.min(100, mlPrediction.trust_score ?? 0),
                           )
                         : 0
                     }%`,
-                    background: 'var(--success)',
+                    background: "var(--success)",
                   }}
                 ></div>
               </div>
@@ -563,22 +594,20 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
               {/* Device trust (from DB) */}
               <div
                 style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  marginBottom: '4px',
+                  display: "flex",
+                  justifyContent: "space-between",
+                  marginBottom: "4px",
                 }}
               >
-                <span
-                  style={{ fontSize: '11px', color: 'var(--muted)' }}
-                >
+                <span style={{ fontSize: "11px", color: "var(--muted)" }}>
                   Device Trust Score
                 </span>
                 <span
                   style={{
                     fontFamily: '"Syne", sans-serif',
                     fontWeight: 800,
-                    fontSize: '17px',
-                    color: 'var(--success)',
+                    fontSize: "17px",
+                    color: "var(--success)",
                   }}
                 >
                   {Math.round(trustScore)}
@@ -588,19 +617,16 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                 <div
                   className="prog-fill"
                   style={{
-                    width: `${Math.max(
-                      0,
-                      Math.min(100, trustScore),
-                    )}%`,
-                    background: 'var(--success)',
+                    width: `${Math.max(0, Math.min(100, trustScore))}%`,
+                    background: "var(--success)",
                   }}
                 ></div>
               </div>
               {mlLoading && (
                 <div
                   style={{
-                    fontSize: '10px',
-                    color: 'var(--muted)',
+                    fontSize: "10px",
+                    color: "var(--muted)",
                     marginTop: 6,
                   }}
                 >
@@ -611,18 +637,17 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                 <div
                   style={{
                     marginTop: 6,
-                    fontSize: '10px',
-                    color: 'var(--muted)',
+                    fontSize: "10px",
+                    color: "var(--muted)",
                   }}
                 >
                   <div>
-                    Label:{' '}
-                    <strong>{mlPrediction.prediction_label}</strong>{' '}
-                    · Confidence{' '}
+                    Label: <strong>{mlPrediction.prediction_label}</strong> ·
+                    Confidence{" "}
                     {Math.round((mlPrediction.confidence ?? 0) * 100)}%
                   </div>
                   <div>
-                    Model: {mlPrediction.model_version}{' '}
+                    Model: {mlPrediction.model_version}{" "}
                     {mlPrediction.evaluated_at &&
                       `· ${new Date(
                         mlPrediction.evaluated_at,
@@ -638,18 +663,14 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
             <div className="card-header">
               <div className="card-title">Related Reports</div>
             </div>
-            <div style={{ padding: '10px 14px', fontSize: '12px' }}>
+            <div style={{ padding: "10px 14px", fontSize: "12px" }}>
               {relatedLoading && (
-                <div
-                  style={{ fontSize: '12px', color: 'var(--muted)' }}
-                >
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                   Loading related reports…
                 </div>
               )}
               {!relatedLoading && relatedReports.length === 0 && (
-                <div
-                  style={{ fontSize: '12px', color: 'var(--muted)' }}
-                >
+                <div style={{ fontSize: "12px", color: "var(--muted)" }}>
                   No similar reports found in the last few days.
                 </div>
               )}
@@ -657,56 +678,52 @@ const ReportDetail = ({ goToScreen, openModal, reportId }) => {
                 <div
                   key={r.report_id}
                   style={{
-                    padding: '8px 0',
-                    borderBottom: '1px solid var(--border2)',
+                    padding: "8px 0",
+                    borderBottom: "1px solid var(--border2)",
                   }}
                 >
                   <div
                     style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
+                      display: "flex",
+                      justifyContent: "space-between",
                       marginBottom: 2,
                     }}
                   >
                     <span
                       style={{
-                        fontSize: '11px',
-                        fontFamily: 'monospace',
-                        color: 'var(--muted)',
+                        fontSize: "11px",
+                        fontFamily: "monospace",
+                        color: "var(--muted)",
                       }}
                     >
-                      {r.report_number ||
-                        String(r.report_id).slice(0, 8)}
+                      {r.report_number || String(r.report_id).slice(0, 8)}
                     </span>
                     <span
                       className={`badge ${
-                        r.rule_status === 'passed'
-                          ? 'b-green'
-                          : r.rule_status === 'pending'
-                          ? 'b-orange'
-                          : 'b-red'
+                        r.rule_status === "passed"
+                          ? "b-green"
+                          : r.rule_status === "pending"
+                            ? "b-orange"
+                            : "b-red"
                       }`}
-                      style={{ fontSize: '10px' }}
+                      style={{ fontSize: "10px" }}
                     >
                       {r.rule_status}
                     </span>
                   </div>
-                  <div style={{ fontSize: '11px' }}>
-                    {r.incident_type_name || '—'} ·{' '}
-                    {r.village_name || '—'}
+                  <div style={{ fontSize: "11px" }}>
+                    {r.incident_type_name || "—"} · {r.village_name || "—"}
                   </div>
                   <div
                     style={{
-                      fontSize: '10px',
-                      color: 'var(--muted)',
+                      fontSize: "10px",
+                      color: "var(--muted)",
                       marginTop: 2,
                     }}
                   >
                     {r.reported_at
-                      ? new Date(
-                          r.reported_at,
-                        ).toLocaleString()
-                      : '—'}
+                      ? new Date(r.reported_at).toLocaleString()
+                      : "—"}
                   </div>
                 </div>
               ))}

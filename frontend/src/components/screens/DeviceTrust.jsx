@@ -1,25 +1,25 @@
-import React, { useEffect, useState } from 'react';
-import api from '../../api/client';
+import React, { useEffect, useState } from "react";
+import api from "../../api/client";
 
 const DeviceTrust = () => {
   const [devices, setDevices] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [trustLevel, setTrustLevel] = useState('all'); // all | high | medium | low
-  const [search, setSearch] = useState('');
-  const [sortField, setSortField] = useState('device_trust_score');
-  const [sortDir, setSortDir] = useState('desc'); // asc | desc
+  const [trustLevel, setTrustLevel] = useState("all"); // all | high | medium | low
+  const [search, setSearch] = useState("");
+  const [sortField, setSortField] = useState("device_trust_score");
+  const [sortDir, setSortDir] = useState("desc"); // asc | desc
   const [selectedProfile, setSelectedProfile] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
-  const [sectorFilter, setSectorFilter] = useState('all');
+  const [sectorFilter, setSectorFilter] = useState("all");
   const [sectors, setSectors] = useState([]);
 
   // Load devices from backend, filtered by trust level
   useEffect(() => {
     let mounted = true;
-    const params = new URLSearchParams({ limit: '50', offset: '0' });
-    if (trustLevel !== 'all') {
-      params.set('trust_level', trustLevel);
+    const params = new URLSearchParams({ limit: "50", offset: "0" });
+    if (trustLevel !== "all") {
+      params.set("trust_level", trustLevel);
     }
     api
       .get(`/api/v1/devices?${params.toString()}`)
@@ -40,10 +40,10 @@ const DeviceTrust = () => {
   // Load sectors for dropdown (locations with type=sector)
   useEffect(() => {
     api
-      .get('/api/v1/locations')
+      .get("/api/v1/locations")
       .then((res) => {
         const sectorList = (res || []).filter(
-          (loc) => loc.location_type === 'sector',
+          (loc) => loc.location_type === "sector",
         );
         setSectors(sectorList);
       })
@@ -62,9 +62,7 @@ const DeviceTrust = () => {
     try {
       setProfileLoading(true);
       setSelectedProfile(null);
-      const mlStats = await api.get(
-        `/api/v1/devices/${deviceId}/ml-stats`,
-      );
+      const mlStats = await api.get(`/api/v1/devices/${deviceId}/ml-stats`);
       setSelectedProfile({
         ...mlStats,
         device_hash: dev.device_hash,
@@ -80,19 +78,18 @@ const DeviceTrust = () => {
   const exportCsv = () => {
     if (!devices.length) return;
     const headers = [
-      'device_hash',
-      'trust_score',
-      'total_reports',
-      'confirmed',
-      'rejected',
-      'spam_flags',
-      'last_active_at',
-      'status',
+      "device_hash",
+      "trust_score",
+      "total_reports",
+      "confirmed",
+      "rejected",
+      "spam_flags",
+      "last_active_at",
+      "status",
     ];
     const rows = devices.map((d) => {
       const score = d.device_trust_score ?? 0;
-      const status =
-        score < 10 ? 'Banned' : score < 40 ? 'Flagged' : 'Active';
+      const status = score < 10 ? "Banned" : score < 40 ? "Flagged" : "Active";
       return [
         d.device_hash,
         Math.round(score),
@@ -100,16 +97,16 @@ const DeviceTrust = () => {
         d.trusted_reports ?? 0,
         d.flagged_reports ?? 0,
         d.spam_flags ?? 0,
-        d.last_active_at || '',
+        d.last_active_at || "",
         status,
       ];
     });
-    const csv = [headers.join(','), ...rows.map((r) => r.join(','))].join('\n');
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const csv = [headers.join(","), ...rows.map((r) => r.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    a.download = 'device_trust.csv';
+    a.download = "device_trust.csv";
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -119,8 +116,8 @@ const DeviceTrust = () => {
       <div className="page-header">
         <h2>Device Trust Management</h2>
         <p>
-          Pseudonymous device profiles — track reporting patterns, trust
-          scores, and spam behavior without exposing user identity.
+          Pseudonymous device profiles — track reporting patterns, trust scores,
+          and spam behavior without exposing user identity.
         </p>
       </div>
 
@@ -159,13 +156,13 @@ const DeviceTrust = () => {
         <div className="card">
           <div className="card-header">
             <div className="card-title">Device Registry</div>
-            <div style={{ display: 'flex', gap: '6px' }}>
+            <div style={{ display: "flex", gap: "6px" }}>
               <select
                 className="select"
                 style={{
-                  width: 'auto',
-                  fontSize: '11px',
-                  padding: '4px 8px',
+                  width: "auto",
+                  fontSize: "11px",
+                  padding: "4px 8px",
                 }}
                 value={trustLevel}
                 onChange={(e) => setTrustLevel(e.target.value)}
@@ -213,61 +210,61 @@ const DeviceTrust = () => {
                 <tr>
                   <th>Device Hash</th>
                   <th
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: "pointer" }}
                     onClick={() => {
-                      setSortField('device_trust_score');
+                      setSortField("device_trust_score");
                       setSortDir((d) =>
-                        sortField === 'device_trust_score' && d === 'desc'
-                          ? 'asc'
-                          : 'desc',
+                        sortField === "device_trust_score" && d === "desc"
+                          ? "asc"
+                          : "desc",
                       );
                     }}
                   >
-                    Trust Score{' '}
-                    {sortField === 'device_trust_score'
-                      ? sortDir === 'asc'
-                        ? '↑'
-                        : '↓'
-                      : ''}
+                    Trust Score{" "}
+                    {sortField === "device_trust_score"
+                      ? sortDir === "asc"
+                        ? "↑"
+                        : "↓"
+                      : ""}
                   </th>
                   <th
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: "pointer" }}
                     onClick={() => {
-                      setSortField('total_reports');
+                      setSortField("total_reports");
                       setSortDir((d) =>
-                        sortField === 'total_reports' && d === 'desc'
-                          ? 'asc'
-                          : 'desc',
+                        sortField === "total_reports" && d === "desc"
+                          ? "asc"
+                          : "desc",
                       );
                     }}
                   >
-                    Total Reports{' '}
-                    {sortField === 'total_reports'
-                      ? sortDir === 'asc'
-                        ? '↑'
-                        : '↓'
-                      : ''}
+                    Total Reports{" "}
+                    {sortField === "total_reports"
+                      ? sortDir === "asc"
+                        ? "↑"
+                        : "↓"
+                      : ""}
                   </th>
                   <th>Confirmed</th>
                   <th>Rejected</th>
                   <th>Spam Flags</th>
                   <th
-                    style={{ cursor: 'pointer' }}
+                    style={{ cursor: "pointer" }}
                     onClick={() => {
-                      setSortField('last_active_at');
+                      setSortField("last_active_at");
                       setSortDir((d) =>
-                        sortField === 'last_active_at' && d === 'desc'
-                          ? 'asc'
-                          : 'desc',
+                        sortField === "last_active_at" && d === "desc"
+                          ? "asc"
+                          : "desc",
                       );
                     }}
                   >
-                    Last Active{' '}
-                    {sortField === 'last_active_at'
-                      ? sortDir === 'asc'
-                        ? '↑'
-                        : '↓'
-                      : ''}
+                    Last Active{" "}
+                    {sortField === "last_active_at"
+                      ? sortDir === "asc"
+                        ? "↑"
+                        : "↓"
+                      : ""}
                   </th>
                   <th>Status</th>
                   <th></th>
@@ -276,29 +273,30 @@ const DeviceTrust = () => {
               <tbody>
                 {[...devices]
                   .filter((d) => {
-                    if (sectorFilter !== 'all') {
+                    if (sectorFilter !== "all") {
                       const sid = Number(sectorFilter);
-                      if (!d.sector_location_id || d.sector_location_id !== sid) {
+                      if (
+                        !d.sector_location_id ||
+                        d.sector_location_id !== sid
+                      ) {
                         return false;
                       }
                     }
                     if (!search.trim()) return true;
                     const needle = search.trim().toLowerCase();
                     return (
-                      (d.device_hash || '').toLowerCase().includes(needle) ||
-                      (d.device_hash_short || '')
-                        .toLowerCase()
-                        .includes(needle)
+                      (d.device_hash || "").toLowerCase().includes(needle) ||
+                      (d.device_hash_short || "").toLowerCase().includes(needle)
                     );
                   })
                   .sort((a, b) => {
-                    const dir = sortDir === 'asc' ? 1 : -1;
+                    const dir = sortDir === "asc" ? 1 : -1;
                     const va = a[sortField];
                     const vb = b[sortField];
                     if (va == null && vb == null) return 0;
                     if (va == null) return 1;
                     if (vb == null) return -1;
-                    if (sortField === 'last_active_at') {
+                    if (sortField === "last_active_at") {
                       const da = new Date(va).getTime();
                       const db = new Date(vb).getTime();
                       return (da - db) * dir;
@@ -307,33 +305,26 @@ const DeviceTrust = () => {
                   })
                   .map((d) => {
                     const score = d.device_trust_score ?? 0;
-                    const width = Math.max(
-                      0,
-                      Math.min(100, Number(score)),
-                    );
+                    const width = Math.max(0, Math.min(100, Number(score)));
                     const shortHash =
                       d.device_hash_short ||
                       d.device_hash?.slice(0, 8) ||
-                      'device';
+                      "device";
                     const statusBadge =
                       score < 10
-                        ? 'b-red'
+                        ? "b-red"
                         : score < 40
-                        ? 'b-orange'
-                        : 'b-green';
+                          ? "b-orange"
+                          : "b-green";
                     const statusLabel =
-                      score < 10
-                        ? 'Banned'
-                        : score < 40
-                        ? 'Flagged'
-                        : 'Active';
+                      score < 10 ? "Banned" : score < 40 ? "Flagged" : "Active";
 
                     return (
                       <tr key={d.device_id}>
                         <td
                           style={{
-                            fontFamily: 'monospace',
-                            fontSize: '10px',
+                            fontFamily: "monospace",
+                            fontSize: "10px",
                           }}
                         >
                           {shortHash}
@@ -347,35 +338,33 @@ const DeviceTrust = () => {
                                   width: `${width}%`,
                                   background:
                                     score >= 70
-                                      ? 'var(--success)'
+                                      ? "var(--success)"
                                       : score >= 40
-                                      ? 'var(--warning)'
-                                      : 'var(--danger)',
+                                        ? "var(--warning)"
+                                        : "var(--danger)",
                                 }}
                               ></div>
                             </div>
-                            <div className="trust-val">
-                              {Math.round(score)}
-                            </div>
+                            <div className="trust-val">{Math.round(score)}</div>
                           </div>
                         </td>
                         <td>{d.total_reports}</td>
-                        <td style={{ color: 'var(--success)' }}>
+                        <td style={{ color: "var(--success)" }}>
                           {d.trusted_reports}
                         </td>
-                        <td style={{ color: 'var(--danger)' }}>
+                        <td style={{ color: "var(--danger)" }}>
                           {d.flagged_reports}
                         </td>
-                        <td>{d.spam_flags ?? '—'}</td>
+                        <td>{d.spam_flags ?? "—"}</td>
                         <td
                           style={{
-                            fontSize: '10px',
-                            color: 'var(--muted)',
+                            fontSize: "10px",
+                            color: "var(--muted)",
                           }}
                         >
                           {d.last_active_at
                             ? new Date(d.last_active_at).toLocaleDateString()
-                            : '—'}
+                            : "—"}
                         </td>
                         <td>
                           <span className={`badge ${statusBadge}`}>
@@ -399,9 +388,9 @@ const DeviceTrust = () => {
                     <td
                       colSpan={9}
                       style={{
-                        fontSize: '12px',
-                        color: 'var(--muted)',
-                        textAlign: 'center',
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                        textAlign: "center",
                       }}
                     >
                       No devices yet.
@@ -413,9 +402,9 @@ const DeviceTrust = () => {
                     <td
                       colSpan={9}
                       style={{
-                        fontSize: '12px',
-                        color: 'var(--muted)',
-                        textAlign: 'center',
+                        fontSize: "12px",
+                        color: "var(--muted)",
+                        textAlign: "center",
                       }}
                     >
                       Loading...
@@ -428,17 +417,17 @@ const DeviceTrust = () => {
 
           <div
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginTop: '14px',
-              flexWrap: 'wrap',
-              gap: '8px',
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              marginTop: "14px",
+              flexWrap: "wrap",
+              gap: "8px",
             }}
           >
-            <div style={{ fontSize: '12px', color: 'var(--muted)' }}>
-              Showing {devices.length} of{' '}
-              {stats?.active_30d ?? devices.length} devices
+            <div style={{ fontSize: "12px", color: "var(--muted)" }}>
+              Showing {devices.length} of {stats?.active_30d ?? devices.length}{" "}
+              devices
             </div>
             <div className="pagination">
               <div className="page-btn">‹</div>
@@ -457,100 +446,98 @@ const DeviceTrust = () => {
           {!selectedProfile && !profileLoading && (
             <div
               style={{
-                fontSize: '12px',
-                color: 'var(--muted)',
-                padding: '10px 14px',
+                fontSize: "12px",
+                color: "var(--muted)",
+                padding: "10px 14px",
               }}
             >
-              Click a <strong>Profile</strong> button in the registry to see
-              ML trust details for that device.
+              Click a <strong>Profile</strong> button in the registry to see ML
+              trust details for that device.
             </div>
           )}
           {profileLoading && (
             <div
               style={{
-                fontSize: '12px',
-                color: 'var(--muted)',
-                padding: '10px 14px',
+                fontSize: "12px",
+                color: "var(--muted)",
+                padding: "10px 14px",
               }}
             >
               Loading profile...
             </div>
           )}
           {selectedProfile && !profileLoading && (
-            <div style={{ padding: '10px 14px', fontSize: '12px' }}>
+            <div style={{ padding: "10px 14px", fontSize: "12px" }}>
               {/* Identity + headline trust score */}
               <div
                 style={{
-                  marginBottom: '6px',
+                  marginBottom: "6px",
                   fontFamily: '"Syne", sans-serif',
                   fontWeight: 700,
                 }}
               >
-                Hash:{' '}
-                <span style={{ fontFamily: 'monospace' }}>
+                Hash:{" "}
+                <span
+                  className="mono-break"
+                  style={{ fontFamily: "monospace" }}
+                >
                   {selectedProfile.device_hash}
                 </span>
               </div>
-              <div style={{ marginBottom: '6px' }}>
-                Trust score:{' '}
+              <div style={{ marginBottom: "6px" }}>
+                Trust score:{" "}
                 <strong>
                   {Math.round(selectedProfile.device_trust_score ?? 0)}
-                </strong>{' '}
+                </strong>{" "}
                 / 100
               </div>
-              <div style={{ marginBottom: '6px' }}>
-                Reports:{' '}
-                <strong>{selectedProfile.total_reports}</strong> total ·{' '}
-                <span style={{ color: 'var(--success)' }}>
+              <div style={{ marginBottom: "6px" }}>
+                Reports: <strong>{selectedProfile.total_reports}</strong> total
+                ·{" "}
+                <span style={{ color: "var(--success)" }}>
                   {selectedProfile.verified_reports} verified
-                </span>{' '}
-                ·{' '}
-                <span style={{ color: 'var(--danger)' }}>
+                </span>{" "}
+                ·{" "}
+                <span style={{ color: "var(--danger)" }}>
                   {selectedProfile.flagged_reports} flagged
                 </span>
               </div>
               {selectedProfile.last_ml_update && (
-                <div
-                  style={{ marginBottom: '10px', color: 'var(--muted)' }}
-                >
-                  Last ML update:{' '}
-                  {new Date(
-                    selectedProfile.last_ml_update,
-                  ).toLocaleString()}
+                <div style={{ marginBottom: "10px", color: "var(--muted)" }}>
+                  Last ML update:{" "}
+                  {new Date(selectedProfile.last_ml_update).toLocaleString()}
                 </div>
               )}
 
               {/* Trust Score Formula (static explanation based on DB + ML) */}
               <div
                 style={{
-                  marginTop: '8px',
-                  paddingTop: '8px',
-                  borderTop: '1px solid var(--border2)',
+                  marginTop: "8px",
+                  paddingTop: "8px",
+                  borderTop: "1px solid var(--border2)",
                 }}
               >
                 <div
                   style={{
-                    fontSize: '11px',
+                    fontSize: "11px",
                     fontWeight: 700,
-                    marginBottom: '4px',
+                    marginBottom: "4px",
                   }}
                 >
                   Trust Score Formula
                 </div>
-                <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
-                  Combines{' '}
-                  <strong>confirmed vs flagged reports</strong>,{' '}
-                  <strong>spam flags</strong>, and{' '}
-                  <strong>recent activity</strong>, with ML credibility as a
-                  cap on very low quality devices.
+                <div style={{ fontSize: "11px", color: "var(--muted)" }}>
+                  Combines <strong>confirmed vs flagged reports</strong>,{" "}
+                  <strong>spam flags</strong>, and{" "}
+                  <strong>recent activity</strong>, with ML credibility as a cap
+                  on very low quality devices.
                 </div>
 
                 <div
                   style={{
-                    marginTop: '6px',
-                    display: 'flex',
-                    flexDirection: 'column',
+                    marginTop: "6px",
+                    display: "flex",
+                    flexDirection: "column",
                     gap: 6,
                   }}
                 >
@@ -558,9 +545,9 @@ const DeviceTrust = () => {
                   <div>
                     <div
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: '10px',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "10px",
                         marginBottom: 2,
                       }}
                     >
@@ -574,15 +561,15 @@ const DeviceTrust = () => {
                             0,
                             Math.min(
                               100,
-                              (selectedProfile.verified_reports || 0) /
+                              ((selectedProfile.verified_reports || 0) /
                                 Math.max(
                                   1,
                                   selectedProfile.total_reports || 1,
-                                ) *
+                                )) *
                                 100,
                             ),
                           )}%`,
-                          background: 'var(--success)',
+                          background: "var(--success)",
                         }}
                       ></div>
                     </div>
@@ -592,9 +579,9 @@ const DeviceTrust = () => {
                   <div>
                     <div
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: '10px',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "10px",
                         marginBottom: 2,
                       }}
                     >
@@ -611,7 +598,7 @@ const DeviceTrust = () => {
                               (selectedProfile.total_reports || 0) * 5,
                             ),
                           )}%`,
-                          background: 'var(--accent)',
+                          background: "var(--accent)",
                         }}
                       ></div>
                     </div>
@@ -621,9 +608,9 @@ const DeviceTrust = () => {
                   <div>
                     <div
                       style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        fontSize: '10px',
+                        display: "flex",
+                        justifyContent: "space-between",
+                        fontSize: "10px",
                         marginBottom: 2,
                       }}
                     >
@@ -637,11 +624,10 @@ const DeviceTrust = () => {
                             0,
                             Math.min(
                               100,
-                              (selectedProfile.suspicious_reports || 0) *
-                                20,
+                              (selectedProfile.suspicious_reports || 0) * 20,
                             ),
                           )}%`,
-                          background: 'var(--danger)',
+                          background: "var(--danger)",
                         }}
                       ></div>
                     </div>
@@ -650,13 +636,13 @@ const DeviceTrust = () => {
 
                 <div
                   style={{
-                    marginTop: '6px',
-                    fontSize: '10px',
-                    color: 'var(--muted)',
+                    marginTop: "6px",
+                    fontSize: "10px",
+                    color: "var(--muted)",
                   }}
                 >
-                  Example formula:{' '}
-                  <code style={{ fontSize: '10px' }}>
+                  Example formula:{" "}
+                  <code style={{ fontSize: "10px" }}>
                     score = 0.4·confirm_rate + 0.3·history − 0.2·spam
                   </code>
                 </div>
@@ -665,30 +651,30 @@ const DeviceTrust = () => {
               {/* ML trust distribution for this device */}
               <div
                 style={{
-                  marginTop: '8px',
-                  paddingTop: '8px',
-                  borderTop: '1px solid var(--border2)',
+                  marginTop: "8px",
+                  paddingTop: "8px",
+                  borderTop: "1px solid var(--border2)",
                 }}
               >
                 <div
                   style={{
-                    fontSize: '11px',
+                    fontSize: "11px",
                     fontWeight: 700,
-                    marginBottom: '4px',
+                    marginBottom: "4px",
                   }}
                 >
                   ML Distribution (this device)
                 </div>
-                <div style={{ fontSize: '11px', marginBottom: 4 }}>
-                  <span style={{ color: 'var(--success)' }}>
+                <div style={{ fontSize: "11px", marginBottom: 4 }}>
+                  <span style={{ color: "var(--success)" }}>
                     {selectedProfile.credible_reports ?? 0} credible
                   </span>
-                  ,{' '}
-                  <span style={{ color: 'var(--warning)' }}>
+                  ,{" "}
+                  <span style={{ color: "var(--warning)" }}>
                     {selectedProfile.suspicious_reports ?? 0} suspicious
                   </span>
-                  ,{' '}
-                  <span style={{ color: 'var(--danger)' }}>
+                  ,{" "}
+                  <span style={{ color: "var(--danger)" }}>
                     {selectedProfile.fake_reports ?? 0} fake
                   </span>
                 </div>
@@ -696,12 +682,11 @@ const DeviceTrust = () => {
                   selectedProfile.model_versions.length > 0 && (
                     <div
                       style={{
-                        fontSize: '10px',
-                        color: 'var(--muted)',
+                        fontSize: "10px",
+                        color: "var(--muted)",
                       }}
                     >
-                      Models used:{' '}
-                      {selectedProfile.model_versions.join(', ')}
+                      Models used: {selectedProfile.model_versions.join(", ")}
                     </div>
                   )}
               </div>

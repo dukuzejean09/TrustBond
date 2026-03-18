@@ -1,36 +1,36 @@
-import React, { useState, useEffect } from 'react';
-import Layout from './components/Layout/Layout';
-import Dashboard from './components/screens/Dashboard';
-import Reports from './components/screens/Reports';
-import ReportDetail from './components/screens/ReportDetail';
-import CaseManagement from './components/screens/CaseManagement';
-import Hotspots from './components/screens/Hotspots';
-import SafetyMap from './components/screens/SafetyMap';
-import DeviceTrust from './components/screens/DeviceTrust';
-import Users from './components/screens/Users';
-import IncidentTypes from './components/screens/IncidentTypes';
-import Stations from './components/screens/Stations';
-import AuditLog from './components/screens/AuditLog';
-import SystemConfig from './components/screens/SystemConfig';
-import ActiveSessions from './components/screens/ActiveSessions';
-import ChangePassword from './components/screens/ChangePassword';
-import Notifications from './components/screens/Notifications';
-import Login from './components/screens/Login';
-import ForgotPassword from './components/screens/ForgotPassword';
-import ResetPassword from './components/screens/ResetPassword';
-import { useAuth } from './context/AuthContext';
-import AddUserModal from './components/Modals/AddUserModal';
-import EditUserModal from './components/Modals/EditUserModal';
-import AssignModal from './components/Modals/AssignModal';
-import AddIncidentModal from './components/Modals/AddIncidentModal';
-import NewCaseModal from './components/Modals/NewCaseModal';
-import LinkCaseModal from './components/Modals/LinkCaseModal';
-import StationModal from './components/Modals/StationModal';
-import api from './api/client';
+import React, { useState, useEffect } from "react";
+import Layout from "./components/Layout/Layout";
+import Dashboard from "./components/screens/Dashboard";
+import Reports from "./components/screens/Reports";
+import ReportDetail from "./components/screens/ReportDetail";
+import CaseManagement from "./components/screens/CaseManagement";
+import Hotspots from "./components/screens/Hotspots";
+import SafetyMap from "./components/screens/SafetyMap";
+import DeviceTrust from "./components/screens/DeviceTrust";
+import Users from "./components/screens/Users";
+import IncidentTypes from "./components/screens/IncidentTypes";
+import Stations from "./components/screens/Stations";
+import AuditLog from "./components/screens/AuditLog";
+import SystemConfig from "./components/screens/SystemConfig";
+import ActiveSessions from "./components/screens/ActiveSessions";
+import ChangePassword from "./components/screens/ChangePassword";
+import Notifications from "./components/screens/Notifications";
+import Login from "./components/screens/Login";
+import ForgotPassword from "./components/screens/ForgotPassword";
+import ResetPassword from "./components/screens/ResetPassword";
+import { useAuth } from "./context/AuthContext";
+import AddUserModal from "./components/Modals/AddUserModal";
+import EditUserModal from "./components/Modals/EditUserModal";
+import AssignModal from "./components/Modals/AssignModal";
+import AddIncidentModal from "./components/Modals/AddIncidentModal";
+import NewCaseModal from "./components/Modals/NewCaseModal";
+import LinkCaseModal from "./components/Modals/LinkCaseModal";
+import StationModal from "./components/Modals/StationModal";
+import api from "./api/client";
 
 function App() {
   const { user, loading, logout } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState('dashboard');
+  const [currentScreen, setCurrentScreen] = useState("dashboard");
   const [isLightMode, setIsLightMode] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState(null);
   const [selectedIncidentType, setSelectedIncidentType] = useState(null);
@@ -54,180 +54,190 @@ function App() {
     newCase: false,
     linkCase: false,
   });
-  const [authScreen, setAuthScreen] = useState('login'); // login | forgot | reset
-  const [resetEmail, setResetEmail] = useState('');
+  const [authScreen, setAuthScreen] = useState("login"); // login | forgot | reset
+  const [resetEmail, setResetEmail] = useState("");
 
   // Map screen/auth IDs to URL paths so the browser bar updates.
   const screenToPath = (id) => {
     switch (id) {
-      case 'dashboard':
-        return '/';
-      case 'reports':
-        return '/reports';
-      case 'report-detail':
-        return '/reports/detail';
-      case 'case-management':
-        return '/cases';
-      case 'hotspots':
-        return '/hotspots';
-      case 'safety-map':
-        return '/safety-map';
-      case 'device-trust':
-        return '/device-trust';
-      case 'users':
-        return '/users';
-      case 'incident-types':
-        return '/incident-types';
-      case 'stations':
-        return '/stations';
-      case 'audit-log':
-        return '/audit-log';
-      case 'system-config':
-        return '/system-config';
-      case 'change-password':
-        return '/change-password';
-      case 'notifications':
-        return '/notifications';
-      case 'active-sessions':
-        return '/active-sessions';
+      case "dashboard":
+        return "/";
+      case "reports":
+        return "/reports";
+      case "report-detail":
+        return "/reports/detail";
+      case "case-management":
+        return "/cases";
+      case "hotspots":
+        return "/hotspots";
+      case "safety-map":
+        return "/safety-map";
+      case "device-trust":
+        return "/device-trust";
+      case "users":
+        return "/users";
+      case "incident-types":
+        return "/incident-types";
+      case "stations":
+        return "/stations";
+      case "audit-log":
+        return "/audit-log";
+      case "system-config":
+        return "/system-config";
+      case "change-password":
+        return "/change-password";
+      case "notifications":
+        return "/notifications";
+      case "active-sessions":
+        return "/active-sessions";
       default:
-        return '/';
+        return "/";
     }
   };
 
   const pathToScreen = (path) => {
     switch (path) {
-      case '/':
-        return 'dashboard';
-      case '/reports':
-        return 'reports';
-      case '/reports/detail':
-        return 'report-detail';
-      case '/cases':
-        return 'case-management';
-      case '/hotspots':
-        return 'hotspots';
-      case '/safety-map':
-        return 'safety-map';
-      case '/device-trust':
-        return 'device-trust';
-      case '/users':
-        return 'users';
-      case '/incident-types':
-        return 'incident-types';
-      case '/stations':
-        return 'stations';
-      case '/audit-log':
-        return 'audit-log';
-      case '/system-config':
-        return 'system-config';
-      case '/change-password':
-        return 'change-password';
-      case '/notifications':
-        return 'notifications';
-      case '/active-sessions':
-        return 'active-sessions';
+      case "/":
+        return "dashboard";
+      case "/reports":
+        return "reports";
+      case "/reports/detail":
+        return "report-detail";
+      case "/cases":
+        return "case-management";
+      case "/hotspots":
+        return "hotspots";
+      case "/safety-map":
+        return "safety-map";
+      case "/device-trust":
+        return "device-trust";
+      case "/users":
+        return "users";
+      case "/incident-types":
+        return "incident-types";
+      case "/stations":
+        return "stations";
+      case "/audit-log":
+        return "audit-log";
+      case "/system-config":
+        return "system-config";
+      case "/change-password":
+        return "change-password";
+      case "/notifications":
+        return "notifications";
+      case "/active-sessions":
+        return "active-sessions";
       default:
-        return 'dashboard';
+        return "dashboard";
     }
   };
 
   const authToPath = (screen) => {
     switch (screen) {
-      case 'forgot':
-        return '/forgot-password';
-      case 'reset':
-        return '/reset-password';
-      case 'login':
+      case "forgot":
+        return "/forgot-password";
+      case "reset":
+        return "/reset-password";
+      case "login":
       default:
-        return '/login';
+        return "/login";
     }
   };
 
   const pathToAuth = (path) => {
     switch (path) {
-      case '/forgot-password':
-        return 'forgot';
-      case '/reset-password':
-        return 'reset';
-      case '/login':
+      case "/forgot-password":
+        return "forgot";
+      case "/reset-password":
+        return "reset";
+      case "/login":
       default:
-        return 'login';
+        return "login";
     }
   };
 
   // Screens configuration
   const screens = [
-    'dashboard',
-    'reports',
-    'report-detail',
-    'case-management',
-    'hotspots',
-    'safety-map',
-    'device-trust',
-    'users',
-    'incident-types',
-    'audit-log',
-    'system-config',
-    'change-password',
-    'notifications',
-    'active-sessions'
+    "dashboard",
+    "reports",
+    "report-detail",
+    "case-management",
+    "hotspots",
+    "safety-map",
+    "device-trust",
+    "users",
+    "incident-types",
+    "audit-log",
+    "system-config",
+    "change-password",
+    "notifications",
+    "active-sessions",
   ];
 
   const titles = {
-    dashboard: 'Dashboard',
-    reports: 'Reports',
-    'report-detail': 'Report Detail — RPT-0041',
-    'case-management': 'Case Management',
-    hotspots: 'Crime Hotspots',
-    'safety-map': 'Safety Map',
-    'device-trust': 'Device Trust Management',
-    users: 'User Management',
-    'incident-types': 'Incident Types',
-    'audit-log': 'Audit Log',
-    'system-config': 'System Configuration',
-    'change-password': 'Change Password',
-    notifications: 'Notifications',
-    'active-sessions': 'Active Sessions'
+    dashboard: "Dashboard",
+    reports: "Reports",
+    "report-detail": "Report Detail — RPT-0041",
+    "case-management": "Case Management",
+    hotspots: "Crime Hotspots",
+    "safety-map": "Safety Map",
+    "device-trust": "Device Trust Management",
+    users: "User Management",
+    "incident-types": "Incident Types",
+    "audit-log": "Audit Log",
+    "system-config": "System Configuration",
+    "change-password": "Change Password",
+    notifications: "Notifications",
+    "active-sessions": "Active Sessions",
   };
 
   // Load theme from localStorage
   useEffect(() => {
-    const savedMode = localStorage.getItem('tb-mode');
-    if (savedMode === 'light') {
+    const savedMode = localStorage.getItem("tb-mode");
+    if (savedMode === "light") {
       setIsLightMode(true);
-      document.body.classList.add('light-mode');
+      document.body.classList.add("light-mode");
     }
   }, []);
 
   // Initialise screen/auth state from the current URL.
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const path = window.location.pathname || '/';
+    if (typeof window === "undefined") return;
+    const path = window.location.pathname || "/";
+    const params = new URLSearchParams(window.location.search || "");
+    const reportIdFromQuery = params.get("report_id");
     if (user) {
       setCurrentScreen(pathToScreen(path));
+      if (path === "/reports/detail" && reportIdFromQuery) {
+        setSelectedReportId(reportIdFromQuery);
+      }
     } else {
       setAuthScreen(pathToAuth(path));
     }
 
     const handlePopState = () => {
-      const newPath = window.location.pathname || '/';
+      const newPath = window.location.pathname || "/";
+      const newParams = new URLSearchParams(window.location.search || "");
+      const newReportId = newParams.get("report_id");
       if (user) {
         setCurrentScreen(pathToScreen(newPath));
+        if (newPath === "/reports/detail") {
+          setSelectedReportId(newReportId || null);
+        }
       } else {
         setAuthScreen(pathToAuth(newPath));
       }
     };
 
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [user]);
 
   const toggleMode = () => {
     const newMode = !isLightMode;
     setIsLightMode(newMode);
-    document.body.classList.toggle('light-mode');
-    localStorage.setItem('tb-mode', newMode ? 'light' : 'dark');
+    document.body.classList.toggle("light-mode");
+    localStorage.setItem("tb-mode", newMode ? "light" : "dark");
   };
 
   // Load sidebar badge counts (reports, cases, notifications)
@@ -239,9 +249,9 @@ function App() {
     const loadCounts = async () => {
       try {
         const [dash, caseStats, notif] = await Promise.all([
-          api.get('/api/v1/stats/dashboard'),
-          api.get('/api/v1/cases/stats'),
-          api.get('/api/v1/notifications/unread-count'),
+          api.get("/api/v1/stats/dashboard"),
+          api.get("/api/v1/cases/stats"),
+          api.get("/api/v1/notifications/unread-count"),
         ]);
         if (cancelled) return;
         setSidebarCounts({
@@ -265,33 +275,37 @@ function App() {
 
   const goToScreen = (id, idx) => {
     setCurrentScreen(id);
-    if (typeof window !== 'undefined') {
+    if (typeof window !== "undefined") {
       const path = screenToPath(id);
-      window.history.pushState(null, '', path);
+      window.history.pushState(null, "", path);
     }
   };
 
   const handleOpenReport = (reportId) => {
     setSelectedReportId(reportId);
-    setCurrentScreen('report-detail');
+    setCurrentScreen("report-detail");
+    if (typeof window !== "undefined") {
+      const rid = encodeURIComponent(String(reportId));
+      window.history.pushState(null, "", `/reports/detail?report_id=${rid}`);
+    }
   };
 
   const openModal = (modalName) => {
-    if (modalName === 'addIncident') setSelectedIncidentType(null);
-    if (modalName === 'addStation') setSelectedStation(null);
-    setModals(prev => ({ ...prev, [modalName]: true }));
+    if (modalName === "addIncident") setSelectedIncidentType(null);
+    if (modalName === "addStation") setSelectedStation(null);
+    setModals((prev) => ({ ...prev, [modalName]: true }));
   };
 
   const closeModal = (modalName) => {
-    setModals(prev => ({ ...prev, [modalName]: false }));
+    setModals((prev) => ({ ...prev, [modalName]: false }));
   };
 
   // Render current screen
   const renderScreen = () => {
     switch (currentScreen) {
-      case 'dashboard':
+      case "dashboard":
         return <Dashboard goToScreen={goToScreen} openModal={openModal} />;
-      case 'reports':
+      case "reports":
         return (
           <Reports
             goToScreen={goToScreen}
@@ -299,7 +313,7 @@ function App() {
             onOpenReport={handleOpenReport}
           />
         );
-      case 'report-detail':
+      case "report-detail":
         return (
           <ReportDetail
             goToScreen={goToScreen}
@@ -307,15 +321,15 @@ function App() {
             reportId={selectedReportId}
           />
         );
-      case 'case-management':
+      case "case-management":
         return <CaseManagement goToScreen={goToScreen} openModal={openModal} />;
-      case 'hotspots':
+      case "hotspots":
         return <Hotspots goToScreen={goToScreen} openModal={openModal} />;
-      case 'safety-map':
+      case "safety-map":
         return <SafetyMap goToScreen={goToScreen} openModal={openModal} />;
-      case 'device-trust':
+      case "device-trust":
         return <DeviceTrust goToScreen={goToScreen} openModal={openModal} />;
-      case 'users':
+      case "users":
         return (
           <Users
             goToScreen={goToScreen}
@@ -323,11 +337,11 @@ function App() {
             refreshKey={usersRefreshKey}
             onEditUser={(u) => {
               setSelectedUser(u);
-              openModal('editUser');
+              openModal("editUser");
             }}
           />
         );
-      case 'incident-types':
+      case "incident-types":
         return (
           <IncidentTypes
             goToScreen={goToScreen}
@@ -335,26 +349,31 @@ function App() {
             refreshKey={incidentTypesRefreshKey}
             onEditIncidentType={(t) => {
               setSelectedIncidentType(t);
-              openModal('editIncident');
+              openModal("editIncident");
             }}
           />
         );
-      case 'stations':
-        return <Stations goToScreen={goToScreen} openModal={(name, payload) => {
-          if (name === 'editStation') {
-            setSelectedStation(payload || null);
-          }
-          openModal(name);
-        }} />;
-      case 'audit-log':
+      case "stations":
+        return (
+          <Stations
+            goToScreen={goToScreen}
+            openModal={(name, payload) => {
+              if (name === "editStation") {
+                setSelectedStation(payload || null);
+              }
+              openModal(name);
+            }}
+          />
+        );
+      case "audit-log":
         return <AuditLog goToScreen={goToScreen} openModal={openModal} />;
-      case 'system-config':
+      case "system-config":
         return <SystemConfig goToScreen={goToScreen} openModal={openModal} />;
-      case 'change-password':
+      case "change-password":
         return <ChangePassword goToScreen={goToScreen} openModal={openModal} />;
-      case 'notifications':
+      case "notifications":
         return <Notifications goToScreen={goToScreen} openModal={openModal} />;
-      case 'active-sessions':
+      case "active-sessions":
         return <ActiveSessions goToScreen={goToScreen} openModal={openModal} />;
       default:
         return <Dashboard goToScreen={goToScreen} openModal={openModal} />;
@@ -366,33 +385,33 @@ function App() {
   }
 
   if (!user) {
-    if (authScreen === 'forgot') {
+    if (authScreen === "forgot") {
       return (
         <ForgotPassword
           onBack={() => {
-            setAuthScreen('login');
-            if (typeof window !== 'undefined') {
-              window.history.pushState(null, '', authToPath('login'));
+            setAuthScreen("login");
+            if (typeof window !== "undefined") {
+              window.history.pushState(null, "", authToPath("login"));
             }
           }}
           onCodeSent={(email) => {
             setResetEmail(email);
-            setAuthScreen('reset');
-            if (typeof window !== 'undefined') {
-              window.history.pushState(null, '', authToPath('reset'));
+            setAuthScreen("reset");
+            if (typeof window !== "undefined") {
+              window.history.pushState(null, "", authToPath("reset"));
             }
           }}
         />
       );
     }
-    if (authScreen === 'reset') {
+    if (authScreen === "reset") {
       return (
         <ResetPassword
           email={resetEmail}
           onBackToLogin={() => {
-            setAuthScreen('login');
-            if (typeof window !== 'undefined') {
-              window.history.pushState(null, '', authToPath('login'));
+            setAuthScreen("login");
+            if (typeof window !== "undefined") {
+              window.history.pushState(null, "", authToPath("login"));
             }
           }}
         />
@@ -401,9 +420,9 @@ function App() {
     return (
       <Login
         onForgotPassword={() => {
-          setAuthScreen('forgot');
-          if (typeof window !== 'undefined') {
-            window.history.pushState(null, '', authToPath('forgot'));
+          setAuthScreen("forgot");
+          if (typeof window !== "undefined") {
+            window.history.pushState(null, "", authToPath("forgot"));
           }
         }}
       />
@@ -426,55 +445,55 @@ function App() {
       </Layout>
 
       {/* Modals */}
-      <AddUserModal 
+      <AddUserModal
         isOpen={modals.addUser}
-        onClose={() => closeModal('addUser')}
+        onClose={() => closeModal("addUser")}
         onSaved={() => setUsersRefreshKey((k) => k + 1)}
       />
-      <EditUserModal 
+      <EditUserModal
         isOpen={modals.editUser}
-        onClose={() => closeModal('editUser')}
+        onClose={() => closeModal("editUser")}
         user={selectedUser}
         onSaved={() => setUsersRefreshKey((k) => k + 1)}
       />
-      <AssignModal 
-        isOpen={modals.assign} 
-        onClose={() => closeModal('assign')} 
+      <AssignModal
+        isOpen={modals.assign}
+        onClose={() => closeModal("assign")}
         reportId={selectedReportId}
         onAssigned={() => {
           // after assignment, re-open report detail to refresh view
           if (selectedReportId) {
-            setCurrentScreen('report-detail');
+            setCurrentScreen("report-detail");
           }
         }}
       />
-      <AddIncidentModal 
-        isOpen={modals.addIncident} 
-        onClose={() => closeModal('addIncident')}
+      <AddIncidentModal
+        isOpen={modals.addIncident}
+        onClose={() => closeModal("addIncident")}
         mode="add"
         incidentType={null}
         onSaved={() => setIncidentTypesRefreshKey((k) => k + 1)}
       />
-      <AddIncidentModal 
-        isOpen={modals.editIncident} 
-        onClose={() => closeModal('editIncident')}
+      <AddIncidentModal
+        isOpen={modals.editIncident}
+        onClose={() => closeModal("editIncident")}
         mode="edit"
         incidentType={selectedIncidentType}
         onSaved={() => setIncidentTypesRefreshKey((k) => k + 1)}
       />
-      <NewCaseModal 
-        isOpen={modals.newCase} 
-        onClose={() => closeModal('newCase')} 
+      <NewCaseModal
+        isOpen={modals.newCase}
+        onClose={() => closeModal("newCase")}
         initialReportId={selectedReportId}
         onCreated={() => {
           // simple approach: reload case list by returning to screen
-          setCurrentScreen('dashboard');
-          setTimeout(() => setCurrentScreen('case-management'), 0);
+          setCurrentScreen("dashboard");
+          setTimeout(() => setCurrentScreen("case-management"), 0);
         }}
       />
       <LinkCaseModal
         isOpen={modals.linkCase}
-        onClose={() => closeModal('linkCase')}
+        onClose={() => closeModal("linkCase")}
         reportId={selectedReportId}
         onLinked={() => {
           // stay on report detail; could add toast later
@@ -482,26 +501,26 @@ function App() {
       />
       <StationModal
         isOpen={modals.addStation}
-        onClose={() => closeModal('addStation')}
+        onClose={() => closeModal("addStation")}
         mode="add"
         station={null}
         onSaved={() => {
           // force reload when coming back to Stations; simplest is full reload
-          if (currentScreen === 'stations') {
-            setCurrentScreen('dashboard');
-            setTimeout(() => setCurrentScreen('stations'), 0);
+          if (currentScreen === "stations") {
+            setCurrentScreen("dashboard");
+            setTimeout(() => setCurrentScreen("stations"), 0);
           }
         }}
       />
       <StationModal
         isOpen={modals.editStation}
-        onClose={() => closeModal('editStation')}
+        onClose={() => closeModal("editStation")}
         mode="edit"
         station={selectedStation}
         onSaved={() => {
-          if (currentScreen === 'stations') {
-            setCurrentScreen('dashboard');
-            setTimeout(() => setCurrentScreen('stations'), 0);
+          if (currentScreen === "stations") {
+            setCurrentScreen("dashboard");
+            setTimeout(() => setCurrentScreen("stations"), 0);
           }
         }}
       />
