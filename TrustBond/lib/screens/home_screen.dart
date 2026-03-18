@@ -62,7 +62,17 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _mapData = data);
     }).catchError((_) {});
 
-    // Get user GPS location and village
+    // Show cached location instantly (if available), then refresh with live GPS.
+    _locationService.getCachedLocation().then((cached) {
+      if (!mounted || cached == null || !cached.hasPosition) return;
+      setState(() {
+        _userLat = cached.latitude;
+        _userLng = cached.longitude;
+        _userVillage = cached.village;
+      });
+    }).catchError((_) {});
+
+    // Get user GPS location and village in background.
     _locationService.getFullLocation().then((result) {
       if (!mounted) return;
       if (result.hasPosition) {

@@ -216,7 +216,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
             typeName: r.incidentTypeName ?? 'Incident',
             description: r.description ?? 'No description',
             timeLabel: timeAgo(r.reportedAt),
-            statusLabel: formatStatus(r.ruleStatus),
+            statusLabel: _statusLabel(r.ruleStatus),
             statusType: badgeTypeFromStatus(r.ruleStatus),
             reportNumber: r.reportNumber,
             trustScore: r.trustScore,
@@ -232,6 +232,14 @@ class _MyReportsScreenState extends State<MyReportsScreen>
         },
       ),
     );
+  }
+
+  String _statusLabel(String status) {
+    final s = status.toLowerCase();
+    if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed') {
+      return 'Passed All Verifications';
+    }
+    return formatStatus(status);
   }
 
 }

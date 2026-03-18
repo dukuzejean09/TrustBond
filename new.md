@@ -1,5 +1,7 @@
 # TrustBond — Full & Complete Database Schema (Improved)
 
+when the ai verfication take place and what tells it is verified via ai as in my mobile app the report keep shoing that the report is waiting to AI verfication and is pending
+
 **Project:** TrustBond: An Intelligent Anonymous Crime Reporting and Hotspot Detection System  
 **Database:** PostgreSQL + PostGIS  
 **Version:** 2.0 — Full Design Document  

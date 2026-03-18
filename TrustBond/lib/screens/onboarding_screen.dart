@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
 import '../widgets/shared_widgets.dart';
 import 'main_shell.dart';
 
 class OnboardingScreen extends StatelessWidget {
   const OnboardingScreen({super.key});
+
+  static const String _introCompletedKey = 'intro_completed';
+
+  Future<void> _completeIntroAndContinue(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_introCompletedKey, true);
+    if (!context.mounted) return;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const MainShell()),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -66,9 +78,7 @@ class OnboardingScreen extends StatelessWidget {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: () => Navigator.of(context).pushReplacement(
-                        MaterialPageRoute(builder: (_) => const MainShell()),
-                      ),
+                      onPressed: () => _completeIntroAndContinue(context),
                       child: const Text('Continue →'),
                     ),
                   ),

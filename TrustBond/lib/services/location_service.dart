@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/musanze_map_data.dart';
 
 /// Why the GPS lookup failed.
@@ -25,6 +26,13 @@ class LocationService {
   static const int _maxRetries = 1;
   static const Duration _gpsFastTimeout = Duration(seconds: 4);
   static const Duration _gpsSlowTimeout = Duration(seconds: 8);
+  static const Duration _cacheMaxAge = Duration(hours: 6);
+  static const String _cacheLatKey = 'cached_latitude';
+  static const String _cacheLngKey = 'cached_longitude';
+  static const String _cacheVillageKey = 'cached_village';
+  static const String _cacheCellKey = 'cached_cell';
+  static const String _cacheSectorKey = 'cached_sector';
+  static const String _cacheUpdatedAtMsKey = 'cached_location_updated_at_ms';
   // ───────────────────────────────────────────────────────
 
   /// Loads the GeoJSON data (cached after first load).
@@ -158,10 +166,58 @@ class LocationService {
       result.longitude!,
     );
 
+    await _saveLocationCache(
+      latitude: result.latitude!,
+      longitude: result.longitude!,
+      village: village,
+    );
+
     return LocationResult(
       position: result.position,
       village: village,
     );
+  }
+
+  /// Read last cached location for instant UI while fresh GPS loads.
+  Future<LocationResult?> getCachedLocation() async {
+    final prefs = await SharedPreferences.getInstance();
+    final lat = prefs.getDouble(_cacheLatKey);
+    final lng = prefs.getDouble(_cacheLngKey);
+    final updatedAtMs = prefs.getInt(_cacheUpdatedAtMsKey);
+    if (lat == null || lng == null || updatedAtMs == null) return null;
+
+    final age = DateTime.now().millisecondsSinceEpoch - updatedAtMs;
+    if (age > _cacheMaxAge.inMilliseconds) return null;
+
+    final villageName = prefs.getString(_cacheVillageKey);
+    final cellName = prefs.getString(_cacheCellKey);
+    final sectorName = prefs.getString(_cacheSectorKey);
+    VillageLocation? village;
+    if (villageName != null && cellName != null && sectorName != null) {
+      village = VillageLocation(village: villageName, cell: cellName, sector: sectorName);
+    }
+
+    return LocationResult(
+      cachedLatitude: lat,
+      cachedLongitude: lng,
+      village: village,
+    );
+  }
+
+  Future<void> _saveLocationCache({
+    required double latitude,
+    required double longitude,
+    VillageLocation? village,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_cacheLatKey, latitude);
+    await prefs.setDouble(_cacheLngKey, longitude);
+    await prefs.setInt(_cacheUpdatedAtMsKey, DateTime.now().millisecondsSinceEpoch);
+    if (village != null) {
+      await prefs.setString(_cacheVillageKey, village.village);
+      await prefs.setString(_cacheCellKey, village.cell);
+      await prefs.setString(_cacheSectorKey, village.sector);
+    }
   }
 }
 
@@ -169,17 +225,22 @@ class LocationService {
 class LocationResult {
   final Position? position;
   final VillageLocation? village;
+  final double? cachedLatitude;
+  final double? cachedLongitude;
   final String? error;
   final LocationErrorType? errorType;
 
   LocationResult({
     this.position,
     this.village,
+    this.cachedLatitude,
+    this.cachedLongitude,
     this.error,
     this.errorType,
   });
 
-  bool get hasPosition => position != null;
+  bool get hasPosition =>
+      position != null || (cachedLatitude != null && cachedLongitude != null);
   bool get hasVillage => village != null;
   bool get hasError => error != null;
 
@@ -188,8 +249,8 @@ class LocationResult {
       errorType == LocationErrorType.serviceDisabled ||
       errorType == LocationErrorType.permissionDeniedForever;
 
-  double? get latitude => position?.latitude;
-  double? get longitude => position?.longitude;
+  double? get latitude => position?.latitude ?? cachedLatitude;
+  double? get longitude => position?.longitude ?? cachedLongitude;
   double? get accuracy => position?.accuracy;
 
   /// Human-readable location string.

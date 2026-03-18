@@ -148,6 +148,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Widget _buildStatusCard(ReportDetailItem r) {
     final color = _statusColor(r.ruleStatus);
+    final passedAllVerifications = _hasPassedAllVerifications(r.ruleStatus);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -183,6 +184,25 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                   style:
                       const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
+                if (passedAllVerifications) ...[
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      const Icon(Icons.verified, size: 14, color: AppColors.ok),
+                      const SizedBox(width: 6),
+                      const Expanded(
+                        child: Text(
+                          'Passed all verifications and accepted for action.',
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.ok,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ],
             ),
           ),
@@ -199,6 +219,9 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
     ];
     if (r.trustScore != null) {
       rows.add(_infoRow('Trust score', '${r.trustScore!.round()} / 100'));
+    }
+    if (_hasPassedAllVerifications(r.ruleStatus)) {
+      rows.add(_infoRow('Verification', 'Passed all verifications'));
     }
     if (r.contextTags.isNotEmpty) {
       rows.add(_infoRow('Tags', r.contextTags.join(', ')));
@@ -444,16 +467,26 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildTimeline(ReportDetailItem r) {
-    final validated = r.ruleStatus != 'pending';
-    final verified = r.ruleStatus == 'confirmed' ||
-        r.ruleStatus == 'verified' ||
-        r.ruleStatus == 'trusted';
+    final normalized = r.ruleStatus.toLowerCase();
+    final validated = normalized != 'pending';
+    final status = r.ruleStatus.toLowerCase();
+    final verified = status == 'confirmed' ||
+      status == 'verified' ||
+      status == 'trusted' ||
+      status == 'passed' ||
+      status == 'ai_verified';
+    final passedAll = _hasPassedAllVerifications(status);
 
     final steps = [
       _Step('Submitted', _formatDate(r.reportedAt), true, true),
       _Step('Rule Validation', validated ? 'Complete' : 'Processing...', validated, !validated),
       _Step('AI Verification', verified ? 'Verified' : 'Pending', verified, !verified && validated),
-      _Step('Police Review', 'Waiting', false, false),
+      _Step(
+        'Police Review',
+        passedAll ? 'Complete' : (validated ? 'In Queue' : 'Waiting'),
+        passedAll,
+        !passedAll && validated,
+      ),
     ];
 
     return _card([
@@ -559,6 +592,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
 
 
+  bool _hasPassedAllVerifications(String status) {
+    final s = status.toLowerCase();
+    return s == 'confirmed' ||
+        s == 'verified' ||
+        s == 'trusted' ||
+        s == 'passed';
+  }
+
   Color _statusColor(String status) {
     final s = status.toLowerCase();
     if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed') {
@@ -581,7 +622,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   String _statusDescription(String status) {
     final s = status.toLowerCase();
-    if (s == 'confirmed' || s == 'verified') {
+    if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed' || s == 'ai_verified') {
       return 'This report has been verified and accepted.';
     }
     if (s == 'flagged') {

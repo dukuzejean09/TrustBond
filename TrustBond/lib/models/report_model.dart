@@ -44,9 +44,9 @@ class ReportListItem {
       longitude: _doubleFromJson(json['longitude']),
       reportedAt: DateTime.parse(_stringFromJson(json['reported_at'])),
       ruleStatus: json['rule_status'] as String? ?? 'pending',
-      trustScore: (json['trust_score'] as num?)?.toDouble(),
+      trustScore: _nullableDoubleFromJson(json['trust_score']),
       reportNumber: json['report_number'] as String?,
-      contextTags: tags is List ? (tags as List).map((e) => e.toString()).toList() : [],
+      contextTags: tags is List ? tags.map((e) => e.toString()).toList() : [],
       isFlagged: json['is_flagged'] as bool?,
       flagReason: json['flag_reason'] as String?,
     );
@@ -77,8 +77,8 @@ class ReportEvidenceItem {
       fileUrl: _stringFromJson(json['file_url']),
       fileType: json['file_type'] as String? ?? 'photo',
       aiQualityLabel: json['ai_quality_label'] as String?,
-      blurScore: (json['blur_score'] as num?)?.toDouble(),
-      tamperScore: (json['tamper_score'] as num?)?.toDouble(),
+      blurScore: _nullableDoubleFromJson(json['blur_score']),
+      tamperScore: _nullableDoubleFromJson(json['tamper_score']),
     );
   }
 }
@@ -135,9 +135,9 @@ class ReportDetailItem {
       evidenceFiles: evidenceList
           .map((e) => ReportEvidenceItem.fromJson(e as Map<String, dynamic>))
           .toList(),
-      trustScore: (json['trust_score'] as num?)?.toDouble(),
+      trustScore: _nullableDoubleFromJson(json['trust_score']),
       reportNumber: json['report_number'] as String?,
-      contextTags: tags is List ? (tags as List).map((e) => e.toString()).toList() : [],
+      contextTags: tags is List ? tags.map((e) => e.toString()).toList() : [],
       isFlagged: json['is_flagged'] as bool?,
       flagReason: json['flag_reason'] as String?,
     );
@@ -149,6 +149,13 @@ double _doubleFromJson(dynamic value) {
   if (value is num) return value.toDouble();
   if (value is String) return double.tryParse(value) ?? 0.0;
   return 0.0;
+}
+
+double? _nullableDoubleFromJson(dynamic value) {
+  if (value == null) return null;
+  if (value is num) return value.toDouble();
+  if (value is String) return double.tryParse(value);
+  return null;
 }
 
 int _intFromJson(dynamic value) {

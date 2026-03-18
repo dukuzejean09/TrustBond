@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'dart:ui' as ui;
 import '../config/theme.dart';
 import '../models/musanze_map_data.dart';
 import '../services/location_service.dart';
@@ -56,12 +55,25 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   List<Map<String, dynamic>> _villages = [];
   bool _loadingHierarchy = false;
 
+  // Cached map layers so lightweight state updates (location, hierarchy, hotspots)
+  // do not rebuild every polygon path.
+  List<Polygon> _cachedPolygons = const [];
+  List<Marker> _cachedSectorLabels = const [];
+  MusanzeMapData? _cachedLayerMapData;
+  String? _cachedLayerSector;
+
+  // AI prediction data derived from recent hotspot detections.
+  List<Map<String, dynamic>> _hotspots = [];
+  bool _loadingPredictions = false;
+  String? _predictionError;
+
   @override
   void initState() {
     super.initState();
     _showDetailedView = widget.showDetailedView;
     _loadMap();
     _loadSectorsFromBackend();
+    _loadHotspots();
     _getUserLocation();
     
     // If coming from home screen with detailed view, show all sectors initially
@@ -72,6 +84,27 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
         setState(() {
           _currentDetailLevel = 'sector'; // Start at sector level for detailed view
         });
+      });
+    }
+  }
+
+  Future<void> _loadHotspots() async {
+    setState(() {
+      _loadingPredictions = true;
+      _predictionError = null;
+    });
+    try {
+      final hotspots = await _api.getPublicHotspots(limit: 60);
+      if (!mounted) return;
+      setState(() {
+        _hotspots = hotspots.cast<Map<String, dynamic>>();
+        _loadingPredictions = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loadingPredictions = false;
+        _predictionError = 'Could not load AI predictions.';
       });
     }
   }
@@ -178,6 +211,7 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
           _mapData = data;
           _loading = false;
         });
+        _refreshCachedLayers();
         debugPrint('Map data loaded and state updated');
       }
     } catch (e) {
@@ -256,6 +290,110 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
     return markers;
   }
 
+  void _refreshCachedLayers() {
+    if (_mapData == null) {
+      _cachedPolygons = const [];
+      _cachedSectorLabels = const [];
+      _cachedLayerMapData = null;
+      _cachedLayerSector = null;
+      return;
+    }
+    _cachedPolygons = _buildPolygons();
+    _cachedSectorLabels = _buildSectorLabels();
+    _cachedLayerMapData = _mapData;
+    _cachedLayerSector = _selectedSector;
+  }
+
+  void _updateLayersIfNeeded() {
+    if (_cachedLayerMapData != _mapData || _cachedLayerSector != _selectedSector) {
+      _refreshCachedLayers();
+    }
+  }
+
+  double _numToDouble(dynamic value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  int _numToInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+
+  List<Map<String, dynamic>> _predictionsForView() {
+    if (_hotspots.isEmpty) return const [];
+    final mapData = _mapData;
+    final source = _hotspots;
+    final List<Map<String, dynamic>> filtered = [];
+
+    for (final hotspot in source) {
+      final lat = _numToDouble(hotspot['center_lat']);
+      final lng = _numToDouble(hotspot['center_long']);
+      final resolved = mapData?.findNearestVillage(lat, lng);
+      final sector = resolved?.sector;
+
+      if (_selectedSector != null && sector != _selectedSector) {
+        continue;
+      }
+
+      filtered.add({
+        ...hotspot,
+        'resolved_sector': sector,
+        'resolved_cell': resolved?.cell,
+        'resolved_village': resolved?.village,
+      });
+    }
+
+    filtered.sort((a, b) {
+      final riskA = (a['risk_level'] ?? '').toString();
+      final riskB = (b['risk_level'] ?? '').toString();
+      final rankA = riskA == 'high' ? 3 : (riskA == 'medium' ? 2 : 1);
+      final rankB = riskB == 'high' ? 3 : (riskB == 'medium' ? 2 : 1);
+      if (rankA != rankB) return rankB.compareTo(rankA);
+      return _numToInt(b['incident_count']).compareTo(_numToInt(a['incident_count']));
+    });
+
+    return filtered.take(5).toList();
+  }
+
+  Color _riskColor(String riskLevel) {
+    switch (riskLevel.toLowerCase()) {
+      case 'high':
+        return AppColors.danger;
+      case 'medium':
+        return AppColors.warn;
+      default:
+        return AppColors.accent;
+    }
+  }
+
+  String _riskLabel(String riskLevel) {
+    final level = riskLevel.toLowerCase();
+    if (level == 'high') return 'High Risk';
+    if (level == 'medium') return 'Medium Risk';
+    return 'Low Risk';
+  }
+
+  String _predictionRecommendation(Map<String, dynamic> hotspot) {
+    final risk = (hotspot['risk_level'] ?? '').toString().toLowerCase();
+    final incidents = _numToInt(hotspot['incident_count']);
+    final area = hotspot['resolved_village']?.toString() ??
+        hotspot['resolved_cell']?.toString() ??
+        hotspot['resolved_sector']?.toString() ??
+        'this area';
+
+    if (risk == 'high') {
+      return 'Incidents are emerging in $area. Avoid isolated routes and report suspicious activity immediately.';
+    }
+    if (risk == 'medium') {
+      return 'Security pressure is building around $area ($incidents incidents). Stay alert and prefer busy roads.';
+    }
+    return 'Situation around $area is currently stable. Continue normal caution and keep alerts enabled.';
+  }
+
   /// Build user location marker.
   List<Marker> _buildUserMarker() {
     if (_userLat == null || _userLng == null) return [];
@@ -316,10 +454,7 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
               flex: 3,
               child: _buildMap(),
             ),
-            Container(
-              height: 150,
-              child: _buildSectorInfo(),
-            ),
+            SizedBox(height: 220, child: _buildSectorInfo()),
           ],
         ),
       ),
@@ -453,6 +588,8 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   }
 
   Widget _buildMap() {
+    _updateLayersIfNeeded();
+
     if (_loading) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.accent));
@@ -532,9 +669,9 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
                 child: const SizedBox.expand(),
               ),
               // Village polygon overlays
-              PolygonLayer(polygons: _buildPolygons()),
+              PolygonLayer(polygons: _cachedPolygons),
               // Sector labels
-              MarkerLayer(markers: _buildSectorLabels()),
+              MarkerLayer(markers: _cachedSectorLabels),
               // User GPS marker
               MarkerLayer(markers: _buildUserMarker()),
             ],
@@ -667,15 +804,144 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   }
 
   Widget _buildSectorInfo() {
-    // Always return a visible container that fills the space
     return Container(
-      height: 150,
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.surface2,
         border: Border(top: BorderSide(color: AppColors.border.withValues(alpha: 0.3))),
       ),
-      child: _buildSectorContent(),
+      child: _buildPredictionContent(),
+    );
+  }
+
+  Widget _buildPredictionContent() {
+    if (_loadingPredictions) {
+      return const Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2),
+            SizedBox(height: 8),
+            Text('Generating AI security predictions...',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+          ],
+        ),
+      );
+    }
+
+    if (_predictionError != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('Could not load predictions',
+                style: TextStyle(fontSize: 12, color: AppColors.muted)),
+            const SizedBox(height: 8),
+            TextButton(onPressed: _loadHotspots, child: const Text('Retry')),
+          ],
+        ),
+      );
+    }
+
+    final predictions = _predictionsForView();
+    if (predictions.isEmpty) {
+      return const Center(
+        child: Text(
+          'No active AI risk predictions for this area yet.',
+          style: TextStyle(fontSize: 12, color: AppColors.muted),
+          textAlign: TextAlign.center,
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'AI Security Forecast',
+          style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          _selectedSector == null
+              ? 'Recommendations based on district-wide hotspot trends'
+              : 'Recommendations for $_selectedSector',
+          style: const TextStyle(fontSize: 11, color: AppColors.muted),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: ListView.separated(
+            itemCount: predictions.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 8),
+            itemBuilder: (context, index) {
+              final hotspot = predictions[index];
+              final risk = (hotspot['risk_level'] ?? 'low').toString();
+              final incidentType = (hotspot['incident_type_name'] ?? 'Incident').toString();
+              final incidents = _numToInt(hotspot['incident_count']);
+              final color = _riskColor(risk);
+              final area = hotspot['resolved_village']?.toString() ??
+                  hotspot['resolved_cell']?.toString() ??
+                  hotspot['resolved_sector']?.toString() ??
+                  'Unknown area';
+
+              return Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AppColors.card,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: color.withValues(alpha: 0.35)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            '$incidentType in $area',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.13),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Text(
+                            _riskLabel(risk),
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: color,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 5),
+                    Text(
+                      '$incidents incidents detected recently',
+                      style: const TextStyle(fontSize: 10, color: AppColors.muted),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      _predictionRecommendation(hotspot),
+                      style: const TextStyle(fontSize: 10.5, color: AppColors.text),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
