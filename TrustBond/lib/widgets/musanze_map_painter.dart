@@ -233,49 +233,12 @@ class MusanzeMapPreviewPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // Focus on user's current area when available (cell-level zoom),
-    // otherwise keep full district preview.
-    final focusedFeatures = userVillage == null
-        ? mapData.features
-        : mapData.features
-            .where((f) =>
-                f.sector == userVillage!.sector &&
-                f.cell == userVillage!.cell)
-            .toList();
-
-    final previewFeatures = focusedFeatures.isEmpty ? mapData.features : focusedFeatures;
-
-    double minLng = double.infinity;
-    double maxLng = -double.infinity;
-    double minLat = double.infinity;
-    double maxLat = -double.infinity;
-
-    for (final f in previewFeatures) {
-      for (final ring in f.rings) {
-        for (final pt in ring) {
-          if (pt.dx < minLng) minLng = pt.dx;
-          if (pt.dx > maxLng) maxLng = pt.dx;
-          if (pt.dy < minLat) minLat = pt.dy;
-          if (pt.dy > maxLat) maxLat = pt.dy;
-        }
-      }
-    }
-
-    // Fallback to full map bounds if focused data is unexpectedly empty.
-    if (minLng == double.infinity || maxLng == -double.infinity ||
-        minLat == double.infinity || maxLat == -double.infinity) {
-      minLng = mapData.bounds.minLng;
-      maxLng = mapData.bounds.maxLng;
-      minLat = mapData.bounds.minLat;
-      maxLat = mapData.bounds.maxLat;
-    }
-
-    // Add small padding around focused bounds.
-    const pad = 0.0025;
-    minLng -= pad;
-    maxLng += pad;
-    minLat -= pad;
-    maxLat += pad;
+    // Keep the exact district-wide framing so Home preview matches the main Safety Map.
+    final previewFeatures = mapData.features;
+    final minLng = mapData.bounds.minLng;
+    final maxLng = mapData.bounds.maxLng;
+    final minLat = mapData.bounds.minLat;
+    final maxLat = mapData.bounds.maxLat;
 
     final lngSpan = (maxLng - minLng).abs().clamp(0.0001, double.infinity);
     final latSpan = (maxLat - minLat).abs().clamp(0.0001, double.infinity);
@@ -302,23 +265,29 @@ class MusanzeMapPreviewPainter extends CustomPainter {
       return Offset(x, y);
     }
 
-    // Draw polygons for the focused region only.
+    // Draw all villages in Musanze district.
     for (final feature in previewFeatures) {
       final baseColor = sectorColor(feature.sector);
       final isUserCell = userVillage != null &&
           feature.sector == userVillage!.sector &&
           feature.cell == userVillage!.cell;
+      final isUserSector = userVillage != null &&
+          feature.sector == userVillage!.sector;
       final fillPaint = Paint()
         ..style = PaintingStyle.fill
         ..color = isUserCell
-            ? baseColor.withValues(alpha: 0.22)
-            : baseColor.withValues(alpha: 0.10);
+            ? baseColor.withValues(alpha: 0.24)
+            : isUserSector
+                ? baseColor.withValues(alpha: 0.14)
+                : baseColor.withValues(alpha: 0.08);
       final strokePaint = Paint()
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isUserCell ? 0.9 : 0.4
+        ..strokeWidth = isUserCell ? 0.95 : (isUserSector ? 0.55 : 0.35)
         ..color = isUserCell
             ? baseColor.withValues(alpha: 0.7)
-            : baseColor.withValues(alpha: 0.3);
+            : isUserSector
+                ? baseColor.withValues(alpha: 0.45)
+                : baseColor.withValues(alpha: 0.24);
 
       for (final ring in feature.rings) {
         if (ring.length < 3) continue;
@@ -335,7 +304,7 @@ class MusanzeMapPreviewPainter extends CustomPainter {
       }
     }
 
-    // Sector labels (small) for sectors visible in this preview scope.
+    // Sector labels for the whole district.
     final visibleSectors = previewFeatures.map((f) => f.sector).toSet().toList()..sort();
     for (final sector in visibleSectors) {
       final centroid = mapData.sectorCentroid(sector);
@@ -360,10 +329,13 @@ class MusanzeMapPreviewPainter extends CustomPainter {
 
     // Draw sector hotspots
     for (final hotspot in sectorHotspots) {
-      final latitude = hotspot['latitude'] as double?;
-      final longitude = hotspot['longitude'] as double?;
+      final latRaw = hotspot['center_lat'] ?? hotspot['latitude'];
+      final lngRaw = hotspot['center_long'] ?? hotspot['longitude'];
+      final latitude = latRaw is num ? latRaw.toDouble() : null;
+      final longitude = lngRaw is num ? lngRaw.toDouble() : null;
       final riskLevel = hotspot['risk_level'] as String?;
-      final incidentCount = hotspot['incident_count'] as int?;
+      final incidentCountRaw = hotspot['incident_count'];
+      final incidentCount = incidentCountRaw is num ? incidentCountRaw.toInt() : null;
       
       if (latitude == null || longitude == null) continue;
       
@@ -452,6 +424,7 @@ class MusanzeMapPreviewPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(MusanzeMapPreviewPainter oldDelegate) =>
+      oldDelegate.mapData.features.length != mapData.features.length ||
       oldDelegate.userLatitude != userLatitude ||
       oldDelegate.userLongitude != userLongitude ||
       oldDelegate.userVillage?.village != userVillage?.village ||

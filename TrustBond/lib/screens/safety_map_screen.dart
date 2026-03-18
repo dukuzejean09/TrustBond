@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -72,7 +73,6 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
     super.initState();
     _showDetailedView = widget.showDetailedView;
     _loadMap();
-    _loadSectorsFromBackend();
     _loadHotspots();
     _getUserLocation();
     
@@ -94,7 +94,7 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
       _predictionError = null;
     });
     try {
-      final hotspots = await _api.getPublicHotspots(limit: 60);
+      final hotspots = await _api.getPublicHotspots(limit: 30);
       if (!mounted) return;
       setState(() {
         _hotspots = hotspots.cast<Map<String, dynamic>>();
@@ -193,33 +193,88 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
   }
 
   Future<void> _loadMap() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
     try {
-      debugPrint('Starting to load map data...');
-      MusanzeMapData data;
-      try {
-        final geo = await _api.getPublicLocationsGeoJson(locationType: 'village', limit: 10000);
-        debugPrint('Loaded GeoJSON with ${geo.length} features');
-        data = MusanzeMapData.parse(jsonEncode(geo));
-        debugPrint('Parsed map data with ${data.sectors.length} sectors');
-      } catch (e) {
-        debugPrint('Failed to load GeoJSON, falling back to bundled data: $e');
-        data = await MusanzeMapData.load();
-        debugPrint('Loaded bundled map data with ${data.sectors.length} sectors');
-      }
+      // Fast path: render the bundled GeoJSON immediately.
+      final data = await MusanzeMapData.load();
       if (mounted) {
         setState(() {
           _mapData = data;
           _loading = false;
         });
         _refreshCachedLayers();
-        debugPrint('Map data loaded and state updated');
       }
+
+      // Slow path: refresh with backend polygons in background when available.
+      unawaited(_refreshMapFromBackend());
     } catch (e) {
-      debugPrint('Failed to load map: $e');
+      // Fallback in case bundled asset fails unexpectedly.
+      try {
+        final geo = await _api
+            .getPublicLocationsGeoJson(locationType: 'village', limit: 10000)
+            .timeout(const Duration(seconds: 10));
+        final data = MusanzeMapData.parse(jsonEncode(geo));
+        if (!mounted) return;
+        setState(() {
+          _mapData = data;
+          _loading = false;
+          _error = null;
+        });
+        _refreshCachedLayers();
+      } catch (_) {
+        if (!mounted) return;
+        setState(() {
+          _error = 'Could not load map data.';
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _refreshMapFromBackend() async {
+    try {
+      final geo = await _api
+          .getPublicLocationsGeoJson(locationType: 'village', limit: 10000)
+          .timeout(const Duration(seconds: 10));
+      final data = MusanzeMapData.parse(jsonEncode(geo));
+
+      if (!mounted) return;
+      final current = _mapData;
+      final changed =
+          current == null ||
+          current.features.length != data.features.length ||
+          current.sectors.length != data.sectors.length;
+
+      if (changed) {
+        setState(() {
+          _mapData = data;
+        });
+        _refreshCachedLayers();
+      }
+    } catch (_) {
+      // Keep rendered local map if backend refresh fails or times out.
+    }
+  }
+
+  Future<void> _loadSectorsFromBackend() async {
+    setState(() => _loadingHierarchy = true);
+    try {
+      final res = await _api.getPublicLocations(locationType: 'sector', limit: 1000);
+      if (!mounted) return;
+      debugPrint('Loaded ${res.length} sectors from backend');
+      setState(() {
+        _sectors = res.cast<Map<String, dynamic>>();
+        _loadingHierarchy = false;
+      });
+    } catch (e) {
+      debugPrint('Failed to load sectors: $e');
       if (mounted) {
         setState(() {
-          _error = e.toString();
-          _loading = false;
+          _loadingHierarchy = false;
         });
       }
     }
@@ -386,12 +441,12 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
         'this area';
 
     if (risk == 'high') {
-      return 'Incidents are emerging in $area. Avoid isolated routes and report suspicious activity immediately.';
+      return 'High activity detected near $area. Avoid moving alone at night, stay on well-lit roads, and contact local authorities immediately if you notice danger.';
     }
     if (risk == 'medium') {
-      return 'Security pressure is building around $area ($incidents incidents). Stay alert and prefer busy roads.';
+      return 'Moderate risk around $area with $incidents recent incidents. Stay alert, travel in groups where possible, and avoid shortcuts through isolated areas.';
     }
-    return 'Situation around $area is currently stable. Continue normal caution and keep alerts enabled.';
+    return 'Current signals around $area are stable. Maintain normal caution, keep your phone reachable, and report suspicious behavior early.';
   }
 
   /// Build user location marker.
@@ -506,14 +561,8 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
 
   Widget _buildSectorFilters() {
     if (_mapData == null) return const SizedBox.shrink();
-    
-    // Use backend sectors if available, otherwise use map data sectors
-    final sectorNames = _sectors.isNotEmpty
-        ? _sectors
-            .map((s) => (s['location_name'] ?? '').toString())
-            .where((n) => n.isNotEmpty)
-            .toList()
-        : _mapData!.sectors;
+
+    final sectorNames = _mapData!.sectors;
     
     final sectors = ['All', ...sectorNames];
     debugPrint('Building sector filters with ${sectors.length} sectors');
@@ -534,18 +583,9 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
           return GestureDetector(
             onTap: () {
               final newSector = i == 0 ? null : name;
-              int? sectorId;
-              if (newSector != null && _sectors.isNotEmpty) {
-                final match = _sectors.firstWhere(
-                  (s) => (s['location_name'] ?? '').toString() == newSector,
-                  orElse: () => const {},
-                );
-                final id = match['location_id'];
-                if (id is int) sectorId = id;
-              }
               setState(() {
                 _selectedSector = newSector;
-                _selectedSectorId = sectorId;
+                _selectedSectorId = null;
                 _selectedCellId = null;
                 _selectedCellName = null;
                 _cells = [];
@@ -555,9 +595,6 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
                 final centroid = _mapData!.sectorCentroid(name);
                 _mapController.move(
                     LatLng(centroid.dy, centroid.dx), 14.5);
-                if (sectorId != null) {
-                  _loadCells(sectorId);
-                }
               } else {
                 _mapController.move(_musanzeCenter, _initialZoom);
               }

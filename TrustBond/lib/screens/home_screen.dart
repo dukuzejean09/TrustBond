@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import '../config/theme.dart';
 import '../widgets/shared_widgets.dart';
@@ -30,7 +31,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _loading = true;
   int _totalReports = 0;
   int _verifiedReports = 0;
-  double _trustScore = 0;
+  double _trustScore = 50;
   MusanzeMapData? _mapData;
 
   // GPS location state
@@ -38,6 +39,7 @@ class _HomeScreenState extends State<HomeScreen> {
   double? _userLng;
   VillageLocation? _userVillage;
   String? _locationError;
+  Timer? _locationRetryTimer;
 
   // ML-related state
   Map<String, MLPrediction> _mlPredictions = {};
@@ -55,6 +57,12 @@ class _HomeScreenState extends State<HomeScreen> {
     _loadData();
   }
 
+  @override
+  void dispose() {
+    _locationRetryTimer?.cancel();
+    super.dispose();
+  }
+
   Future<void> _loadData() async {
     setState(() => _loading = true);
     // Load map data in parallel
@@ -62,14 +70,19 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted) setState(() => _mapData = data);
     }).catchError((_) {});
 
-    // Show cached location instantly (if available), then refresh with live GPS.
+    // Show cached location instantly (if available), then refine with live GPS.
     _locationService.getCachedLocation().then((cached) {
       if (!mounted || cached == null || !cached.hasPosition) return;
       setState(() {
         _userLat = cached.latitude;
         _userLng = cached.longitude;
         _userVillage = cached.village;
+        _locationError = null;
       });
+
+      if (_userVillage == null && _userLat != null && _userLng != null) {
+        _resolveVillageFromCoordinates(_userLat!, _userLng!);
+      }
     }).catchError((_) {});
 
     // Get user GPS location and village in background.
@@ -82,12 +95,19 @@ class _HomeScreenState extends State<HomeScreen> {
           _userVillage = result.village;
           _locationError = null;
         });
+
+        if (result.village == null && result.latitude != null && result.longitude != null) {
+          _resolveVillageFromCoordinates(result.latitude!, result.longitude!);
+        }
       } else {
         setState(() {
-          _locationError = result.error;
+          // Keep Musanze as fallback and continue background refinement.
+          _locationError = null;
         });
       }
     }).catchError((_) {});
+
+    _startLocationRefinement();
 
     // Load sector-level hotspots for overview
     _loadSectorHotspots();
@@ -103,6 +123,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     _deviceId = deviceId;
     try {
+      double? profileTrustScore;
+      try {
+        final hash = await _deviceService.getDeviceHash();
+        final profile = await _apiService.getDeviceProfile(hash);
+        profileTrustScore = (profile['device_trust_score'] as num?)?.toDouble();
+      } catch (e) {
+        debugPrint('Failed to load device profile trust score: $e');
+      }
+
       final list = await _apiService.getMyReports(deviceId);
       final reports = list
           .map((e) => ReportListItem.fromJson(e as Map<String, dynamic>))
@@ -111,7 +140,8 @@ class _HomeScreenState extends State<HomeScreen> {
           .where((r) =>
               r.ruleStatus == 'confirmed' ||
               r.ruleStatus == 'verified' ||
-              r.ruleStatus == 'trusted')
+              r.ruleStatus == 'trusted' ||
+              r.ruleStatus == 'passed')
           .length;
 
       // Load ML predictions for recent reports
@@ -130,13 +160,16 @@ class _HomeScreenState extends State<HomeScreen> {
         mlTrustScore = totalScore / mlPredictions.length;
       }
 
+      final ratioScore = reports.isEmpty
+          ? 50.0
+          : ((verified / reports.length) * 100).clamp(0.0, 100.0);
+      final resolvedDeviceTrust = ((profileTrustScore ?? ratioScore)).clamp(0.0, 100.0);
+
       setState(() {
         _recentReports = reports.take(3).toList();
         _totalReports = reports.length;
         _verifiedReports = verified;
-        _trustScore = reports.isEmpty
-            ? 50
-            : ((verified / reports.length) * 100).clamp(0, 100);
+        _trustScore = resolvedDeviceTrust;
         _mlPredictions = mlPredictions;
         _mlInsights = mlInsights;
         _mlTrustScore = mlTrustScore;
@@ -147,6 +180,76 @@ class _HomeScreenState extends State<HomeScreen> {
       debugPrint('Failed to load reports on home: $e');
       setState(() => _loading = false);
     }
+  }
+
+  void _startLocationRefinement() {
+    _locationRetryTimer?.cancel();
+    int attempts = 0;
+
+    Future<void> attemptRefine() async {
+      if (!mounted || _userVillage != null) return;
+
+      // First, resolve village quickly from already-known coordinates.
+      if (_userLat != null && _userLng != null) {
+        await _resolveVillageFromCoordinates(_userLat!, _userLng!);
+        if (!mounted || _userVillage != null) return;
+      }
+
+      // Then ask GPS again to refresh coordinates if still unresolved.
+      final result = await _locationService.getCurrentPosition();
+      if (!mounted || !result.hasPosition) return;
+      final lat = result.latitude;
+      final lng = result.longitude;
+      if (lat == null || lng == null) return;
+
+      setState(() {
+        _userLat = lat;
+        _userLng = lng;
+      });
+
+      await _resolveVillageFromCoordinates(lat, lng);
+    }
+
+    attemptRefine();
+
+    _locationRetryTimer = Timer.periodic(const Duration(seconds: 2), (timer) async {
+      if (!mounted || _userVillage != null) {
+        timer.cancel();
+        return;
+      }
+
+      attempts += 1;
+      if (attempts >= 6) {
+        timer.cancel();
+        return;
+      }
+
+      await attemptRefine();
+    });
+  }
+
+  Future<void> _resolveVillageFromCoordinates(double latitude, double longitude) async {
+    try {
+      final village = await _locationService.getVillageFromCoordinates(latitude, longitude);
+      if (!mounted || village == null) return;
+      setState(() {
+        _userVillage = village;
+        _locationError = null;
+      });
+      _locationRetryTimer?.cancel();
+    } catch (_) {
+      // Keep retrying silently.
+    }
+  }
+
+  String _homeLocationLine() {
+    if (_userVillage != null) {
+      return '${_userVillage!.village}, ${_userVillage!.cell}';
+    }
+    if (_userLat != null && _userLng != null) {
+      return 'Musanze District · refining village details...';
+    }
+    return 'Musanze District · getting current GPS location...';
   }
 
   Future<void> _loadSectorHotspots() async {
@@ -224,38 +327,16 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  _userVillage != null
-                      ? '${_userVillage!.village}, ${_userVillage!.cell}'
-                      : (_userLat != null && _userLng != null)
-                          ? '${_userLat!.toStringAsFixed(5)}, ${_userLng!.toStringAsFixed(5)}'
-                          : (_locationError ?? 'Detecting current location...'),
+                  _homeLocationLine(),
                   style: const TextStyle(fontSize: 11, color: AppColors.muted)),
                 RichText(
-                  text: _userVillage != null
-                      ? const TextSpan(
-                          style:
-                              TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
-                          children: [
-                            TextSpan(
-                                text: 'Musanze ',
-                                style: TextStyle(color: AppColors.text)),
-                            TextSpan(
-                                text: 'District',
-                                style: TextStyle(color: AppColors.accent)),
-                          ],
-                        )
-                      : const TextSpan(
-                          style:
-                              TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
-                          children: [
-                            TextSpan(
-                                text: 'Location ',
-                                style: TextStyle(color: AppColors.text)),
-                            TextSpan(
-                                text: 'Unknown',
-                                style: TextStyle(color: AppColors.warn)),
-                          ],
-                        ),
+                  text: const TextSpan(
+                    style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700),
+                    children: [
+                      TextSpan(text: 'Musanze ', style: TextStyle(color: AppColors.text)),
+                      TextSpan(text: 'District', style: TextStyle(color: AppColors.accent)),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -420,7 +501,7 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
       child: Container(
-        height: 180,
+        height: 220,
         decoration: BoxDecoration(
           color: AppColors.surface2,
           border: Border.all(color: AppColors.border),
@@ -430,14 +511,15 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Stack(
           children: [
             if (_mapData != null)
-              CustomPaint(
-                size: Size.infinite,
-                painter: MusanzeMapPreviewPainter(
-                  mapData: _mapData!,
-                  userLatitude: _userLat,
-                  userLongitude: _userLng,
-                  userVillage: _userVillage,
-                  sectorHotspots: _sectorHotspots,
+              Positioned.fill(
+                child: CustomPaint(
+                  painter: MusanzeMapPreviewPainter(
+                    mapData: _mapData!,
+                    userLatitude: _userLat,
+                    userLongitude: _userLng,
+                    userVillage: _userVillage,
+                    sectorHotspots: _sectorHotspots,
+                  ),
                 ),
               )
             else
@@ -456,10 +538,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 child: Text(
                   _userVillage != null
-                      ? '📍 ${_userVillage!.village}, ${_userVillage!.sector}'
+                      ? '📍 You are in ${_userVillage!.village}, ${_userVillage!.cell}, ${_userVillage!.sector}'
                     : (_userLat != null && _userLng != null)
-                      ? '📍 Current GPS location detected'
-                      : '📍 Detecting current location... · ${_mapData?.sectors.length ?? 0} sectors',
+                      ? '📍 Musanze detected · fetching village/cell details...'
+                      : '📍 Musanze District · getting exact location...',
                   style: const TextStyle(
                       fontSize: 9,
                       color: AppColors.muted,
