@@ -260,26 +260,6 @@ class _SafetyMapScreenState extends State<SafetyMapScreen> {
     }
   }
 
-  Future<void> _loadSectorsFromBackend() async {
-    setState(() => _loadingHierarchy = true);
-    try {
-      final res = await _api.getPublicLocations(locationType: 'sector', limit: 1000);
-      if (!mounted) return;
-      debugPrint('Loaded ${res.length} sectors from backend');
-      setState(() {
-        _sectors = res.cast<Map<String, dynamic>>();
-        _loadingHierarchy = false;
-      });
-    } catch (e) {
-      debugPrint('Failed to load sectors: $e');
-      if (mounted) {
-        setState(() {
-          _loadingHierarchy = false;
-        });
-      }
-    }
-  }
-
   /// Build polygon layers from GeoJSON data.
   List<Polygon> _buildPolygons() {
     if (_mapData == null) return [];
