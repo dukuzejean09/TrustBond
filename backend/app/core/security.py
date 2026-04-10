@@ -30,3 +30,11 @@ def create_access_token(subject: str, role: str, expires_delta: Optional[timedel
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
     return encoded_jwt
 
+
+def decode_access_token(token: str) -> Optional[dict[str, Any]]:
+    try:
+        payload = jwt.decode(token, settings.secret_key, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        return None
+

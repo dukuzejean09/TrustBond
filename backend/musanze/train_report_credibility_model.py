@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 
 import joblib
@@ -16,12 +17,13 @@ from sklearn.metrics import (
 from sklearn.model_selection import RandomizedSearchCV, train_test_split
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
-from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
 
 ROOT = Path(__file__).resolve().parent
 DATA_PATH = ROOT / "report_credibility_training.csv"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 METADATA_PATH = ROOT / "TrustBond.json"
+MODEL_VERSION = "report_credibility_rf_v1"
 
 
 def load_data(path: Path) -> pd.DataFrame:
@@ -46,6 +48,9 @@ def prepare_features(df: pd.DataFrame):
         "decision",
         "confidence_level",
         "used_for_training",
+        "is_flagged",
+        "rule_status",
+        "flag_reason",
     }
     feature_cols = [c for c in df.columns if c not in drop_cols]
 
@@ -71,12 +76,12 @@ def extract_feature_importances(
     model: Pipeline, numeric_cols, categorical_cols
 ) -> list[dict]:
     """
-    Extract feature importances from the fitted XGBoost model, mapped back to
+    Extract feature importances from the fitted Random Forest model, mapped back to
     human-readable feature names after preprocessing (if supported by sklearn version).
     """
     try:
         preprocessor = model.named_steps["preprocessor"]
-        clf: XGBClassifier = model.named_steps["clf"]  # type: ignore[assignment]
+        clf: RandomForestClassifier = model.named_steps["clf"]  # type: ignore[assignment]
 
         # Get expanded feature names after ColumnTransformer + OneHotEncoder
         feature_names = preprocessor.get_feature_names_out()
@@ -106,57 +111,42 @@ def build_pipeline(numeric_cols, categorical_cols) -> Pipeline:
         ]
     )
 
-    # Base XGBoost model (we'll tune hyperparameters around this)
-    xgb = XGBClassifier(
-        objective="binary:logistic",
-        eval_metric="logloss",
-        tree_method="hist",   # fast on CPU
-        use_label_encoder=False,
+    rf = RandomForestClassifier(
         n_estimators=300,
-        learning_rate=0.05,
-        max_depth=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        n_jobs=-1,
+        max_depth=None,
+        min_samples_split=2,
+        min_samples_leaf=1,
+        max_features="sqrt",
+        class_weight="balanced",
+        n_jobs=1,
+        random_state=42,
     )
 
     pipe = Pipeline(
         steps=[
             ("preprocessor", preprocessor),
-            ("clf", xgb),
+            ("clf", rf),
         ]
     )
     return pipe
 
 
 def tune_hyperparameters(pipe: Pipeline, X_train, y_train):
-    # Parameter space for XGBoost classifier inside pipeline
+    # Parameter space for Random Forest classifier inside pipeline
     param_distributions = {
         "clf__n_estimators": [200, 300, 400, 600],
-        "clf__max_depth": [3, 4, 5, 6, 8],
-        "clf__learning_rate": [0.01, 0.03, 0.05, 0.1],
-        "clf__subsample": [0.7, 0.8, 0.9, 1.0],
-        "clf__colsample_bytree": [0.7, 0.8, 0.9, 1.0],
-        "clf__min_child_weight": [1, 3, 5, 7],
-        "clf__gamma": [0.0, 0.1, 0.2],
+        "clf__max_depth": [None, 10, 15, 20, 30],
+        "clf__min_samples_split": [2, 4, 8, 12],
+        "clf__min_samples_leaf": [1, 2, 4, 6],
+        "clf__max_features": ["sqrt", "log2", 0.6, 0.8],
     }
-
-    # Handle class imbalance via scale_pos_weight
-    pos = (y_train == 1).sum()
-    neg = (y_train == 0).sum()
-    if pos > 0:
-        scale_pos_weight = neg / pos
-    else:
-        scale_pos_weight = 1.0
-
-    pipe.set_params(clf__scale_pos_weight=scale_pos_weight)
 
     search = RandomizedSearchCV(
         pipe,
         param_distributions=param_distributions,
         n_iter=30,               # increase for more thorough search
         scoring="roc_auc",
-        n_jobs=-1,
+        n_jobs=1,
         cv=3,
         verbose=1,
         random_state=42,
@@ -245,6 +235,14 @@ def main():
     meta = {
         "best_params": best_params,
         "best_threshold": best_threshold,
+        "model_version": MODEL_VERSION,
+        "model_type": "RandomForestClassifier",
+        "model_family": "random_forest",
+        "artifact_name": MODEL_PATH.name,
+        "metadata_name": METADATA_PATH.name,
+        "trained_at": datetime.now(timezone.utc).isoformat(),
+        "target_positive_label": "real",
+        "threshold_strategy": "youden_j",
         "feature_columns": list(X.columns),
         "numeric_columns": numeric_cols,
         "categorical_columns": categorical_cols,

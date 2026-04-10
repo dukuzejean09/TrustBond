@@ -1,7 +1,7 @@
 from pydantic import BaseModel, model_validator
 from uuid import UUID
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict, Any
 from decimal import Decimal
 
 
@@ -41,9 +41,17 @@ class ReportCreate(BaseModel):
         return self
 
 
+class CommunityVoteRequest(BaseModel):
+    device_id: str
+    vote: str  # "real", "false", "unknown"
+
+
 class ReportResponse(BaseModel):
     report_id: UUID
     report_number: Optional[str] = None  # RPT-YYYY-NNNN
+    # When set (e.g. list_reports with join), clients can filter reports by case without a dedicated endpoint.
+    case_id: Optional[UUID] = None
+    incident_group_id: Optional[UUID] = None
     device_id: UUID
     incident_type_id: int
     description: Optional[str]
@@ -51,6 +59,7 @@ class ReportResponse(BaseModel):
     longitude: Decimal
     reported_at: datetime
     rule_status: str
+    priority: str = "medium"  # low, medium, high, urgent
     status: Optional[str] = None  # report_status: pending, verified, flagged, rejected
     verification_status: Optional[str] = None  # pending, under_review, verified, rejected
     village_location_id: Optional[int] = None
@@ -59,6 +68,8 @@ class ReportResponse(BaseModel):
     evidence_count: int = 0
     evidence_preview: list["EvidencePreview"] = []
     trust_score: Optional[Decimal] = None  # from device or ML prediction
+    trust_factors: Optional[Dict[str, Any]] = None  # explainable factor breakdown
+    ml_prediction_label: Optional[str] = None  # likely_real, suspicious, fake, uncertain
     hotspot_id: Optional[int] = None
     hotspot_risk_level: Optional[str] = None  # low | medium | high
     hotspot_incident_count: Optional[int] = None
@@ -70,8 +81,19 @@ class ReportResponse(BaseModel):
     app_version: Optional[str] = None
     network_type: Optional[str] = None
     battery_level: Optional[Decimal] = None
+    gps_accuracy: Optional[Decimal] = None
+    motion_level: Optional[str] = None
+    movement_speed: Optional[Decimal] = None
+    was_stationary: Optional[bool] = None
     assignment_priority: Optional[str] = None
     assignment_status: Optional[str] = None
+    community_votes: Optional[Dict[str, int]] = None
+    user_vote: Optional[str] = None
+    # Device metadata fields
+    metadata_json: Optional[Dict[str, Any]] = {}
+    device_trust_score: Optional[float] = None
+    total_reports: Optional[int] = None
+    trusted_reports: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -96,7 +118,7 @@ class EvidenceFileResponse(BaseModel):
     media_longitude: Optional[Decimal] = None
     blur_score: Optional[Decimal] = None
     tamper_score: Optional[Decimal] = None
-    ai_quality_label: Optional[str] = None
+    quality_label: Optional[str] = None
 
     class Config:
         from_attributes = True
@@ -108,6 +130,7 @@ class AssignmentResponse(BaseModel):
     police_user_id: int
     status: str
     priority: str
+    assignment_note: Optional[str] = None
     assigned_at: datetime
     completed_at: Optional[datetime] = None
     officer_name: Optional[str] = None
@@ -119,6 +142,7 @@ class AssignmentResponse(BaseModel):
 class AssignCreate(BaseModel):
     police_user_id: int
     priority: str = "medium"  # low, medium, high, urgent
+    assignment_note: Optional[str] = None  # Notes explaining why this assignment is needed
 
 
 class ReviewResponse(BaseModel):

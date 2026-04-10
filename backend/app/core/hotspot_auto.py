@@ -1,97 +1,201 @@
-"""
-Automatic hotspot creation: when many reports of the same place AND the same
-incident type are submitted, a hotspot is created. No manual creation.
-Links each hotspot to its contributing reports via hotspot_reports table.
-"""
-from datetime import datetime, timezone, timedelta
-from decimal import Decimal
-from typing import Dict, Tuple, Any
+"""Hotspot auto-creation using DBSCAN over trusted incident reports."""
 
-from sqlalchemy import insert
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+from math import atan2, cos, radians, sin, sqrt
+from typing import Any, Dict, List, Optional, Tuple
+
+from sqlalchemy import text
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.cluster_classifier import (
+    classification_to_risk_level,
+    predict_cluster_classification,
+)
 from app.models.hotspot import Hotspot, hotspot_reports_table
+from app.models.location import Location
 from app.models.report import Report
-from app.models.ml_prediction import MLPrediction
+from app.models.system_config import SystemConfig
 
 
-# Same place + same type: 2+ reports in last 24h in one area (village or lat/long bucket), same incident_type_id
 DEFAULT_TIME_WINDOW_HOURS = 24
 DEFAULT_MIN_INCIDENTS = 2
 DEFAULT_RADIUS_METERS = 500
-LAT_LONG_PRECISION = 3  # ~111m, used when we have no village
+DEFAULT_TRUST_MIN = 50.0
 
 
-def _weight_for_report(report: Report) -> Tuple[float, bool]:
-    """
-    Compute a numeric weight and whether this report has a confirmed police review.
-
-    Base rule-based weight:
-    - rule_status passed     -> 1.0
-    - rule_status pending    -> 0.6
-    - rule_status flagged    -> 0.3
-    - rule_status rejected   -> 0.0
-    - bonus for confirmed review: +0.7
-
-    If an ML prediction exists, its trust_score (0–100) is converted to a
-    trust_weight in [0, 1] and blended with the rule-based score to give
-    more influence to high-credibility reports.
-    """
-    status = (report.rule_status or "").lower()
-    if status == "passed":
-        base = 1.0
-    elif status == "pending":
-        base = 0.6
-    elif status == "flagged":
-        base = 0.3
-    elif status == "rejected":
-        base = 0.0
-    else:
-        base = 0.5
-
-    has_confirmed = any((rv.decision or "").lower() == "confirmed" for rv in (report.police_reviews or []))
-    if has_confirmed:
-        base += 0.7
-
-    # Blend in ML trust_score if available
-    ml_preds = getattr(report, "ml_predictions", None) or []
-    if ml_preds:
-        # Prefer final predictions, then latest by evaluated_at
-        final_preds = [p for p in ml_preds if p.is_final]
-        if final_preds:
-            ml_source = final_preds
-        else:
-            ml_source = ml_preds
-        ml_source.sort(
-            key=lambda p: (p.evaluated_at or datetime.min.replace(tzinfo=timezone.utc)),
-            reverse=True,
+def get_hotspot_params_from_db(
+    db: Session,
+    *,
+    time_window_hours: int = DEFAULT_TIME_WINDOW_HOURS,
+    min_incidents: int = DEFAULT_MIN_INCIDENTS,
+    radius_meters: float = DEFAULT_RADIUS_METERS,
+) -> tuple[int, int, float]:
+    """Read DBSCAN params from system config when present."""
+    tw = time_window_hours
+    mi = min_incidents
+    rm = radius_meters
+    try:
+        eps = (
+            db.query(SystemConfig)
+            .filter(SystemConfig.config_key == "dbscan.epsilon")
+            .first()
         )
-        latest: MLPrediction = ml_source[0]
-        trust_score = latest.trust_score
-        try:
-            trust_score_f = float(trust_score) if trust_score is not None else None
-        except Exception:
-            trust_score_f = None
-        if trust_score_f is not None:
-            trust_weight = max(0.0, min(1.0, trust_score_f / 100.0))
-            # Blend: 60% ML trust, 40% rule-based
-            base = trust_weight * 1.5 + base * 0.4
+        if eps and isinstance(eps.config_value, dict):
+            value = eps.config_value.get("value")
+            if value is not None:
+                rm = float(value)
+    except Exception:
+        pass
+    try:
+        ms = (
+            db.query(SystemConfig)
+            .filter(SystemConfig.config_key == "dbscan.min_samples")
+            .first()
+        )
+        if ms and isinstance(ms.config_value, dict):
+            value = ms.config_value.get("value")
+            if value is not None:
+                mi = int(value)
+    except Exception:
+        pass
+    return tw, max(1, mi), max(50.0, rm)
 
-    return base, has_confirmed
+
+def get_hotspot_trust_min_from_db(db: Session, default: float = DEFAULT_TRUST_MIN) -> float:
+    """Read trust threshold used before clustering."""
+    try:
+        row = (
+            db.query(SystemConfig)
+            .filter(SystemConfig.config_key == "dbscan.trust_min")
+            .first()
+        )
+        if row and isinstance(row.config_value, dict):
+            value = row.config_value.get("value")
+            if value is not None:
+                return max(0.0, min(100.0, float(value)))
+    except Exception:
+        pass
+    return max(0.0, min(100.0, float(default)))
 
 
-def _risk_level_from_score(score: float, confirmed_reports: int) -> str:
+def _latest_ml_trust(report: Report) -> Optional[float]:
+    preds = list(getattr(report, "ml_predictions", None) or [])
+    if not preds:
+        return None
+    final = [p for p in preds if getattr(p, "is_final", False)]
+    source = final if final else preds
+    source.sort(
+        key=lambda p: p.evaluated_at or datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
+    )
+    latest = source[0]
+    try:
+        if latest.trust_score is None:
+            return None
+        return float(latest.trust_score)
+    except Exception:
+        return None
+
+
+def _report_trust_score(report: Report) -> float:
+    """Best-effort trust score in range 0..100 for hotspot filtering."""
+    ml_score = _latest_ml_trust(report)
+    if ml_score is not None:
+        return max(0.0, min(100.0, ml_score))
+
+    officer_confirmed = any(
+        (rv.decision or "").lower() == "confirmed"
+        for rv in (getattr(report, "police_reviews", None) or [])
+    )
+    if officer_confirmed or (report.verification_status or "").lower() == "verified":
+        return 90.0
+    if (report.rule_status or "").lower() == "passed":
+        return 65.0
+    return 35.0
+
+
+def _is_report_eligible(report: Report) -> bool:
+    """Exclude reports that are already rejected by rules/police workflow."""
+    status = (report.status or "").lower()
+    verification = (report.verification_status or "").lower()
+    rule_status = (report.rule_status or "").lower()
+    if status == "rejected" or verification == "rejected" or rule_status == "rejected":
+        return False
+    return True
+
+
+def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371000.0
+    dlat = radians(lat2 - lat1)
+    dlon = radians(lon2 - lon1)
+    a = (
+        sin(dlat / 2) ** 2
+        + cos(radians(lat1)) * cos(radians(lat2)) * sin(dlon / 2) ** 2
+    )
+    return r * 2 * atan2(sqrt(a), sqrt(1 - a))
+
+
+def _dbscan(points: List[Dict[str, Any]], eps_meters: float, min_pts: int) -> List[int]:
+    n = len(points)
+    labels = [-2] * n  # -2 unvisited, -1 noise, >=0 cluster id
+    cluster_id = 0
+
+    def neighbors(i: int) -> List[int]:
+        p = points[i]
+        out: List[int] = []
+        for j, q in enumerate(points):
+            if _haversine_meters(p["lat"], p["lon"], q["lat"], q["lon"]) <= eps_meters:
+                out.append(j)
+        return out
+
+    for i in range(n):
+        if labels[i] != -2:
+            continue
+        nbs = neighbors(i)
+        if len(nbs) < min_pts:
+            labels[i] = -1
+            continue
+
+        labels[i] = cluster_id
+        queue = list(nbs)
+        qi = 0
+        while qi < len(queue):
+            j = queue[qi]
+            if labels[j] == -1:
+                labels[j] = cluster_id
+            if labels[j] != -2:
+                qi += 1
+                continue
+            labels[j] = cluster_id
+            jn = neighbors(j)
+            if len(jn) >= min_pts:
+                for cand in jn:
+                    if cand not in queue:
+                        queue.append(cand)
+            qi += 1
+
+        cluster_id += 1
+
+    return labels
+
+
+def cleanup_expired_hotspots(db: Session):
+    """Remove/decay hotspots that have expired.
+
+    Note: the DB enum for `hotspots.risk_level` does not include `archived`,
+    so we must not write that value.
     """
-    Derive hotspot risk:
-    - high:   strong score OR multiple confirmed reports
-    - medium: some confirmations OR moderate score
-    - low:    weak, mostly provisional
-    """
-    if confirmed_reports >= 2 or score >= 6.0:
-        return "high"
-    if confirmed_reports >= 1 or score >= 3.0:
-        return "medium"
-    return "low"
+    now = datetime.now(timezone.utc)
+    expired = db.query(Hotspot).filter(Hotspot.detected_at < now - timedelta(hours=24)).all()
+
+    # Conservative approach: delete expired hotspots instead of writing a
+    # potentially invalid enum value (like "archived").
+    for h in expired:
+        db.delete(h)
+
+    db.commit()
+    return len(expired)
 
 
 def create_hotspots_from_reports(
@@ -99,112 +203,149 @@ def create_hotspots_from_reports(
     time_window_hours: int = DEFAULT_TIME_WINDOW_HOURS,
     min_incidents: int = DEFAULT_MIN_INCIDENTS,
     radius_meters: float = DEFAULT_RADIUS_METERS,
+    trust_min: float = DEFAULT_TRUST_MIN,
+    incident_type_id: Optional[int] = None,
+    analyze_all_reports: bool = False,
 ) -> int:
     """
-    Group reports by:
-    - village_location_id + incident_type_id when village is known, OR
-    - lat/long bucket + incident_type_id when village is unknown.
-
-    For each group with at least min_incidents, compute a weighted score
-    using rule_status and police reviews, then create a hotspot if none exists.
+    Pipeline:
+    Reports -> trust filtering -> DBSCAN clusters -> hotspots with risk levels.
     """
-    since = datetime.now(timezone.utc) - timedelta(hours=time_window_hours)
+    effective_time_window_hours = max(1, int(time_window_hours or DEFAULT_TIME_WINDOW_HOURS))
+    since = datetime.now(timezone.utc) - timedelta(hours=effective_time_window_hours)
 
-    reports = (
+    reports_query = (
         db.query(Report)
+        .join(Location, Report.village_location_id == Location.location_id)
+        .filter(
+            Report.village_location_id.isnot(None),
+            Location.location_type == "village",
+            Location.is_active == True,
+        )
         .options(
             selectinload(Report.police_reviews),
             selectinload(Report.ml_predictions),
         )
-        .filter(Report.reported_at >= since)
-        .all()
     )
+    if not analyze_all_reports:
+        reports_query = reports_query.filter(Report.reported_at >= since)
+    reports = reports_query.all()
 
-    clusters: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
-
+    points: List[Dict[str, Any]] = []
     for r in reports:
+        if not _is_report_eligible(r):
+            continue
+        if incident_type_id is not None and int(r.incident_type_id) != int(incident_type_id):
+            continue
+
         try:
             lat = float(r.latitude)
             lon = float(r.longitude)
         except (TypeError, ValueError):
             continue
 
-        if r.village_location_id is not None:
-            key = ("village", int(r.village_location_id), int(r.incident_type_id))
-        else:
-            lat_bucket = round(lat, LAT_LONG_PRECISION)
-            lon_bucket = round(lon, LAT_LONG_PRECISION)
-            key = ("bucket", lat_bucket, lon_bucket, int(r.incident_type_id))
+        trust = _report_trust_score(r)
+        if trust < float(trust_min):
+            continue
 
-        cluster = clusters.setdefault(
-            key,
+        points.append(
             {
-                "reports": [],
-                "score": 0.0,
-                "confirmed_reports": 0,
-                "lats": [],
-                "lons": [],
-            },
+                "report": r,
+                "lat": lat,
+                "lon": lon,
+                "trust": trust,
+                "incident_type_id": int(r.incident_type_id),
+                "reported_at": r.reported_at,
+            }
         )
-        w, has_confirmed = _weight_for_report(r)
-        cluster["reports"].append(r)
-        cluster["score"] += w
-        if has_confirmed:
-            cluster["confirmed_reports"] += 1
-        cluster["lats"].append(lat)
-        cluster["lons"].append(lon)
+
+    if len(points) < max(1, int(min_incidents)):
+        return 0
+
+    labels = _dbscan(points, max(50.0, float(radius_meters)), max(1, int(min_incidents)))
+    clusters: Dict[int, List[Dict[str, Any]]] = {}
+    for idx, label in enumerate(labels):
+        if label < 0:
+            continue
+        clusters.setdefault(label, []).append(points[idx])
 
     created = 0
-    for key, info in clusters.items():
-        reports_in_cluster = info["reports"]
-        incident_count = len(reports_in_cluster)
-        if incident_count < min_incidents:
+    for _, cluster_points in clusters.items():
+        incident_count = len(cluster_points)
+        if incident_count < int(min_incidents):
             continue
 
-        score = float(info["score"])
-        confirmed_reports = int(info["confirmed_reports"])
+        center_lat = sum(p["lat"] for p in cluster_points) / incident_count
+        center_long = sum(p["lon"] for p in cluster_points) / incident_count
+        avg_trust = sum(p["trust"] for p in cluster_points) / incident_count
 
-        avg_lat = sum(info["lats"]) / incident_count
-        avg_lon = sum(info["lons"]) / incident_count
-        center_lat = Decimal(str(round(avg_lat, LAT_LONG_PRECISION)))
-        center_long = Decimal(str(round(avg_lon, LAT_LONG_PRECISION)))
+        type_counts: Dict[int, int] = {}
+        for p in cluster_points:
+            tid = int(p["incident_type_id"])
+            type_counts[tid] = type_counts.get(tid, 0) + 1
+        dominant_incident_type_id = max(type_counts.items(), key=lambda x: x[1])[0]
 
-        if key[0] == "village":
-            incident_type_id = key[2]
-        else:
-            incident_type_id = key[3]
-
-        existing = (
-            db.query(Hotspot)
-            .filter(
-                Hotspot.center_lat == center_lat,
-                Hotspot.center_long == center_long,
-                Hotspot.incident_type_id == incident_type_id,
-                Hotspot.time_window_hours == time_window_hours,
-            )
-            .first()
-        )
-        if existing:
-            continue
-
-        hotspot = Hotspot(
-            center_lat=center_lat,
-            center_long=center_long,
-            radius_meters=Decimal(str(radius_meters)),
+        area_sqkm = max(0.001, 3.14159 * (float(radius_meters) / 1000.0) ** 2)
+        cluster_density = incident_count / area_sqkm
+        classification_result = predict_cluster_classification(
             incident_count=incident_count,
-            risk_level=_risk_level_from_score(score, confirmed_reports),
-            time_window_hours=time_window_hours,
-            incident_type_id=incident_type_id,
+            avg_trust=avg_trust,
+            cluster_density=cluster_density,
+            time_window_hours=effective_time_window_hours,
         )
-        db.add(hotspot)
-        db.flush()  # get hotspot_id
+        risk_level = classification_to_risk_level(classification_result["classification"])
 
-        db.execute(
-            insert(hotspot_reports_table),
-            [{"hotspot_id": hotspot.hotspot_id, "report_id": r.report_id} for r in reports_in_cluster],
+        existing_query = db.query(Hotspot).filter(
+            Hotspot.incident_type_id == dominant_incident_type_id,
+            Hotspot.center_lat.between(center_lat - 0.01, center_lat + 0.01),
+            Hotspot.center_long.between(center_long - 0.01, center_long + 0.01),
         )
-        created += 1
+        if not analyze_all_reports:
+            existing_query = existing_query.filter(Hotspot.detected_at >= since)
+        existing = existing_query.order_by(Hotspot.detected_at.desc()).first()
 
-    if created > 0:
-        db.commit()
+        hotspot = existing
+        if hotspot is None:
+            hotspot = Hotspot(
+                center_lat=center_lat,
+                center_long=center_long,
+                radius_meters=Decimal(str(radius_meters)),
+                incident_count=incident_count,
+                risk_level=risk_level,
+                time_window_hours=effective_time_window_hours,
+                incident_type_id=dominant_incident_type_id,
+            )
+            db.add(hotspot)
+            db.flush()
+            created += 1
+        else:
+            hotspot.center_lat = Decimal(str(center_lat))
+            hotspot.center_long = Decimal(str(center_long))
+            hotspot.radius_meters = Decimal(str(radius_meters))
+            hotspot.incident_count = incident_count
+            hotspot.risk_level = risk_level
+            hotspot.time_window_hours = effective_time_window_hours
+            hotspot.incident_type_id = dominant_incident_type_id
+            db.execute(
+                text("DELETE FROM hotspot_reports WHERE hotspot_id = :hotspot_id"),
+                {"hotspot_id": hotspot.hotspot_id},
+            )
+
+        for p in cluster_points:
+            db.execute(
+                text(
+                    "INSERT INTO hotspot_reports (hotspot_id, report_id) "
+                    "VALUES (:hotspot_id, :report_id) "
+                    "ON CONFLICT DO NOTHING"
+                ),
+                {
+                    "hotspot_id": hotspot.hotspot_id,
+                    "report_id": str(p["report"].report_id),
+                },
+            )
+
+        # Keep score in-memory for API response computations through linked reports.
+        _ = avg_trust
+
+    db.commit()
     return created

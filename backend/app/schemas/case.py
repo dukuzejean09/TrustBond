@@ -40,10 +40,16 @@ class CaseResponse(BaseModel):
     location_name: Optional[str] = None
     incident_type_id: Optional[int] = None
     incident_type_name: Optional[str] = None
+    incident_group_id: Optional[UUID] = None
     assigned_to_id: Optional[int] = None
     assigned_to_name: Optional[str] = None
+    assigned_to_station_id: Optional[int] = None
     created_by: Optional[int] = None
     report_count: int = 0
+    device_count: int = 0
+    auto_created: bool = False
+    source: str = "manual"
+    auto_group_confidence: Optional[Decimal] = None
     opened_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
     outcome: Optional[str] = None

@@ -5,6 +5,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
+from app.middleware.request_id import RequestIdMiddleware
+from app.middleware.rate_limit import RouteRateLimitMiddleware
 from app.database import engine, Base
 from app.models import (
     Device,
@@ -38,6 +40,9 @@ from app.api.v1 import (
     system_config,
     public_locations,
     public_hotspots,
+    public_alerts,
+    ws,
+    geographic_intelligence,
 )
 
 
@@ -56,8 +61,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 app.add_middleware(
+    RouteRateLimitMiddleware,
+    report_create_per_minute=settings.rate_limit_report_create_per_minute,
+    evidence_upload_per_minute=settings.rate_limit_evidence_upload_per_minute,
+    report_confirm_per_minute=settings.rate_limit_report_confirm_per_minute,
+)
+app.add_middleware(RequestIdMiddleware)
+app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.get_cors_origins_list(),
+    allow_origin_regex=settings.cors_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -83,7 +96,9 @@ app.include_router(stations.router, prefix="/api/v1")
 app.include_router(system_config.router, prefix="/api/v1")
 app.include_router(public_locations.router, prefix="/api/v1")
 app.include_router(public_hotspots.router, prefix="/api/v1")
-
+app.include_router(public_alerts.router, prefix="/api/v1")
+app.include_router(ws.router, prefix="/api/v1")
+app.include_router(geographic_intelligence.router, prefix="/api/v1/geographic-intelligence")
 
 @app.get("/health")
 def health():

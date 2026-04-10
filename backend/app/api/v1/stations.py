@@ -1,14 +1,16 @@
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload
+from app.core.websocket import manager
+import asyncio
 from sqlalchemy import func
 
 from app.database import get_db
 from app.models.station import Station
 from app.models.location import Location
 from app.models.police_user import PoliceUser
-from app.api.v1.auth import get_current_admin_or_supervisor
+from app.api.v1.auth import get_current_admin_or_supervisor, get_current_user
 from app.schemas.station import (
     StationCreate,
     StationUpdate,
@@ -40,12 +42,12 @@ def _to_response(st: Station) -> StationResponse:
 
 @router.get("/", response_model=StationListResponse)
 def list_stations(
-    current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
     db: Session = Depends(get_db),
     search: Optional[str] = Query(None),
     only_active: bool = Query(False),
 ):
-    """List police stations (admin/supervisor only)."""
+    """List police stations (read-only for officers)."""
     q = db.query(Station).options(joinedload(Station.location))
     if only_active:
         q = q.filter(Station.is_active == True)
@@ -64,6 +66,7 @@ def list_stations(
 def create_station(
     payload: StationCreate,
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Create a new station."""
@@ -103,6 +106,15 @@ def create_station(
 
     db.commit()
     db.refresh(st)
+    
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+    background_tasks.add_task(notify)
+
     st = db.query(Station).options(joinedload(Station.location)).get(st.station_id)
     return _to_response(st)
 
@@ -125,6 +137,7 @@ def update_station(
     station_id: int,
     payload: StationUpdate,
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Update a station."""
@@ -167,6 +180,15 @@ def update_station(
     db.add(st)
     db.commit()
     db.refresh(st)
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+    background_tasks.add_task(notify)
+
     st = db.query(Station).options(joinedload(Station.location)).get(st.station_id)
     return _to_response(st)
 
@@ -175,6 +197,7 @@ def update_station(
 def delete_station(
     station_id: int,
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Delete (hard-delete) a station."""
@@ -183,5 +206,14 @@ def delete_station(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Station not found")
     db.delete(st)
     db.commit()
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "station"}))
+    background_tasks.add_task(notify)
+
     return {}
 

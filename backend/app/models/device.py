@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Integer, Numeric, Boolean, DateTime
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -18,4 +18,6 @@ class Device(Base):
     device_trust_score = Column(Numeric(5, 2), default=50.00)
     is_blacklisted = Column(Boolean, default=False)
     blacklist_reason = Column(String, nullable=True)
+    # Column name is "metadata" in Postgres, but "metadata" is reserved by SQLAlchemy.
+    metadata_json = Column("metadata", JSONB, nullable=True)
     is_banned = Column(Boolean, default=False)

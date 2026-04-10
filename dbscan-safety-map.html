@@ -1,0 +1,2129 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>TrustBond — Safety Map (DBSCAN)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+      :root {
+        --bg: #dbe3ef;
+        --panel: #f8fbff;
+        --card: #ffffff;
+        --nav-bg: #142954;
+        --nav-border: #213868;
+        --nav-text: #b6c5e7;
+        --blue: #3b82f6;
+        --cyan: #0ea5a8;
+        --green: #10b981;
+        --red: #ef4444;
+        --amber: #f59e0b;
+        --purple: #a855f7;
+        --orange: #f97316;
+        --text: #14213d;
+        --muted: #5f7393;
+        --border: rgba(22, 51, 94, 0.14);
+        --line: #d7e0ee;
+        --mono: "Space Mono", monospace;
+        --body: "Plus Jakarta Sans", sans-serif;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        background: radial-gradient(circle at 20% 0, #edf2ff, var(--bg) 45%);
+        color: var(--text);
+        font-family: var(--body);
+        display: flex;
+        height: 100vh;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        width: 210px;
+        background: var(--nav-bg);
+        border-right: 1px solid var(--nav-border);
+        display: flex;
+        flex-direction: column;
+        flex-shrink: 0;
+      }
+      .logo {
+        padding: 14px 13px;
+        border-bottom: 1px solid var(--nav-border);
+        display: flex;
+        align-items: center;
+        gap: 9px;
+      }
+      .logo-icon {
+        width: 32px;
+        height: 32px;
+        background: linear-gradient(135deg, var(--blue), var(--cyan));
+        border-radius: 8px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+      }
+      .logo-name {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .logo-sub {
+        font-size: 9px;
+        color: #8ca0c8;
+        letter-spacing: 1.2px;
+        text-transform: uppercase;
+      }
+      .nav-sec {
+        padding: 11px 11px 3px;
+        font-size: 9px;
+        color: #7f95be;
+        letter-spacing: 1.8px;
+        text-transform: uppercase;
+        font-family: var(--mono);
+      }
+      .nav-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 7px 9px;
+        border-radius: 6px;
+        margin: 1px 4px;
+        font-size: 12px;
+        color: var(--nav-text);
+        cursor: pointer;
+        transition: all 0.15s;
+        position: relative;
+      }
+      .nav-item:hover {
+        background: rgba(255, 255, 255, 0.08);
+        color: #fff;
+      }
+      .nav-item.active {
+        background: rgba(255, 255, 255, 0.12);
+        color: #fff;
+      }
+      .nav-item.active::before {
+        content: "";
+        position: absolute;
+        left: -4px;
+        top: 50%;
+        transform: translateY(-50%);
+        width: 3px;
+        height: 13px;
+        background: var(--blue);
+        border-radius: 2px;
+      }
+      .nb {
+        margin-left: auto;
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 7px;
+        font-family: var(--mono);
+        background: var(--red);
+        color: #fff;
+      }
+      .nb.g {
+        background: var(--green);
+      }
+      .user {
+        margin-top: auto;
+        padding: 11px 13px;
+        border-top: 1px solid var(--nav-border);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .av {
+        width: 28px;
+        height: 28px;
+        background: linear-gradient(135deg, #6366f1, #8b5cf6);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+        font-weight: 700;
+      }
+      .un {
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .ur {
+        font-size: 9px;
+        color: #9cb0d4;
+      }
+
+      .main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .topbar {
+        height: 46px;
+        padding: 0 16px;
+        background: var(--panel);
+        border-bottom: 1px solid var(--line);
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        flex-shrink: 0;
+      }
+      .bread {
+        font-size: 11px;
+        color: var(--muted);
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .bread .cur {
+        color: var(--cyan);
+        font-weight: 600;
+      }
+      .tr {
+        margin-left: auto;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .spill {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        background: rgba(16, 185, 129, 0.07);
+        border: 1px solid rgba(16, 185, 129, 0.22);
+        padding: 3px 8px;
+        border-radius: 14px;
+        font-size: 10px;
+        color: var(--green);
+        font-family: var(--mono);
+      }
+      .sdot {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--green);
+        animation: blink 2s infinite;
+      }
+      @keyframes blink {
+        0%,
+        100% {
+          opacity: 1;
+        }
+        50% {
+          opacity: 0.3;
+        }
+      }
+      .dbg {
+        font-size: 10px;
+        color: var(--muted);
+        font-family: var(--mono);
+        background: #edf3fb;
+        padding: 3px 8px;
+        border-radius: 5px;
+        border: 1px solid var(--border);
+      }
+
+      .content {
+        flex: 1;
+        display: flex;
+        overflow: hidden;
+      }
+      .map-area {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .mhead {
+        padding: 16px 16px 10px;
+        border-bottom: 1px solid var(--line);
+        flex-shrink: 0;
+      }
+      .mtitle {
+        font-size: 18px;
+        font-weight: 600;
+        letter-spacing: -0.3px;
+      }
+      .msub {
+        font-size: 11px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+
+      .dctrl {
+        display: flex;
+        gap: 12px;
+        padding: 10px 16px;
+        border-bottom: 1px solid var(--line);
+        align-items: center;
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        background: rgba(255, 255, 255, 0.65);
+      }
+      .cg {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .cl {
+        font-size: 9px;
+        font-family: var(--mono);
+        color: var(--muted);
+        text-transform: uppercase;
+        letter-spacing: 0.9px;
+      }
+      .cv {
+        font-size: 10px;
+        font-family: var(--mono);
+        color: var(--cyan);
+        min-width: 38px;
+      }
+      input[type="range"] {
+        width: 75px;
+        height: 3px;
+        accent-color: var(--cyan);
+        cursor: pointer;
+      }
+      .rbtn {
+        margin-left: auto;
+        padding: 8px 16px;
+        background: linear-gradient(135deg, var(--blue), var(--cyan));
+        border: none;
+        border-radius: 999px;
+        color: #fff;
+        font-family: var(--mono);
+        font-size: 11px;
+        cursor: pointer;
+        transition: opacity 0.18s;
+      }
+      .rbtn:hover {
+        opacity: 0.82;
+      }
+      .abtn {
+        padding: 8px 11px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #f1f6fc;
+        color: var(--muted);
+        font-family: var(--mono);
+        font-size: 9px;
+        cursor: pointer;
+        transition: all 0.16s;
+      }
+      .abtn:hover {
+        border-color: var(--cyan);
+        color: var(--cyan);
+      }
+      .abtn.on {
+        background: rgba(6, 182, 212, 0.14);
+        border-color: rgba(6, 182, 212, 0.44);
+        color: var(--cyan);
+      }
+
+      .fbar {
+        display: flex;
+        gap: 4px;
+        padding: 8px 16px;
+        border-bottom: 1px solid var(--line);
+        flex-wrap: wrap;
+        flex-shrink: 0;
+        align-items: center;
+      }
+      .fl {
+        font-size: 9px;
+        font-family: var(--mono);
+        color: var(--muted);
+        letter-spacing: 1px;
+        margin-right: 2px;
+      }
+      .fb {
+        padding: 6px 11px;
+        border-radius: 10px;
+        font-size: 10px;
+        font-family: var(--mono);
+        cursor: pointer;
+        border: 1px solid var(--border);
+        background: #edf3fb;
+        color: var(--muted);
+        transition: all 0.15s;
+      }
+      .fb.on {
+        background: var(--blue);
+        border-color: var(--blue);
+        color: #fff;
+      }
+      .fb:hover {
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+      .fb.ft:hover,
+      .fb.ft.on {
+        background: rgba(239, 68, 68, 0.15);
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .fb.fv:hover,
+      .fb.fv.on {
+        background: rgba(245, 158, 11, 0.15);
+        border-color: var(--amber);
+        color: var(--amber);
+      }
+      .fb.fs:hover,
+      .fb.fs.on {
+        background: rgba(168, 85, 247, 0.15);
+        border-color: var(--purple);
+        color: var(--purple);
+      }
+      .fb.fa:hover,
+      .fb.fa.on {
+        background: rgba(249, 115, 22, 0.15);
+        border-color: var(--orange);
+        color: var(--orange);
+      }
+      .fb.fd:hover,
+      .fb.fd.on {
+        background: rgba(16, 185, 129, 0.15);
+        border-color: var(--green);
+        color: var(--green);
+      }
+      .fb.ftr:hover,
+      .fb.ftr.on {
+        background: rgba(59, 130, 246, 0.15);
+        border-color: var(--blue);
+        color: var(--blue);
+      }
+
+      .legend {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        padding: 7px 16px;
+        border-bottom: 1px solid var(--line);
+        flex-shrink: 0;
+        align-items: center;
+      }
+      .li {
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        font-size: 9px;
+        font-family: var(--mono);
+        color: var(--muted);
+      }
+      .ld {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      #map {
+        flex: 1;
+        min-height: 0;
+        margin: 12px 16px 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        box-shadow: 0 14px 24px rgba(22, 43, 87, 0.07);
+      }
+
+      .rp {
+        width: 360px;
+        background: transparent;
+        border-left: none;
+        display: flex;
+        flex-direction: column;
+        overflow-y: auto;
+        flex-shrink: 0;
+        padding: 14px 14px 14px 0;
+        gap: 10px;
+      }
+      .ps {
+        border: 1px solid var(--line);
+        background: var(--card);
+        border-radius: 14px;
+        padding: 14px;
+      }
+      .pt {
+        font-size: 9px;
+        font-family: var(--mono);
+        color: var(--muted);
+        letter-spacing: 1.1px;
+        text-transform: uppercase;
+        margin-bottom: 9px;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .pd {
+        width: 5px;
+        height: 5px;
+        border-radius: 50%;
+        background: var(--cyan);
+      }
+      .sr {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 6px 0;
+        border-bottom: 1px solid #edf2fa;
+        font-size: 11px;
+      }
+      .sr:last-child {
+        border-bottom: none;
+      }
+      .sl {
+        color: var(--muted);
+      }
+      .sv {
+        font-family: var(--mono);
+        font-weight: 700;
+      }
+      .sv.g {
+        color: var(--green);
+      }
+      .sv.r {
+        color: var(--red);
+      }
+      .sv.a {
+        color: var(--amber);
+      }
+
+      .cc {
+        background: #f8fbff;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 10px;
+        margin-bottom: 6px;
+        cursor: pointer;
+        transition: all 0.18s;
+        position: relative;
+        overflow: hidden;
+      }
+      .cc:hover {
+        border-color: var(--blue);
+        transform: translateX(2px);
+      }
+      .cc::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+      }
+      .cc.cr::before {
+        background: var(--red);
+      }
+      .cc.wa::before {
+        background: var(--amber);
+      }
+      .cc.no::before {
+        background: var(--green);
+      }
+      .ch {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 4px;
+      }
+      .cid {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .rb {
+        font-size: 9px;
+        font-family: var(--mono);
+        padding: 1px 6px;
+        border-radius: 7px;
+        font-weight: 700;
+      }
+      .rb.cr {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--red);
+        border: 1px solid rgba(239, 68, 68, 0.22);
+      }
+      .rb.wa {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber);
+        border: 1px solid rgba(245, 158, 11, 0.22);
+      }
+      .rb.no {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--green);
+        border: 1px solid rgba(16, 185, 129, 0.22);
+      }
+      .cloc {
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 3px;
+      }
+      .cm {
+        font-size: 10px;
+        color: var(--muted);
+        display: flex;
+        gap: 8px;
+      }
+      .itags {
+        display: flex;
+        gap: 3px;
+        flex-wrap: wrap;
+        margin-top: 6px;
+      }
+      .itag {
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 5px;
+        font-family: var(--mono);
+      }
+      .it-theft {
+        background: rgba(239, 68, 68, 0.1);
+        color: var(--red);
+      }
+      .it-vandalism {
+        background: rgba(245, 158, 11, 0.1);
+        color: var(--amber);
+      }
+      .it-suspicious {
+        background: rgba(168, 85, 247, 0.1);
+        color: var(--purple);
+      }
+      .it-assault {
+        background: rgba(249, 115, 22, 0.1);
+        color: var(--orange);
+      }
+      .it-drug {
+        background: rgba(16, 185, 129, 0.1);
+        color: var(--green);
+      }
+      .it-traffic {
+        background: rgba(59, 130, 246, 0.1);
+        color: var(--blue);
+      }
+      .tb {
+        margin-top: 6px;
+      }
+      .tbl {
+        display: flex;
+        justify-content: space-between;
+        font-size: 9px;
+        color: var(--muted);
+        margin-bottom: 2px;
+      }
+      .tbg {
+        height: 3px;
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .tbf {
+        height: 100%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, var(--blue), var(--cyan));
+      }
+
+      .mlc {
+        background: linear-gradient(135deg, #f6f9fe, #eff7fc);
+        border: 1px solid rgba(59, 130, 246, 0.15);
+        border-radius: 8px;
+        padding: 10px;
+        margin-bottom: 6px;
+      }
+      .mlh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 6px;
+      }
+      .mli {
+        width: 24px;
+        height: 24px;
+        background: rgba(59, 130, 246, 0.1);
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 11px;
+      }
+      .mlt {
+        font-size: 11px;
+        font-weight: 600;
+      }
+      .mls {
+        font-size: 9px;
+        color: var(--muted);
+      }
+      .mlp {
+        font-family: var(--mono);
+        font-size: 10px;
+        color: var(--cyan);
+        margin-bottom: 2px;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .mlp::before {
+        content: "▶";
+        font-size: 6px;
+        opacity: 0.45;
+      }
+      .mlcf {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 9px;
+        color: var(--muted);
+        margin-top: 4px;
+      }
+      .cb {
+        flex: 1;
+        height: 3px;
+        background: #e0e9f8;
+        border-radius: 2px;
+        overflow: hidden;
+      }
+      .cf {
+        height: 100%;
+        background: linear-gradient(90deg, var(--green), var(--cyan));
+        border-radius: 2px;
+      }
+
+      .ac {
+        display: flex;
+        gap: 8px;
+        background: #f9fbff;
+        border: 1px solid var(--border);
+        border-radius: 7px;
+        padding: 8px 10px;
+        margin-bottom: 5px;
+      }
+      .ai {
+        font-size: 12px;
+        flex-shrink: 0;
+        margin-top: 1px;
+      }
+      .atx {
+        font-size: 10px;
+        color: var(--muted);
+        line-height: 1.6;
+      }
+      .at {
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--text);
+        margin-bottom: 2px;
+      }
+
+      .eb {
+        width: 100%;
+        padding: 10px;
+        background: #eef4ff;
+        border: 1px solid #ccdaf3;
+        border-radius: 10px;
+        color: #2f4e78;
+        font-family: var(--mono);
+        font-size: 11px;
+        cursor: pointer;
+        margin-top: 6px;
+        transition: all 0.18s;
+      }
+      .eb:hover {
+        background: #dfeafb;
+      }
+
+      .risk-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 2px;
+      }
+      .rk-card {
+        background: #f7faff;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 10px;
+      }
+      .rk-lbl {
+        font-size: 9px;
+        font-family: var(--mono);
+        letter-spacing: 1px;
+        color: var(--muted);
+      }
+      .rk-num {
+        font-size: 22px;
+        font-weight: 700;
+        margin: 3px 0;
+      }
+      .rk-sub {
+        font-size: 10px;
+        color: var(--muted);
+      }
+      .rk-card.cr .rk-num {
+        color: var(--red);
+      }
+      .rk-card.wa .rk-num {
+        color: var(--amber);
+      }
+      .rk-card.no .rk-num {
+        color: var(--green);
+      }
+
+      .tbl-wrap {
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        overflow: hidden;
+        background: #fdfefe;
+      }
+      .tbl-head,
+      .tbl-row {
+        display: grid;
+        grid-template-columns: 58px 1fr 70px 74px;
+        gap: 8px;
+        align-items: center;
+        font-size: 10px;
+        padding: 8px 10px;
+      }
+      .tbl-head {
+        font-family: var(--mono);
+        color: #6a7f9f;
+        letter-spacing: 0.8px;
+        border-bottom: 1px solid var(--line);
+        background: #f4f8ff;
+      }
+      #hotspotTable .tbl-row {
+        border-bottom: 1px solid #edf2fa;
+      }
+      #hotspotTable .tbl-row:last-child {
+        border-bottom: none;
+      }
+      .risk-pill {
+        font-size: 9px;
+        font-family: var(--mono);
+        font-weight: 700;
+        padding: 3px 6px;
+        border-radius: 999px;
+      }
+      .risk-pill.cr {
+        color: var(--red);
+        background: rgba(239, 68, 68, 0.12);
+      }
+      .risk-pill.wa {
+        color: var(--amber);
+        background: rgba(245, 158, 11, 0.14);
+      }
+      .risk-pill.no {
+        color: var(--green);
+        background: rgba(16, 185, 129, 0.14);
+      }
+      .muted-note {
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      ::-webkit-scrollbar {
+        width: 4px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 2px;
+      }
+
+      .leaflet-popup-content-wrapper {
+        background: var(--card) !important;
+        color: var(--text) !important;
+        border: 1px solid var(--border) !important;
+        border-radius: 9px !important;
+        box-shadow: 0 14px 24px rgba(35, 72, 130, 0.15) !important;
+      }
+      .leaflet-popup-tip {
+        background: var(--card) !important;
+      }
+      .leaflet-control-zoom a {
+        background: #fff !important;
+        color: var(--text) !important;
+        border-color: var(--line) !important;
+      }
+      .pu-t {
+        font-family: var(--mono);
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--cyan);
+        margin-bottom: 5px;
+      }
+      .pu-r {
+        font-size: 10px;
+        color: var(--muted);
+        margin: 2px 0;
+      }
+      .pu-r b {
+        color: var(--text);
+      }
+      .pu-tags {
+        display: flex;
+        gap: 3px;
+        flex-wrap: wrap;
+        margin-top: 5px;
+      }
+      .pu-tag {
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 5px;
+        font-family: var(--mono);
+        background: rgba(59, 130, 246, 0.08);
+        color: var(--cyan);
+        border: 1px solid rgba(59, 130, 246, 0.18);
+      }
+
+      @media (max-width: 1080px) {
+        body {
+          overflow: auto;
+        }
+        .sidebar {
+          display: none;
+        }
+        .main {
+          min-width: 0;
+          height: 100vh;
+        }
+        .content {
+          flex-direction: column;
+          overflow: auto;
+        }
+        .map-area {
+          min-height: 54vh;
+        }
+        .rp {
+          width: 100%;
+          border-left: none;
+          border-top: none;
+          max-height: none;
+          padding: 0 12px 12px;
+        }
+        .risk-grid {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 680px) {
+        .topbar {
+          height: auto;
+          min-height: 46px;
+          padding: 7px 10px;
+          flex-wrap: wrap;
+        }
+        .mhead {
+          padding: 10px;
+        }
+        .mtitle {
+          font-size: 16px;
+        }
+        .msub {
+          font-size: 10px;
+        }
+        .dctrl,
+        .fbar,
+        .legend {
+          padding-left: 10px;
+          padding-right: 10px;
+        }
+        .cg {
+          width: 100%;
+          gap: 8px;
+        }
+        input[type="range"] {
+          flex: 1;
+          min-width: 110px;
+        }
+        .rbtn,
+        .abtn {
+          width: 100%;
+          margin-left: 0;
+        }
+        #map {
+          margin: 10px;
+          border-radius: 12px;
+        }
+        .risk-grid {
+          grid-template-columns: 1fr;
+        }
+        .tbl-head,
+        .tbl-row {
+          grid-template-columns: 52px 1fr 56px 70px;
+          gap: 6px;
+          padding: 7px 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <div>
+          <div class="logo-name">TrustBond</div>
+          <div class="logo-sub">Police Portal</div>
+        </div>
+      </div>
+      <div class="nav-sec">Operations</div>
+      <div class="nav-item">📋 Reports <span class="nb">27</span></div>
+      <div class="nav-item">📁 Case Management <span class="nb g">0</span></div>
+      <div class="nav-item">🔥 Hotspots</div>
+      <div class="nav-item active">🗺️ Safety Map</div>
+      <div class="nav-sec">Intelligence</div>
+      <div class="nav-item">🖥️ Device Trust</div>
+      <div class="nav-item">🤖 ML Insights</div>
+      <div class="nav-sec">Management</div>
+      <div class="nav-item">⚙️ Settings</div>
+      <div class="user">
+        <div class="av">SA</div>
+        <div>
+          <div class="un">System Admin</div>
+          <div class="ur">Administrator</div>
+        </div>
+      </div>
+    </aside>
+
+    <div class="main">
+      <div class="topbar">
+        <div class="bread">
+          Home <span>›</span> Operations <span>›</span>
+          <span class="cur">Safety Map</span>
+        </div>
+        <div class="tr">
+          <div class="spill">
+            <div class="sdot"></div>
+            Operational
+          </div>
+          <div class="dbg">Mar 31 2026</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <div class="map-area">
+          <div class="mhead">
+            <div class="mtitle">Community Safety Map</div>
+            <div class="msub">
+              Real DBSCAN cluster detection — Musanze District · Trust-weighted
+              hotspot analysis · Convex hull visualization
+            </div>
+          </div>
+
+          <div class="dctrl">
+            <div class="cg">
+              <span class="cl">ε Radius</span
+              ><input
+                type="range"
+                id="eps"
+                min="100"
+                max="800"
+                value="400"
+                step="50"
+                oninput="
+                  document.getElementById('ev').textContent = this.value + 'm'
+                "
+              /><span class="cv" id="ev">400m</span>
+            </div>
+            <div class="cg">
+              <span class="cl">Min Points</span
+              ><input
+                type="range"
+                id="minPts"
+                min="2"
+                max="8"
+                value="3"
+                oninput="document.getElementById('mv').textContent = this.value"
+              /><span class="cv" id="mv">3</span>
+            </div>
+            <div class="cg">
+              <span class="cl">Trust ≥</span
+              ><input
+                type="range"
+                id="trustMin"
+                min="0"
+                max="80"
+                value="50"
+                step="5"
+                oninput="document.getElementById('tv').textContent = this.value"
+              /><span class="cv" id="tv">50</span>
+            </div>
+            <button
+              class="abtn"
+              id="scopeBtn"
+              onclick="toggleAnalyzeScope(this)"
+            >
+              Scope: All Types
+            </button>
+            <button class="rbtn" id="runBtn" onclick="runDBSCAN()">
+              ⚡ Run DBSCAN
+            </button>
+          </div>
+
+          <div class="fbar">
+            <span class="fl">FILTER:</span>
+            <button class="fb on" onclick="setFilter('All', this)">
+              All Types
+            </button>
+            <button class="fb ft" onclick="setFilter('Theft', this)">
+              Theft
+            </button>
+            <button class="fb fv" onclick="setFilter('Vandalism', this)">
+              Vandalism
+            </button>
+            <button class="fb fs" onclick="setFilter('Suspicious', this)">
+              Suspicious
+            </button>
+            <button class="fb fa" onclick="setFilter('Assault', this)">
+              Assault
+            </button>
+            <button class="fb fd" onclick="setFilter('Drug', this)">
+              Drug Activity
+            </button>
+            <button class="fb ftr" onclick="setFilter('Traffic', this)">
+              Traffic
+            </button>
+          </div>
+
+          <div class="legend">
+            <span
+              style="
+                font-size: 9px;
+                font-family: var(--mono);
+                color: var(--muted);
+              "
+              >LEGEND:</span
+            >
+            <div class="li">
+              <div
+                class="ld"
+                style="background: var(--red); box-shadow: 0 0 5px var(--red)"
+              ></div>
+              Critical
+            </div>
+            <div class="li">
+              <div
+                class="ld"
+                style="
+                  background: var(--amber);
+                  box-shadow: 0 0 5px var(--amber);
+                "
+              ></div>
+              Warning
+            </div>
+            <div class="li">
+              <div
+                class="ld"
+                style="
+                  background: var(--green);
+                  box-shadow: 0 0 5px var(--green);
+                "
+              ></div>
+              Normal
+            </div>
+            <div class="li">
+              <div class="ld" style="background: #374151; opacity: 0.6"></div>
+              Noise
+            </div>
+            <span
+              style="
+                font-size: 9px;
+                font-family: var(--mono);
+                color: var(--muted);
+                margin-left: 4px;
+              "
+              >TYPES:</span
+            >
+            <div class="li">
+              <div class="ld" style="background: var(--red)"></div>
+              Theft
+            </div>
+            <div class="li">
+              <div class="ld" style="background: var(--amber)"></div>
+              Vandalism
+            </div>
+            <div class="li">
+              <div class="ld" style="background: var(--purple)"></div>
+              Suspicious
+            </div>
+            <div class="li">
+              <div class="ld" style="background: var(--orange)"></div>
+              Assault
+            </div>
+            <div class="li">
+              <div class="ld" style="background: var(--green)"></div>
+              Drug
+            </div>
+            <div class="li">
+              <div class="ld" style="background: var(--blue)"></div>
+              Traffic
+            </div>
+          </div>
+
+          <div id="map"></div>
+        </div>
+
+        <aside class="rp">
+          <div class="ps">
+            <div class="pt">
+              <div class="pd" style="background: var(--blue)"></div>
+              Risk Snapshot
+            </div>
+            <div class="risk-grid">
+              <div class="rk-card cr">
+                <div class="rk-lbl">CRITICAL</div>
+                <div class="rk-num" id="kCr">0</div>
+                <div class="rk-sub">High risk</div>
+              </div>
+              <div class="rk-card wa">
+                <div class="rk-lbl">WARNING</div>
+                <div class="rk-num" id="kWa">0</div>
+                <div class="rk-sub">Monitor</div>
+              </div>
+              <div class="rk-card no">
+                <div class="rk-lbl">NORMAL</div>
+                <div class="rk-num" id="kNo">0</div>
+                <div class="rk-sub">Lower risk</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="pt">
+              <div class="pd"></div>
+              DBSCAN Results
+            </div>
+            <div class="sr">
+              <span class="sl">Total clusters</span
+              ><span class="sv" id="sCl">—</span>
+            </div>
+            <div class="sr">
+              <span class="sl">Reports in clusters</span
+              ><span class="sv" id="sIn">—</span>
+            </div>
+            <div class="sr">
+              <span class="sl">Noise points</span
+              ><span class="sv" id="sNo">—</span>
+            </div>
+            <div class="sr">
+              <span class="sl">Critical / Warning / Normal</span
+              ><span class="sv" id="sRk">—</span>
+            </div>
+            <div class="sr">
+              <span class="sl">Avg cluster trust</span
+              ><span class="sv g" id="sTr">—</span>
+            </div>
+            <div class="sr">
+              <span class="sl">Algorithm</span
+              ><span class="sv" style="color: var(--cyan)">DBSCAN</span>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="pt">
+              <div class="pd" style="background: var(--green)"></div>
+              Detected Hotspot Clusters
+            </div>
+            <div class="tbl-wrap">
+              <div class="tbl-head">
+                <span>ID</span>
+                <span>Location</span>
+                <span>Reports</span>
+                <span>Risk</span>
+              </div>
+              <div id="hotspotTable">
+                <div class="tbl-row muted-note">
+                  <span>--</span>
+                  <span>No hotspots yet.</span>
+                  <span>0</span>
+                  <span>--</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="pt">
+              <div class="pd" style="background: var(--red)"></div>
+              Detected Hotspots
+            </div>
+            <div id="clList">
+              <div
+                style="
+                  font-size: 11px;
+                  color: var(--muted);
+                  text-align: center;
+                  padding: 14px 0;
+                "
+              >
+                Press ⚡ Run DBSCAN to detect clusters
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="pt">
+              <div class="pd" style="background: var(--purple)"></div>
+              ML Predictions (RF)
+            </div>
+            <div id="mlDiv">
+              <div class="mlc">
+                <div class="mlh">
+                  <div class="mli">🤖</div>
+                  <div>
+                    <div class="mlt">Awaiting cluster data</div>
+                    <div class="mls">Random Forest · pending</div>
+                  </div>
+                </div>
+                <div class="mlp">Run DBSCAN first</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ps">
+            <div class="pt">
+              <div class="pd" style="background: var(--amber)"></div>
+              Security Advisories
+            </div>
+            <div id="advDiv">
+              <div class="ac">
+                <div class="ai">ℹ️</div>
+                <div>
+                  <div class="at">Awaiting Analysis</div>
+                  <div class="atx">
+                    Advisories generate after DBSCAN detects active clusters.
+                  </div>
+                </div>
+              </div>
+            </div>
+            <button class="eb">⬇ Export Map PDF</button>
+          </div>
+        </aside>
+      </div>
+    </div>
+
+    <script>
+      // ===== MAP =====
+      const map = L.map("map", { center: [-1.499, 29.635], zoom: 12 });
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 18,
+        attribution: "&copy; OpenStreetMap contributors",
+      }).addTo(map);
+
+      // ===== RAW REPORTS =====
+      const REPORTS = [
+        // Dense zone — Muhoza market (will form CRITICAL cluster)
+        {
+          id: 1,
+          lat: -1.4985,
+          lng: 29.634,
+          type: "Theft",
+          trust: 88,
+          time: "18:42",
+        },
+        {
+          id: 2,
+          lat: -1.4992,
+          lng: 29.6355,
+          type: "Theft",
+          trust: 82,
+          time: "19:05",
+        },
+        {
+          id: 3,
+          lat: -1.4975,
+          lng: 29.6348,
+          type: "Assault",
+          trust: 79,
+          time: "20:11",
+        },
+        {
+          id: 4,
+          lat: -1.4998,
+          lng: 29.6332,
+          type: "Theft",
+          trust: 91,
+          time: "21:03",
+        },
+        {
+          id: 5,
+          lat: -1.5005,
+          lng: 29.6362,
+          type: "Suspicious",
+          trust: 76,
+          time: "20:45",
+        },
+        {
+          id: 6,
+          lat: -1.498,
+          lng: 29.637,
+          type: "Assault",
+          trust: 84,
+          time: "21:30",
+        },
+        {
+          id: 7,
+          lat: -1.4965,
+          lng: 29.6345,
+          type: "Suspicious",
+          trust: 78,
+          time: "22:00",
+        },
+        {
+          id: 8,
+          lat: -1.501,
+          lng: 29.634,
+          type: "Assault",
+          trust: 83,
+          time: "19:55",
+        },
+        {
+          id: 9,
+          lat: -1.4972,
+          lng: 29.636,
+          type: "Theft",
+          trust: 87,
+          time: "18:20",
+        },
+        {
+          id: 10,
+          lat: -1.5002,
+          lng: 29.635,
+          type: "Suspicious",
+          trust: 75,
+          time: "20:30",
+        },
+        {
+          id: 11,
+          lat: -1.499,
+          lng: 29.6375,
+          type: "Theft",
+          trust: 80,
+          time: "22:15",
+        },
+        // Kinigi terminal (WARNING cluster)
+        {
+          id: 12,
+          lat: -1.465,
+          lng: 29.581,
+          type: "Vandalism",
+          trust: 72,
+          time: "16:10",
+        },
+        {
+          id: 13,
+          lat: -1.4665,
+          lng: 29.5825,
+          type: "Drug",
+          trust: 68,
+          time: "17:30",
+        },
+        {
+          id: 14,
+          lat: -1.464,
+          lng: 29.58,
+          type: "Vandalism",
+          trust: 74,
+          time: "15:55",
+        },
+        {
+          id: 15,
+          lat: -1.4658,
+          lng: 29.5838,
+          type: "Drug",
+          trust: 65,
+          time: "18:45",
+        },
+        {
+          id: 16,
+          lat: -1.4672,
+          lng: 29.5815,
+          type: "Vandalism",
+          trust: 71,
+          time: "16:50",
+        },
+        {
+          id: 17,
+          lat: -1.4645,
+          lng: 29.583,
+          type: "Vandalism",
+          trust: 70,
+          time: "17:00",
+        },
+        {
+          id: 18,
+          lat: -1.466,
+          lng: 29.5845,
+          type: "Drug",
+          trust: 69,
+          time: "19:10",
+        },
+        // Cyuve night zone (WARNING cluster)
+        {
+          id: 19,
+          lat: -1.532,
+          lng: 29.612,
+          type: "Suspicious",
+          trust: 70,
+          time: "23:05",
+        },
+        {
+          id: 20,
+          lat: -1.5335,
+          lng: 29.6135,
+          type: "Suspicious",
+          trust: 65,
+          time: "23:50",
+        },
+        {
+          id: 21,
+          lat: -1.531,
+          lng: 29.6108,
+          type: "Theft",
+          trust: 72,
+          time: "00:15",
+        },
+        {
+          id: 22,
+          lat: -1.5342,
+          lng: 29.6115,
+          type: "Suspicious",
+          trust: 67,
+          time: "22:40",
+        },
+        {
+          id: 23,
+          lat: -1.5325,
+          lng: 29.6145,
+          type: "Theft",
+          trust: 69,
+          time: "01:00",
+        },
+        // Nyange road (NORMAL cluster)
+        {
+          id: 24,
+          lat: -1.482,
+          lng: 29.562,
+          type: "Traffic",
+          trust: 66,
+          time: "08:20",
+        },
+        {
+          id: 25,
+          lat: -1.4835,
+          lng: 29.564,
+          type: "Traffic",
+          trust: 62,
+          time: "09:05",
+        },
+        {
+          id: 26,
+          lat: -1.481,
+          lng: 29.5608,
+          type: "Traffic",
+          trust: 64,
+          time: "07:50",
+        },
+        {
+          id: 27,
+          lat: -1.4845,
+          lng: 29.563,
+          type: "Vandalism",
+          trust: 60,
+          time: "10:30",
+        },
+        // Noise — isolated / low trust
+        {
+          id: 28,
+          lat: -1.515,
+          lng: 29.65,
+          type: "Suspicious",
+          trust: 32,
+          time: "03:00",
+        },
+        {
+          id: 29,
+          lat: -1.478,
+          lng: 29.68,
+          type: "Theft",
+          trust: 28,
+          time: "04:20",
+        },
+        {
+          id: 30,
+          lat: -1.54,
+          lng: 29.59,
+          type: "Vandalism",
+          trust: 35,
+          time: "02:10",
+        },
+        {
+          id: 31,
+          lat: -1.455,
+          lng: 29.62,
+          type: "Suspicious",
+          trust: 30,
+          time: "05:00",
+        },
+        {
+          id: 32,
+          lat: -1.52,
+          lng: 29.57,
+          type: "Traffic",
+          trust: 38,
+          time: "06:30",
+        },
+        {
+          id: 33,
+          lat: -1.49,
+          lng: 29.7,
+          type: "Theft",
+          trust: 25,
+          time: "03:45",
+        },
+      ];
+
+      const ZONE_NAMES = [
+        { lat: -1.499, lng: 29.635, name: "Muhoza Market Zone" },
+        { lat: -1.466, lng: 29.582, name: "Kinigi Bus Terminal" },
+        { lat: -1.533, lng: 29.612, name: "Cyuve Night Zone" },
+        { lat: -1.483, lng: 29.562, name: "Nyange – Gorilla Road" },
+      ];
+
+      const TCOLORS = {
+        Theft: "#ef4444",
+        Assault: "#f97316",
+        Vandalism: "#f59e0b",
+        Suspicious: "#a855f7",
+        Drug: "#10b981",
+        Traffic: "#3b82f6",
+      };
+      const RCOLORS = {
+        CRITICAL: "#ef4444",
+        WARNING: "#f59e0b",
+        NORMAL: "#10b981",
+      };
+
+      let layers = [],
+        currentFilter = "All",
+        analyzeFiltered = false,
+        lastClusters = [],
+        lastNoise = [];
+
+      // ===== DBSCAN =====
+      function haversine(p1, p2) {
+        const R = 6371000,
+          dLat = ((p2.lat - p1.lat) * Math.PI) / 180,
+          dLng = ((p2.lng - p1.lng) * Math.PI) / 180;
+        const a =
+          Math.sin(dLat / 2) ** 2 +
+          Math.cos((p1.lat * Math.PI) / 180) *
+            Math.cos((p2.lat * Math.PI) / 180) *
+            Math.sin(dLng / 2) ** 2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      }
+
+      function dbscan(pts, eps, minPts) {
+        const n = pts.length,
+          labels = new Array(n).fill(-2),
+          core = new Array(n).fill(false),
+          cache = new Array(n);
+        let cid = 0;
+        function neighbors(i) {
+          if (cache[i]) return cache[i];
+          cache[i] = pts
+            .map((_, j) => j)
+            .filter((j) => haversine(pts[i], pts[j]) <= eps);
+          return cache[i];
+        }
+        for (let i = 0; i < n; i++) {
+          if (labels[i] !== -2) continue;
+          const nb = neighbors(i);
+          if (nb.length < minPts) {
+            labels[i] = -1;
+            continue;
+          }
+          labels[i] = cid;
+          core[i] = true;
+          const q = [...nb];
+          for (let qi = 0; qi < q.length; qi++) {
+            const nb2 = q[qi];
+            if (labels[nb2] === -1) labels[nb2] = cid;
+            if (labels[nb2] !== -2) {
+              if (neighbors(nb2).length >= minPts) core[nb2] = true;
+              continue;
+            }
+            labels[nb2] = cid;
+            const nn = neighbors(nb2);
+            if (nn.length >= minPts) {
+              core[nb2] = true;
+              nn.forEach((x) => {
+                if (!q.includes(x)) q.push(x);
+              });
+            }
+          }
+          cid++;
+        }
+        const roles = labels.map((lb, i) => {
+          if (lb === -1) return "noise";
+          return core[i] ? "core" : "border";
+        });
+        return { labels, roles };
+      }
+
+      // Convex hull
+      function convexHull(pts) {
+        if (pts.length < 3) return pts;
+        const s = [...pts].sort((a, b) => a.lng - b.lng || a.lat - b.lat);
+        const cross = (O, A, B) =>
+          (A.lng - O.lng) * (B.lat - O.lat) - (A.lat - O.lat) * (B.lng - O.lng);
+        const lo = [],
+          hi = [];
+        for (const p of s) {
+          while (
+            lo.length >= 2 &&
+            cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0
+          )
+            lo.pop();
+          lo.push(p);
+        }
+        for (let i = s.length - 1; i >= 0; i--) {
+          const p = s[i];
+          while (
+            hi.length >= 2 &&
+            cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0
+          )
+            hi.pop();
+          hi.push(p);
+        }
+        hi.pop();
+        lo.pop();
+        return [...lo, ...hi];
+      }
+
+      function expandHull(hull, f) {
+        const cx = hull.reduce((s, p) => s + p.lat, 0) / hull.length;
+        const cy = hull.reduce((s, p) => s + p.lng, 0) / hull.length;
+        return hull.map((p) => ({
+          lat: cx + (p.lat - cx) * (1 + f),
+          lng: cy + (p.lng - cy) * (1 + f),
+        }));
+      }
+
+      function zoneName(lat, lng) {
+        return ZONE_NAMES.reduce(
+          (b, z) => {
+            const d = Math.hypot(z.lat - lat, z.lng - lng);
+            return d < b.d ? { d, n: z.name } : b;
+          },
+          { d: 999, n: "Unknown Zone" },
+        ).n;
+      }
+
+      function getRisk(reports) {
+        const n = reports.length,
+          at = reports.reduce((s, r) => s + r.trust, 0) / n;
+        const hv = reports.some(
+          (r) => r.type === "Assault" || r.type === "Theft",
+        );
+        if (n >= 8 || (hv && n >= 5)) return "CRITICAL";
+        if (n >= 5 || at >= 65) return "WARNING";
+        return "NORMAL";
+      }
+
+      function typeBreak(reports) {
+        return Object.entries(
+          reports.reduce((a, r) => {
+            a[r.type] = (a[r.type] || 0) + 1;
+            return a;
+          }, {}),
+        ).sort((a, b) => b[1] - a[1]);
+      }
+
+      // ===== RENDER MAP =====
+      function clearLayers() {
+        layers.forEach((l) => map.removeLayer(l));
+        layers = [];
+      }
+      function add(l) {
+        l.addTo(map);
+        layers.push(l);
+        return l;
+      }
+
+      function render(clusters, noise) {
+        clearLayers();
+
+        clusters.forEach((cl, idx) => {
+          const col = RCOLORS[cl.risk];
+          const hull = expandHull(convexHull(cl.reports), 0.15);
+          const ll = hull.map((p) => [p.lat, p.lng]);
+          const cx = cl.centroid.lat,
+            cy = cl.centroid.lng;
+          const alpha =
+            cl.risk === "CRITICAL" ? 0.22 : cl.risk === "WARNING" ? 0.15 : 0.1;
+
+          // Outer glow
+          add(
+            L.polygon(ll, {
+              color: col,
+              fillColor: col,
+              fillOpacity: alpha * 0.4,
+              weight: 0,
+              interactive: false,
+            }),
+          );
+
+          // Convex hull polygon — the real DBSCAN boundary
+          const poly = add(
+            L.polygon(ll, {
+              color: col,
+              fillColor: col,
+              fillOpacity: alpha,
+              weight: 2,
+              opacity: 0.75,
+              dashArray: cl.risk === "NORMAL" ? "6 4" : null,
+            }),
+          );
+
+          // Three pulsing concentric circles at centroid (hotspot marker)
+          const radii =
+            cl.risk === "CRITICAL"
+              ? [550, 350, 180]
+              : cl.risk === "WARNING"
+                ? [450, 280, 140]
+                : [350, 220, 110];
+          radii.forEach((r, i) => {
+            add(
+              L.circle([cx, cy], {
+                radius: r,
+                color: col,
+                fillColor: col,
+                fillOpacity: 0.03 + i * 0.025,
+                weight: i === 0 ? 1.2 : 0.4,
+                opacity: 0.25 + i * 0.12,
+                interactive: false,
+                dashArray: i === 0 ? "4 6" : null,
+              }),
+            );
+          });
+
+          // Hotspot intensity dot at center
+          const hotIcon = L.divIcon({
+            html: `<div style="
+        width:14px;height:14px;background:${col};border-radius:50%;
+        border:2px solid #fff2;box-shadow:0 0 16px ${col},0 0 32px ${col}44;
+      "></div>`,
+            className: "",
+            iconSize: [14, 14],
+            iconAnchor: [7, 7],
+          });
+          add(L.marker([cx, cy], { icon: hotIcon, zIndexOffset: 100 }));
+
+          // Cluster label
+          const rEmoji =
+            cl.risk === "CRITICAL" ? "🔴" : cl.risk === "WARNING" ? "🟠" : "🟢";
+          const lblIcon = L.divIcon({
+            html: `<div style="
+        background:${col}dd;color:#fff;font-family:'Space Mono',monospace;
+        font-size:9px;font-weight:700;padding:3px 8px;border-radius:10px;
+        white-space:nowrap;box-shadow:0 2px 10px ${col}55;
+        border:1px solid ${col}88;pointer-events:none;
+      ">${rEmoji} C${idx + 1} ${cl.zone}</div>`,
+            className: "",
+            iconAnchor: [55, -14],
+          });
+          const lm = add(
+            L.marker([cx, cy], { icon: lblIcon, zIndexOffset: 200 }),
+          );
+
+          const tbStr = typeBreak(cl.reports)
+            .map(([t, c]) => `<span class="pu-tag">${t} ×${c}</span>`)
+            .join("");
+          const popupHTML = `
+      <div class="pu-t">${rEmoji} Cluster #${idx + 1} — ${cl.zone}</div>
+      <div class="pu-r"><b>Risk:</b> ${cl.risk}</div>
+      <div class="pu-r"><b>Points in cluster:</b> ${cl.reports.length}</div>
+      <div class="pu-r"><b>Avg Trust Score:</b> ${cl.avgTrust}/100</div>
+      <div class="pu-r"><b>Algorithm:</b> DBSCAN (ε=${document.getElementById("eps").value}m, minPts=${document.getElementById("minPts").value})</div>
+      <div class="pu-r"><b>Boundary:</b> Convex hull of ${cl.reports.length} core+border pts</div>
+      <div class="pu-tags">${tbStr}</div>`;
+          lm.bindPopup(popupHTML);
+          poly.bindPopup(popupHTML);
+
+          // Individual dots
+          cl.reports.forEach((r) => {
+            if (currentFilter !== "All" && r.type !== currentFilter) return;
+            const m = add(
+              L.circleMarker([r.lat, r.lng], {
+                radius: 5,
+                color: TCOLORS[r.type] || "#888",
+                fillColor: TCOLORS[r.type] || "#888",
+                fillOpacity: 0.85,
+                weight: 1.5,
+                opacity: 0.9,
+              }),
+            );
+            m.bindPopup(`
+        <div class="pu-t">📍 ${r.type} Report</div>
+        <div class="pu-r"><b>Trust Score:</b> ${r.trust}/100</div>
+        <div class="pu-r"><b>Cluster:</b> #${idx + 1} (${cl.risk})</div>
+        <div class="pu-r"><b>Time:</b> ${r.time}</div>
+        <div class="pu-r"><b>DBSCAN role:</b> ${r._role || "core/border"}</div>
+        <div class="pu-r"><b>Verified:</b> ${r.trust >= 70 ? "✅ Yes" : "⚠ High-confidence"}</div>`);
+          });
+        });
+
+        // Noise points
+        noise.forEach((r) => {
+          if (currentFilter !== "All" && r.type !== currentFilter) return;
+          const m = add(
+            L.circleMarker([r.lat, r.lng], {
+              radius: 4,
+              color: "#4b5563",
+              fillColor: "#374151",
+              fillOpacity: 0.4,
+              weight: 1,
+              opacity: 0.4,
+            }),
+          );
+          m.bindPopup(`
+      <div class="pu-t" style="color:var(--muted)">⚪ Noise Point — ${r.type}</div>
+      <div class="pu-r"><b>Trust:</b> ${r.trust}/100</div>
+      <div class="pu-r"><b>DBSCAN:</b> Outlier (no ε-neighborhood)</div>
+      <div class="pu-r" style="color:var(--amber)">Excluded from all cluster analysis</div>`);
+        });
+      }
+
+      // ===== UPDATE PANEL =====
+      function updatePanel(clusters, noise) {
+        const nCr = clusters.filter((c) => c.risk === "CRITICAL").length;
+        const nWa = clusters.filter((c) => c.risk === "WARNING").length;
+        const nNo = clusters.filter((c) => c.risk === "NORMAL").length;
+        const tot = clusters.reduce((s, c) => s + c.reports.length, 0);
+        const avgT = clusters.length
+          ? Math.round(
+              clusters.reduce((s, c) => s + c.avgTrust, 0) / clusters.length,
+            )
+          : 0;
+
+        document.getElementById("sCl").textContent = clusters.length;
+        document.getElementById("sIn").textContent = tot;
+        document.getElementById("sNo").textContent = noise.length;
+        document.getElementById("sRk").innerHTML =
+          `<span style="color:var(--red)">${nCr}</span> / <span style="color:var(--amber)">${nWa}</span> / <span style="color:var(--green)">${nNo}</span>`;
+        document.getElementById("sTr").textContent = clusters.length
+          ? `${avgT} / 100`
+          : "—";
+        document.getElementById("kCr").textContent = nCr;
+        document.getElementById("kWa").textContent = nWa;
+        document.getElementById("kNo").textContent = nNo;
+
+        const rk = { CRITICAL: "cr", WARNING: "wa", NORMAL: "no" };
+        document.getElementById("hotspotTable").innerHTML = clusters.length
+          ? clusters
+              .map(
+                (
+                  cl,
+                  i,
+                ) => `<div class="tbl-row" onclick="focusCluster(${i})" style="cursor:pointer">
+          <span>#${i + 1}</span>
+          <span>${cl.zone}</span>
+          <span>${cl.reports.length}</span>
+          <span class="risk-pill ${rk[cl.risk]}">${cl.risk}</span>
+        </div>`,
+              )
+              .join("")
+          : `<div class="tbl-row muted-note">
+          <span>--</span>
+          <span>No hotspots with current parameters.</span>
+          <span>0</span>
+          <span>--</span>
+        </div>`;
+
+        // Cluster list
+        const rc = { CRITICAL: "cr", WARNING: "wa", NORMAL: "no" };
+        document.getElementById("clList").innerHTML = clusters.length
+          ? clusters
+              .map((cl, i) => {
+                const tb = typeBreak(cl.reports)
+                  .map(
+                    ([t, c]) =>
+                      `<span class="itag it-${t.toLowerCase()}">${t} ×${c}</span>`,
+                  )
+                  .join("");
+                return `<div class="cc ${rc[cl.risk]}" onclick="focusCluster(${i})">
+          <div class="ch"><span class="cid">CLUSTER #${i + 1}</span><span class="rb ${rc[cl.risk]}">${cl.risk}</span></div>
+          <div class="cloc">📍 ${cl.zone}</div>
+          <div class="cm"><span>⚠ ${cl.reports.length} reports</span><span>🎯 Trust ${cl.avgTrust}/100</span></div>
+          <div class="itags">${tb}</div>
+          <div class="tb"><div class="tbl"><span>Cluster trust</span><span>${cl.avgTrust}%</span></div>
+          <div class="tbg"><div class="tbf" style="width:${cl.avgTrust}%"></div></div></div>
+        </div>`;
+              })
+              .join("")
+          : '<div style="font-size:11px;color:var(--muted);text-align:center;padding:12px 0">No clusters with current parameters</div>';
+
+        // ML
+        let ml = "";
+        clusters
+          .filter((c) => c.risk === "CRITICAL")
+          .slice(0, 2)
+          .forEach((cl, i) => {
+            const dom = typeBreak(cl.reports)[0];
+            const conf = Math.min(96, 68 + Math.floor(cl.avgTrust / 5));
+            ml += `<div class="mlc"><div class="mlh"><div class="mli">🔮</div><div><div class="mlt">Cluster #${clusters.indexOf(cl) + 1} — ${cl.zone}</div><div class="mls">RF model · 6h forecast</div></div></div>
+      <div class="mlp">${dom[0]} escalation likely (+${30 + dom[1] * 6}%) tonight</div>
+      <div class="mlp">Peak risk: evening / night hours</div>
+      <div class="mlp">${cl.reports.length} verified reports used for training</div>
+      <div class="mlcf"><span>RF Confidence</span><div class="cb"><div class="cf" style="width:${conf}%"></div></div><span style="color:var(--cyan);font-family:var(--mono)">${conf}%</span></div>
+    </div>`;
+          });
+        clusters
+          .filter((c) => c.risk === "WARNING")
+          .slice(0, 1)
+          .forEach((cl) => {
+            const c2 = Math.min(88, 52 + cl.reports.length * 5);
+            ml += `<div class="mlc"><div class="mlh"><div class="mli">📡</div><div><div class="mlt">Cluster #${clusters.indexOf(cl) + 1} — ${cl.zone}</div><div class="mls">Anomaly detection · GPS ok</div></div></div>
+      <div class="mlp">Cluster stable — no rapid growth detected</div>
+      <div class="mlp">Avg image quality score: 0.${Math.floor(cl.avgTrust * 0.9)}</div>
+      <div class="mlcf"><span>RF Confidence</span><div class="cb"><div class="cf" style="width:${c2}%"></div></div><span style="color:var(--cyan);font-family:var(--mono)">${c2}%</span></div>
+    </div>`;
+          });
+        document.getElementById("mlDiv").innerHTML =
+          ml ||
+          '<div class="mlc"><div class="mlh"><div class="mli">✅</div><div><div class="mlt">No critical predictions</div><div class="mls">All clusters within safe bounds</div></div></div></div>';
+
+        // Advisories
+        let adv = "";
+        clusters
+          .filter((c) => c.risk === "CRITICAL")
+          .forEach((cl) => {
+            adv += `<div class="ac"><div class="ai">🚨</div><div><div class="at">Deploy Patrol — ${cl.zone}</div><div class="atx">CRITICAL: ${cl.reports.length} reports (trust avg ${cl.avgTrust}). Dispatch 2 units. Focus 18:00–22:00 based on timestamp distribution.</div></div></div>`;
+          });
+        clusters
+          .filter((c) => c.risk === "WARNING")
+          .forEach((cl) => {
+            const dom = typeBreak(cl.reports)[0];
+            adv += `<div class="ac"><div class="ai">💡</div><div><div class="at">Monitor — ${cl.zone}</div><div class="atx">${dom[0]} cluster forming. Engage community policing committee. Review area lighting and access at night.</div></div></div>`;
+          });
+        if (noise.length)
+          adv += `<div class="ac"><div class="ai">⚠️</div><div><div class="at">${noise.length} Reports Excluded</div><div class="atx">DBSCAN identified these as noise (isolated or trust < ${document.getElementById("trustMin").value}). Not used in hotspot analysis.</div></div></div>`;
+        if (!adv)
+          adv =
+            '<div class="ac"><div class="ai">✅</div><div><div class="at">No Active Advisories</div><div class="atx">No clusters detected with current ε and minPts. Try increasing epsilon radius.</div></div></div>';
+        document.getElementById("advDiv").innerHTML = adv;
+      }
+
+      // ===== MAIN RUN =====
+      function runDBSCAN() {
+        const eps = parseFloat(document.getElementById("eps").value);
+        const minPts = parseInt(document.getElementById("minPts").value);
+        const tMin = parseInt(document.getElementById("trustMin").value);
+        const btn = document.getElementById("runBtn");
+        btn.textContent = "⏳ Running...";
+
+        setTimeout(() => {
+          const scopedByType = REPORTS.filter(
+            (r) => currentFilter === "All" || r.type === currentFilter,
+          );
+          const analysisBase = analyzeFiltered ? scopedByType : REPORTS;
+          const pool = analysisBase.filter((r) => r.trust >= tMin);
+          const excluded = analysisBase.filter((r) => r.trust < tMin);
+
+          const { labels, roles } = dbscan(pool, eps, minPts);
+          const labeledPool = pool.map((r, i) => ({ ...r, _role: roles[i] }));
+
+          // Group clusters
+          const cm = {};
+          labels.forEach((lb, i) => {
+            if (lb === -1) return;
+            if (!cm[lb]) cm[lb] = [];
+            cm[lb].push(labeledPool[i]);
+          });
+
+          const noise = [
+            ...labeledPool.filter((_, i) => labels[i] === -1),
+            ...excluded,
+          ];
+
+          const clusters = Object.values(cm)
+            .map((rpts) => {
+              const avgTrust = Math.round(
+                rpts.reduce((s, r) => s + r.trust, 0) / rpts.length,
+              );
+              const cx = rpts.reduce((s, r) => s + r.lat, 0) / rpts.length;
+              const cy = rpts.reduce((s, r) => s + r.lng, 0) / rpts.length;
+              return {
+                reports: rpts,
+                avgTrust,
+                risk: getRisk(rpts),
+                zone: zoneName(cx, cy),
+                centroid: { lat: cx, lng: cy },
+              };
+            })
+            .sort(
+              (a, b) =>
+                ({ CRITICAL: 0, WARNING: 1, NORMAL: 2 })[a.risk] -
+                { CRITICAL: 0, WARNING: 1, NORMAL: 2 }[b.risk],
+            );
+
+          lastClusters = clusters;
+          lastNoise = noise;
+          render(clusters, noise);
+          updatePanel(clusters, noise);
+
+          btn.textContent = `✅ ${clusters.length} clusters`;
+          setTimeout(() => {
+            btn.textContent = "⚡ Run DBSCAN";
+          }, 3000);
+        }, 400);
+      }
+
+      function focusCluster(i) {
+        if (!lastClusters[i]) return;
+        const c = lastClusters[i].centroid;
+        map.flyTo([c.lat, c.lng], 14, { duration: 1.1 });
+      }
+      window.focusCluster = focusCluster;
+
+      function setFilter(t, btn) {
+        document
+          .querySelectorAll(".fb")
+          .forEach((b) => b.classList.remove("on"));
+        btn.classList.add("on");
+        currentFilter = t;
+        if (!lastClusters.length) return;
+        if (analyzeFiltered) {
+          runDBSCAN();
+          return;
+        }
+        render(lastClusters, lastNoise);
+      }
+      window.setFilter = setFilter;
+
+      function toggleAnalyzeScope(btn) {
+        analyzeFiltered = !analyzeFiltered;
+        btn.classList.toggle("on", analyzeFiltered);
+        btn.textContent = analyzeFiltered
+          ? "Scope: Selected Type"
+          : "Scope: All Types";
+        runDBSCAN();
+      }
+      window.toggleAnalyzeScope = toggleAnalyzeScope;
+
+      setTimeout(runDBSCAN, 700);
+    </script>
+  </body>
+</html>

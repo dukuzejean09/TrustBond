@@ -3,6 +3,7 @@ Send emails via SMTP (e.g. new user credentials).
 Uses settings from config; no-op if SMTP not configured.
 """
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -29,16 +30,21 @@ def send_email(to: str, subject: str, body_plain: str, body_html: str | None = N
         msg.attach(MIMEText(body_html, "html"))
     try:
         port = getattr(settings, "smtp_port", 587) or 587
+        timeout = max(3, int(getattr(settings, "smtp_timeout_seconds", 12) or 12))
         if port == 465:
-            with smtplib.SMTP_SSL(settings.smtp_host, port) as server:
+            with smtplib.SMTP_SSL(settings.smtp_host, port, timeout=timeout) as server:
                 server.login(settings.smtp_user, settings.smtp_pass)
                 server.sendmail(from_addr, [to], msg.as_string())
         else:
-            with smtplib.SMTP(settings.smtp_host, port) as server:
+            with smtplib.SMTP(settings.smtp_host, port, timeout=timeout) as server:
                 server.starttls()
                 server.login(settings.smtp_user, settings.smtp_pass)
                 server.sendmail(from_addr, [to], msg.as_string())
         return True, None
+    except (socket.timeout, TimeoutError):
+        err = "SMTP connection timed out. Check SMTP settings/network or reduce SMTP_TIMEOUT_SECONDS."
+        print(f"[Email] Send failed: {err}")
+        return False, err
     except Exception as e:
         err = str(e).strip()
         print(f"[Email] Send failed: {err}")

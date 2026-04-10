@@ -1,10 +1,12 @@
 from typing import Annotated, Optional, List
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
-from uuid import uuid4
+from uuid import uuid4, UUID
 from datetime import datetime, timezone, timedelta
+from app.core.websocket import manager
+import asyncio
 
 from app.database import get_db
 from app.models.device import Device
@@ -69,21 +71,16 @@ def get_device_profile(device_hash: str, db: Session = Depends(get_db)):
     # Aggregate report stats for this device.
     q = db.query(Report).filter(Report.device_id == device.device_id)
     total = q.count()
-    # Use current enum semantics:
-    # - status: pending | verified | flagged | rejected
-    # - rule_status: pending | passed | flagged | rejected
     trusted = (
         q.filter(
-            (Report.status == "verified") | (Report.rule_status == "passed")
+            Report.rule_status.in_(["confirmed", "verified", "trusted"])
         ).count()
         if total > 0
         else 0
     )
     flagged = (
         q.filter(
-            (Report.status == "rejected")
-            | (Report.rule_status.in_(["flagged", "rejected"]))
-            | (Report.is_flagged == True)
+            Report.rule_status.in_(["flagged", "rejected", "false_report"])
         ).count()
         if total > 0
         else 0
@@ -99,13 +96,54 @@ def get_device_profile(device_hash: str, db: Session = Depends(get_db)):
         .scalar()
     )
 
-    # Achievements derived from real report stats + ML trust data
+    now = datetime.now(timezone.utc)
+    trusted_statuses = ["confirmed", "verified", "trusted"]
+
+    trusted_7d = (
+        q.filter(
+            Report.rule_status.in_(trusted_statuses),
+            Report.reported_at >= now - timedelta(days=7),
+        ).count()
+        if total > 0
+        else 0
+    )
+
+    trusted_30d = (
+        q.filter(
+            Report.rule_status.in_(trusted_statuses),
+            Report.reported_at >= now - timedelta(days=30),
+        ).count()
+        if total > 0
+        else 0
+    )
+
+    # Rank devices by trusted reports in the last 30 days.
+    trusted_30d_by_device = (
+        db.query(
+            Report.device_id.label("device_id"),
+            func.count(Report.report_id).label("trusted_cnt"),
+        )
+        .filter(
+            Report.rule_status.in_(trusted_statuses),
+            Report.reported_at >= now - timedelta(days=30),
+        )
+        .group_by(Report.device_id)
+        .subquery()
+    )
+
+    max_trusted_30d = (
+        db.query(func.coalesce(func.max(trusted_30d_by_device.c.trusted_cnt), 0)).scalar() or 0
+    )
+
+    # Achievements derived from real report stats (time-window aware)
     achievements = {
         "first_report": total >= 1,
         "five_verified": trusted >= 5,
         "ten_reports": total >= 10,
-        "streak_x7": total >= 7,
-        "top_reporter": total >= 20,
+        # "Streak" approximated as number of trusted reports in the last 7 days.
+        "streak_x7": trusted_7d >= 7,
+        # "Top reporter" based on the highest trusted count in the last 30 days.
+        "top_reporter": trusted_30d >= 10 and trusted_30d == max_trusted_30d and max_trusted_30d > 0,
     }
 
     return {
@@ -131,12 +169,16 @@ def list_devices(
     trust_level: Optional[str] = Query(
         None, description="high (>=70), medium (40-69), low (<40)"
     ),
+    include_banned: bool = Query(
+        True,
+        description="If true (default), include banned devices in the registry list.",
+    ),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
     """List devices with trust stats for police dashboard. Admin/supervisor only."""
     query = db.query(Device)
-    if hasattr(Device, "is_banned"):
+    if hasattr(Device, "is_banned") and not include_banned:
         query = query.filter(Device.is_banned == False)
     if trust_level == "high":
         query = query.filter(Device.device_trust_score >= 70)
@@ -163,6 +205,26 @@ def list_devices(
         last_active = getattr(d, "last_seen_at", None)
         sector_location_id = None
         sector_name = None
+        ml_avg_trust = None
+        ml_fake_rate = None
+        ml_last_pred_at = None
+        ml_avg_conf = None
+        ml_last_conf = None
+        try:
+            meta = getattr(d, "metadata_json", None)
+            if isinstance(meta, dict) and isinstance(meta.get("ml"), dict):
+                ml = meta.get("ml") or {}
+                ml_avg_trust = ml.get("avg_trust_score")
+                ml_fake_rate = ml.get("fake_rate")
+                ml_last_pred_at = ml.get("last_prediction_at")
+                ml_avg_conf = ml.get("avg_confidence")
+                ml_last_conf = ml.get("last_confidence")
+        except Exception:
+            ml_avg_trust = None
+            ml_fake_rate = None
+            ml_last_pred_at = None
+            ml_avg_conf = None
+            ml_last_conf = None
         # Fallback to most recent report if last_seen_at is not yet populated
         if last_active is None:
             last_report = (
@@ -191,6 +253,15 @@ def list_devices(
                 "trusted_reports": d.trusted_reports or 0,
                 "flagged_reports": d.flagged_reports or 0,
                 "spam_flags": getattr(d, "spam_flags", 0) or 0,
+                "is_banned": getattr(d, "is_banned", False) or False,
+                "is_blacklisted": getattr(d, "is_blacklisted", False) or False,
+                "blacklist_reason": getattr(d, "blacklist_reason", None),
+                "metadata_json": getattr(d, "metadata_json", {}),  # Add metadata field
+                "ml_avg_trust": float(ml_avg_trust) if ml_avg_trust is not None else None,
+                "ml_fake_rate": float(ml_fake_rate) if ml_fake_rate is not None else None,
+                "ml_last_prediction_at": ml_last_pred_at,
+                "ml_avg_confidence": float(ml_avg_conf) if ml_avg_conf is not None else None,
+                "ml_last_confidence": float(ml_last_conf) if ml_last_conf is not None else None,
                 "first_seen_at": d.first_seen_at.isoformat() if d.first_seen_at else None,
                 "last_active_at": last_active.isoformat() if last_active else None,
                 "sector_location_id": sector_location_id,
@@ -266,11 +337,90 @@ def list_devices(
     }
 
 
+@router.patch("/{device_id}/ban", response_model=dict)
+def ban_device(
+    device_id: UUID,
+    background_tasks: BackgroundTasks,
+    body: dict | None = None,
+    current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)] = None,
+    db: Session = Depends(get_db),
+):
+    """Ban a device from reporting (admin/supervisor)."""
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not hasattr(device, "is_banned"):
+        raise HTTPException(status_code=400, detail="Device ban is not supported by this schema")
+    reason = None
+    if isinstance(body, dict):
+        reason = body.get("reason") or body.get("blacklist_reason")
+    device.is_banned = True
+    # Mirror into blacklist fields if present (keeps UI consistent)
+    if hasattr(device, "is_blacklisted"):
+        device.is_blacklisted = True
+    if hasattr(device, "blacklist_reason") and reason:
+        device.blacklist_reason = str(reason)[:255]
+    db.commit()
+    db.refresh(device)
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "device"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "device"}))
+    background_tasks.add_task(notify)
+
+    return {
+        "device_id": str(device.device_id),
+        "is_banned": bool(getattr(device, "is_banned", False)),
+        "is_blacklisted": bool(getattr(device, "is_blacklisted", False)),
+        "blacklist_reason": getattr(device, "blacklist_reason", None),
+    }
+
+
+@router.patch("/{device_id}/unban", response_model=dict)
+def unban_device(
+    device_id: UUID,
+    background_tasks: BackgroundTasks,
+    current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)] = None,
+    db: Session = Depends(get_db),
+):
+    """Unban a device (admin/supervisor)."""
+    device = db.query(Device).filter(Device.device_id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if not hasattr(device, "is_banned"):
+        raise HTTPException(status_code=400, detail="Device ban is not supported by this schema")
+    device.is_banned = False
+    if hasattr(device, "is_blacklisted"):
+        device.is_blacklisted = False
+    if hasattr(device, "blacklist_reason"):
+        device.blacklist_reason = None
+    db.commit()
+    db.refresh(device)
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "device"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "device"}))
+    background_tasks.add_task(notify)
+
+    return {
+        "device_id": str(device.device_id),
+        "is_banned": bool(getattr(device, "is_banned", False)),
+        "is_blacklisted": bool(getattr(device, "is_blacklisted", False)),
+        "blacklist_reason": getattr(device, "blacklist_reason", None),
+    }
+
+
 # ML Endpoints
 @router.get("/reports/{report_id}/prediction", response_model=MLPredictionResponse)
 async def get_report_prediction_endpoint(
     report_id: str,
-    device_id: str = Query(..., description="Device ID for authorization"),
+    device_id: str = Query(..., description="Device ID"),
     db: Session = Depends(get_db)
 ):
     """Get ML prediction for a specific report"""
@@ -280,36 +430,25 @@ async def get_report_prediction_endpoint(
         raise HTTPException(status_code=404, detail="Report not found or no prediction available")
     
     return MLPredictionResponse(
-        prediction_id=prediction.prediction_id,
-        report_id=prediction.report_id,
+        prediction_id=str(prediction.prediction_id),
+        report_id=str(prediction.report_id),
         trust_score=float(prediction.trust_score),
         prediction_label=prediction.prediction_label,
         model_version=prediction.model_version,
         confidence=float(prediction.confidence),
-        evaluated_at=prediction.evaluated_at,
+        evaluated_at=prediction.evaluated_at.isoformat() if prediction.evaluated_at else None,
+        is_final=prediction.is_final,
         explanation=prediction.explanation,
-        model_type=prediction.model_type,
-        is_final=prediction.is_final
+        processing_time=prediction.processing_time,
     )
 
 @router.get("/ml-insights", response_model=List[MLInsightResponse])
 async def get_home_insights_endpoint(
-    device_id: str = Query(..., description="Device ID"),
     db: Session = Depends(get_db)
 ):
     """Get ML-powered insights for the home dashboard"""
-    insights_data = get_home_insights(db, device_id)
-    
-    return [
-        MLInsightResponse(
-            title=insight['title'],
-            description=insight['description'],
-            type=insight['type'],
-            score=insight.get('score'),
-            timestamp=datetime.fromisoformat(insight['timestamp'])
-        )
-        for insight in insights_data
-    ]
+    # credibility_model.get_home_insights returns a summary dict, not a list of cards
+    return get_home_insights(db)
 
 @router.get("/{device_id}/ml-stats", response_model=DeviceMLStatsResponse)
 async def get_device_ml_stats_endpoint(
@@ -321,14 +460,5 @@ async def get_device_ml_stats_endpoint(
     
     if not stats_data:
         raise HTTPException(status_code=404, detail="Device not found")
-    
-    return DeviceMLStatsResponse(
-        device_id=stats_data['device_id'],
-        total_predictions=stats_data['total_predictions'],
-        average_trust_score=stats_data['average_trust_score'],
-        credible_reports=stats_data['credible_reports'],
-        suspicious_reports=stats_data['suspicious_reports'],
-        fake_reports=stats_data['fake_reports'],
-        model_versions=stats_data['model_versions'],
-        last_prediction=datetime.fromisoformat(stats_data['last_prediction']) if stats_data['last_prediction'] else None
-    )
+
+    return DeviceMLStatsResponse(**stats_data)

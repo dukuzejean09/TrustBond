@@ -1,7 +1,7 @@
 from typing import Annotated, List, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from app.api.v1.auth import get_current_user
 from app.database import get_db
@@ -21,7 +21,11 @@ def list_incident_groups(
     limit: int = Query(50, ge=1, le=200),
 ):
     """List incident groups (spatial-temporal clusters). Auth required."""
-    query = db.query(IncidentGroup).order_by(IncidentGroup.created_at.desc())
+    query = (
+        db.query(IncidentGroup)
+        .options(joinedload(IncidentGroup.case))
+        .order_by(IncidentGroup.created_at.desc())
+    )
     if incident_type_id is not None:
         query = query.filter(IncidentGroup.incident_type_id == incident_type_id)
     return query.limit(limit).all()

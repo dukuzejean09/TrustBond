@@ -19,12 +19,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.core.security import get_password_hash  # type: ignore
 from app.database import SessionLocal  # type: ignore
-import app.models  # type: ignore  # noqa: F401
 from app.models.police_user import PoliceUser  # type: ignore
 
 
 # EDIT THESE BEFORE RUNNING (or run multiple times with different values)
-DEFAULT_EMAIL = "dukuzejean09@gmail.com"
+DEFAULT_EMAIL = "samuelyitakubayo60@gmail.com"
 DEFAULT_PASSWORD = "Admin123!"
 DEFAULT_FIRST_NAME = "System"
 DEFAULT_LAST_NAME = "Admin"

@@ -1,8 +1,10 @@
 from decimal import Decimal
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status, BackgroundTasks
 from sqlalchemy.orm import Session
+from app.core.websocket import manager
+import asyncio
 
 from app.database import get_db
 from app.models.incident_type import IncidentType
@@ -39,6 +41,7 @@ def get_incident_types(
 @router.post("/", response_model=IncidentTypeResponse, status_code=status.HTTP_201_CREATED)
 def create_incident_type(
     payload: IncidentTypeCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Annotated[PoliceUser, Depends(get_current_admin)] = None,
 ):
@@ -55,6 +58,15 @@ def create_incident_type(
     db.add(obj)
     db.commit()
     db.refresh(obj)
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+    background_tasks.add_task(notify)
+
     return obj
 
 
@@ -74,6 +86,7 @@ def get_incident_type(
 def update_incident_type(
     incident_type_id: int,
     payload: IncidentTypeUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Annotated[PoliceUser, Depends(get_current_admin)] = None,
 ):
@@ -96,12 +109,22 @@ def update_incident_type(
     db.add(obj)
     db.commit()
     db.refresh(obj)
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+    background_tasks.add_task(notify)
+
     return obj
 
 
 @router.delete("/{incident_type_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_incident_type(
     incident_type_id: int,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Annotated[PoliceUser, Depends(get_current_admin)] = None,
 ):
@@ -118,4 +141,13 @@ def delete_incident_type(
         )
     db.delete(obj)
     db.commit()
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "incident_type"}))
+    background_tasks.add_task(notify)
+
     return {}

@@ -31,9 +31,10 @@ def get_village_location_id(db: Session, latitude: float, longitude: float) -> i
 
 def get_village_location_info(db: Session, latitude: float, longitude: float) -> dict | None:
     """
-    Return village name and parent hierarchy (cell, sector) for the point (lat, lon).
+    Return village name and parent hierarchy (cell, sector, district) for the point (lat, lon).
     Returns None if point is not inside any village.
-    Returns dict with: location_id, village_name, cell_name (optional), sector_name (optional).
+    Returns dict with: location_id, village_name, cell_name (optional),
+    sector_name (optional), district_name (optional).
     """
     loc_id = get_village_location_id(db, latitude, longitude)
     if loc_id is None:
@@ -46,6 +47,7 @@ def get_village_location_info(db: Session, latitude: float, longitude: float) ->
         "village_name": village.location_name,
         "cell_name": None,
         "sector_name": None,
+        "district_name": None,
     }
     if village.parent_location_id:
         cell = db.query(Location).filter(Location.location_id == village.parent_location_id).first()
@@ -55,4 +57,12 @@ def get_village_location_info(db: Session, latitude: float, longitude: float) ->
                 sector = db.query(Location).filter(Location.location_id == cell.parent_location_id).first()
                 if sector:
                     out["sector_name"] = sector.location_name
+                    if sector.parent_location_id:
+                        district = (
+                            db.query(Location)
+                            .filter(Location.location_id == sector.parent_location_id)
+                            .first()
+                        )
+                        if district:
+                            out["district_name"] = district.location_name
     return out

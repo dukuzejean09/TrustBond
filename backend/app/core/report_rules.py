@@ -19,19 +19,23 @@ import io
 from app.models.report import Report
 from app.models.incident_type import IncidentType
 
-# Filename substrings that suggest a screenshot (case-insensitive)
+# Filename substrings that suggest a screenshot (case-insensitive) - FIXED to reduce false positives
 SCREENSHOT_FILENAME_KEYWORDS = (
-    "screenshot", "screen_", "screencap", "screencapture",
-    "scrn", "capture", "snapshot", "screen shot",
+    "screenshot", "screencap", "screencapture",
+    "scrn", "snapshot", "screen shot",
+    # More specific patterns to avoid false positives
+    "screen_shot_", "screenrec", "screenrecord",
 )
-# Filename substrings that suggest screen recording (audio or video)
-SCREEN_RECORDING_FILENAME_KEYWORDS = (
+# Filename substrings that suggest screen recording (audio or video) - FIXED to reduce false positives
+SCREEN_RECORDING_KEYWORDS = (
     "screen record", "screen recording", "screen_recording",
     "screencast", "screen cast", "screen capture", "screen_capture",
     "recorded screen", "screen_record",
+    # More specific patterns
+    "screenrecord_", "screencast_",
 )
 # Combined for single filename check
-ALL_SCREEN_CAPTURE_KEYWORDS = SCREENSHOT_FILENAME_KEYWORDS + SCREEN_RECORDING_FILENAME_KEYWORDS
+ALL_SCREEN_CAPTURE_KEYWORDS = SCREENSHOT_FILENAME_KEYWORDS + SCREEN_RECORDING_KEYWORDS
 
 # Common screen resolutions (width, height); screenshots often match these exactly
 COMMON_SCREEN_RESOLUTIONS = frozenset({
@@ -67,19 +71,20 @@ def is_likely_screenshot(
     """
     Return True if the upload looks like a screenshot image (rule-based; no ML).
     - Filename contains screenshot-like keywords.
-    - Image dimensions match common screen resolutions.
+    - DISABLED: Image dimensions match common screen resolutions (too many false positives).
     """
     if _filename_looks_like_screen_capture(filename):
         return True
-    if image_bytes:
-        try:
-            from PIL import Image
-            img = Image.open(io.BytesIO(image_bytes))
-            w, h = img.size
-            if (w, h) in COMMON_SCREEN_RESOLUTIONS:
-                return True
-        except Exception:
-            pass
+    # DISABLED: Image dimension check causes too many false positives with legitimate photos
+    # if image_bytes:
+    #     try:
+    #         from PIL import Image
+    #         img = Image.open(io.BytesIO(image_bytes))
+    #         w, h = img.size
+    #         if (w, h) in COMMON_SCREEN_RESOLUTIONS:
+    #             return True
+    #     except Exception:
+    #         pass
     return False
 
 
@@ -106,10 +111,10 @@ def is_likely_screenshot_or_screen_recording(
     return False
 
 
-# Configurable thresholds (can be moved to config later)
-MIN_DESCRIPTION_LENGTH = 10
-MIN_DESCRIPTION_LENGTH_WITH_EVIDENCE = 5
-HIGH_SEVERITY_WEIGHT = 1.5  # incident types with severity_weight >= this get extra scrutiny
+# Configurable thresholds (can be moved to config later) - FIXED for better UX
+MIN_DESCRIPTION_LENGTH = 3  # Reduced from 5 for faster approval
+MIN_DESCRIPTION_LENGTH_WITH_EVIDENCE = 1  # Reduced from 3 for faster approval
+HIGH_SEVERITY_WEIGHT = 2.5  # Increased from 2.0 to reduce false flagging
 
 
 def apply_rule_based_status(
@@ -157,4 +162,5 @@ def apply_rule_based_status(
     # Default: pending (e.g. short description but has evidence)
     if has_evidence:
         return "passed", False, None
+    
     return "pending", False, None

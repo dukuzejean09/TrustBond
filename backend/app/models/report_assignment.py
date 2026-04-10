@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -13,6 +13,7 @@ class ReportAssignment(Base):
     police_user_id = Column(Integer, ForeignKey("police_users.police_user_id"), nullable=False)
     status = Column(String(20), nullable=False)  # assigned, investigating, resolved, closed
     priority = Column(String(20), nullable=False)  # low, medium, high, urgent
+    assignment_note = Column(Text)  # Notes from supervisor explaining why assignment is needed
     assigned_at = Column(DateTime(timezone=True), server_default=func.now())
     completed_at = Column(DateTime(timezone=True))
 

@@ -2,10 +2,12 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
+from app.core.websocket import manager
+import asyncio
 
 from app.config import settings
 from app.core.email import is_smtp_configured, send_password_reset_code
@@ -123,7 +125,7 @@ async def get_current_admin_or_supervisor(
 
 
 @router.post("/login", response_model=Token)
-def login(data: LoginRequest, db: Session = Depends(get_db)):
+def login(data: LoginRequest, background_tasks: BackgroundTasks, request: Request, db: Session = Depends(get_db)):
     user = _authenticate_user(db, data.email, data.password)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
@@ -135,15 +137,28 @@ def login(data: LoginRequest, db: Session = Depends(get_db)):
 
     # Create / record a session tied to this access token
     expires_at = now + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    # Get client IP address and user agent from request
+    client_ip = request.client.host if hasattr(request, 'client') else None
+    user_agent_str = request.headers.get("user-agent")
+    
     session_row = UserSession(
         police_user_id=user.police_user_id,
         refresh_token=access_token,
-        user_agent=None,
-        ip_address=None,
+        user_agent=user_agent_str,
+        ip_address=client_ip,
         expires_at=expires_at,
     )
     db.add_all([user, session_row])
     db.commit()
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "session"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "session"}))
+    background_tasks.add_task(notify)
 
     return Token(access_token=access_token)
 
@@ -156,6 +171,7 @@ def me(current_user: Annotated[PoliceUser, Depends(get_current_user)]):
 @router.post("/change-password")
 def change_password(
     payload: ChangePasswordRequest,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Annotated[PoliceUser, Depends(get_current_user)] = None,
 ):
@@ -165,12 +181,22 @@ def change_password(
     current_user.password_hash = get_password_hash(payload.new_password)
     db.add(current_user)
     db.commit()
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "user"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "user"}))
+    background_tasks.add_task(notify)
+
     return {"message": "Password updated"}
 
 
 @router.post("/revoke-other-sessions")
 def revoke_other_sessions(
     token: Annotated[str, Depends(oauth2_scheme)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: Annotated[PoliceUser, Depends(get_current_user)] = None,
 ):
@@ -189,6 +215,15 @@ def revoke_other_sessions(
         .update({UserSession.revoked_at: now}, synchronize_session=False)
     )
     db.commit()
+
+    def notify():
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(manager.broadcast({"type": "refresh_data", "entity": "session"}))
+        except RuntimeError:
+            asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "session"}))
+    background_tasks.add_task(notify)
+
     return {"message": "Other sessions revoked"}
 
 

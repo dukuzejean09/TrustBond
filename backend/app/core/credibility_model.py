@@ -9,22 +9,177 @@ from decimal import Decimal
 import joblib
 import pandas as pd
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 
 from app.models.ml_prediction import MLPrediction
 from app.models.report import Report
 from app.models.device import Device
+from app.models.system_config import SystemConfig
 
 
 ROOT = Path(__file__).resolve().parents[2] / "musanze"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 META_PATH = ROOT / "TrustBond.json"
+DEFAULT_MODEL_VERSION = "report_credibility_v1"
+DEFAULT_MODEL_FAMILY = "report_credibility"
 
 _MODEL = None
 _META: Optional[Dict[str, Any]] = None
 
 
+def _json_safe(value: Any) -> Any:
+    """
+    Convert common non-JSON types (Decimal, datetime, UUID) into JSON-safe values.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, datetime):
+        # keep timezone info if present
+        try:
+            return value.isoformat()
+        except Exception:
+            return str(value)
+    # UUIDs are safe as strings
+    try:
+        from uuid import UUID as _UUID
+
+        if isinstance(value, _UUID):
+            return str(value)
+    except Exception:
+        pass
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple, set)):
+        return [_json_safe(v) for v in value]
+    return value
+
+
+def _load_trust_formula(db: Session) -> Dict[str, float]:
+    """
+    Load trust score weights from system_config.trust_score.formula when available.
+    Expected JSON:
+      {"history":0.3,"spam_penalty":0.2,"confirmation_rate":0.4,"location_diversity":0.1}
+    """
+    default = {
+        "history": 0.35,
+        "spam_penalty": 0.20,
+        "confirmation_rate": 0.35,
+        "location_diversity": 0.10,
+    }
+    try:
+        row = (
+            db.query(SystemConfig)
+            .filter(SystemConfig.config_key == "trust_score.formula")
+            .first()
+        )
+        cfg = row.config_value if row and isinstance(row.config_value, dict) else {}
+        merged: Dict[str, float] = {}
+        for k, v in default.items():
+            raw = cfg.get(k, v)
+            try:
+                merged[k] = max(0.0, float(raw))
+            except Exception:
+                merged[k] = v
+        s = sum(merged.values())
+        if s <= 0:
+            return default
+        return {k: (val / s) for k, val in merged.items()}
+    except Exception:
+        return default
+
+
+def compute_trust_score(
+    *,
+    ml_avg: Optional[float],
+    confirmation_rate: float,
+    spam_signal: float,
+    location_diversity: float,
+    weights: Dict[str, float],
+) -> float:
+    """Central trust score computation (0..100) used for device trust updates."""
+    history_component = ((ml_avg if ml_avg is not None else 50.0) / 100.0)
+    history_component = max(0.0, min(1.0, history_component))
+    conf_component = max(0.0, min(1.0, confirmation_rate))
+    spam_component = 1.0 - max(0.0, min(1.0, spam_signal / 10.0))
+    diversity_component = max(0.0, min(1.0, location_diversity))
+
+    score_0_1 = (
+        weights.get("history", 0.0) * history_component
+        + weights.get("confirmation_rate", 0.0) * conf_component
+        + weights.get("spam_penalty", 0.0) * spam_component
+        + weights.get("location_diversity", 0.0) * diversity_component
+    )
+    return max(0.0, min(100.0, score_0_1 * 100.0))
+
+
+def get_effective_trust_formula(db: Session) -> Dict[str, Any]:
+    """
+    Expose normalized trust formula weights and raw DB config for admin visibility.
+    """
+    raw_config: Dict[str, Any] = {}
+    try:
+        row = (
+            db.query(SystemConfig)
+            .filter(SystemConfig.config_key == "trust_score.formula")
+            .first()
+        )
+        if row and isinstance(row.config_value, dict):
+            raw_config = row.config_value
+    except Exception:
+        raw_config = {}
+
+    normalized = _load_trust_formula(db)
+    return {
+        "config_key": "trust_score.formula",
+        "raw": _json_safe(raw_config),
+        "normalized": _json_safe(normalized),
+        "sum_normalized": round(sum(normalized.values()), 6),
+    }
+
+
+def _infer_model_type(model: Any) -> Optional[str]:
+    """Resolve the trained estimator class name even when wrapped in a pipeline."""
+    try:
+        if hasattr(model, "named_steps") and isinstance(model.named_steps, dict):
+            estimator = model.named_steps.get("clf") or model.named_steps.get("model")
+            if estimator is not None:
+                return estimator.__class__.__name__
+        return model.__class__.__name__
+    except Exception:
+        return None
+
+
+def _infer_model_family(model_type: Optional[str]) -> str:
+    model_name = (model_type or "").strip().lower()
+    if not model_name:
+        return DEFAULT_MODEL_FAMILY
+    if "randomforest" in model_name or "random_forest" in model_name:
+        return "random_forest"
+    return model_name.replace("classifier", "").replace("model", "").strip("_ ") or DEFAULT_MODEL_FAMILY
+
+
+def _normalize_model_metadata(model: Any, meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    normalized = dict(meta or {})
+    inferred_model_type = _infer_model_type(model)
+    model_type = normalized.get("model_type") or inferred_model_type or "UnknownModel"
+
+    # Prefer the actual loaded estimator class over stale metadata artifacts.
+    if inferred_model_type and model_type != inferred_model_type:
+        model_type = inferred_model_type
+
+    normalized["model_type"] = model_type
+    normalized["model_family"] = normalized.get("model_family") or _infer_model_family(model_type)
+    normalized["model_version"] = normalized.get("model_version") or DEFAULT_MODEL_VERSION
+    normalized["feature_columns"] = list(normalized.get("feature_columns") or [])
+    normalized["numeric_columns"] = list(normalized.get("numeric_columns") or [])
+    normalized["categorical_columns"] = list(normalized.get("categorical_columns") or [])
+    return normalized
+
+
 def _load_model_and_meta():
-    """Lazy-load the trained XGBoost pipeline and metadata."""
+    """Lazy-load the trained report-credibility pipeline and metadata."""
     global _MODEL, _META
     if _MODEL is not None and _META is not None:
         return _MODEL, _META
@@ -33,7 +188,8 @@ def _load_model_and_meta():
         return None, None
 
     _MODEL = joblib.load(MODEL_PATH)
-    _META = json.loads(META_PATH.read_text(encoding="utf-8"))
+    raw_meta = json.loads(META_PATH.read_text(encoding="utf-8"))
+    _META = _normalize_model_metadata(_MODEL, raw_meta)
     return _MODEL, _META
 
 
@@ -185,6 +341,88 @@ def _build_feature_row(
     return row
 
 
+def _compute_trust_factors(db: Session, report: Report, device: Device, evidence_count: int, prob_real: float) -> Dict[str, Any]:
+    """Calculate granular heuristics explaining the report's credibility."""
+    factors: Dict[str, Any] = {}
+    
+    # 1. Content Score (0-100)
+    desc_len = len(report.description or "")
+    desc_score = min(100.0, (desc_len / 100.0) * 50.0) # Up to 50 pts for 100+ chars
+    ev_score = min(100.0, evidence_count * 25.0)       # Up to 50 pts for 2+ evidence files
+    content_score = min(100.0, desc_score + ev_score)
+    factors["content_score"] = round(content_score, 1)
+
+    # 2. Location Match Score (0-100)
+    # Penalize if movement_speed contradicts gps accuracy or is physically impossible
+    loc_score = 100.0
+    try:
+        if report.movement_speed is not None and float(report.movement_speed) * 3.6 > 200:
+            loc_score -= 80.0
+        if report.gps_accuracy is not None and float(report.gps_accuracy) > 200:
+            loc_score -= 30.0
+    except Exception:
+        pass
+    factors["location_score"] = round(max(0.0, loc_score), 1)
+
+    # 3. Cluster Confirmation Score (0-100)
+    # Is this report near a confirmed hotspot of the same type?
+    cluster_score = 0.0
+    try:
+        from app.models.hotspot import Hotspot
+        lat = float(report.latitude)
+        lon = float(report.longitude)
+        hotspot = db.query(Hotspot).filter(
+            Hotspot.incident_type_id == report.incident_type_id,
+            Hotspot.center_lat.between(lat - 0.02, lat + 0.02),
+            Hotspot.center_long.between(lon - 0.02, lon + 0.02)
+        ).first()
+        if hotspot:
+            cluster_score = 80.0
+            if getattr(hotspot, "risk_level", "") in ["high", "critical"]:
+                cluster_score = 100.0
+    except Exception:
+        pass
+    factors["cluster_score"] = round(cluster_score, 1)
+
+    # 4. User Behavior Score (0-100)
+    behavior_score = float(getattr(device, "device_trust_score", 50.0) or 50.0)
+    factors["user_behavior_score"] = round(behavior_score, 1)
+
+    # 5. Coordinated False Alerts Penalty (0-100)
+    coordination_penalty = 0.0
+    try:
+        from datetime import timedelta
+        lat = float(report.latitude)
+        lon = float(report.longitude)
+        recent_cutoff = (report.reported_at or datetime.now(timezone.utc)) - timedelta(minutes=15)
+        # Check if multiple other devices reported the exact same incident type recently in the same area
+        burst_count = db.query(Report).filter(
+            Report.incident_type_id == report.incident_type_id,
+            Report.device_id != report.device_id,
+            Report.reported_at >= recent_cutoff,
+            Report.latitude.between(lat - 0.005, lat + 0.005),
+            Report.longitude.between(lon - 0.005, lon + 0.005)
+        ).count()
+        if burst_count > 5:
+            # If a sudden burst comes from different devices in a tiny area very fast, penalize if ML says it's suspicious
+            if prob_real < 0.5:
+                coordination_penalty = min(100.0, burst_count * 10.0)
+    except Exception:
+        pass
+    factors["coordination_penalty"] = round(coordination_penalty, 1)
+    # 6. Community Votes Modifier
+    community_net = 0
+    fv = getattr(report, "feature_vector", None)
+    if isinstance(fv, dict):
+        votes = fv.get("community_votes", {})
+        real_votes = sum(1 for v in votes.values() if v == "real")
+        false_votes = sum(1 for v in votes.values() if v == "false")
+        community_net = real_votes - false_votes
+    factors["community_net_votes"] = community_net
+
+    return factors
+
+
 def score_report_credibility(
     db: Session,
     report: Report,
@@ -192,8 +430,8 @@ def score_report_credibility(
     evidence_count: int,
 ) -> None:
     """
-    Run the trained XGBoost credibility model for a single report, and persist
-    the result into ml_predictions. Safe to call from API code; failures are
+    Run the trained report-credibility model for a single report and persist the
+    result into ml_predictions. Safe to call from API code; failures are
     swallowed so they don't break report submission.
     """
     try:
@@ -214,26 +452,43 @@ def score_report_credibility(
 
         best_threshold = float(meta.get("best_threshold", 0.5))
 
-        # Map probability to label bands around the tuned threshold
-        if prob_real >= best_threshold + 0.2:
+        trust_score_pct = prob_real * 100.0
+        
+        # Apply anti-spam / coordination penalty before community votes
+        factors = _compute_trust_factors(db, report, device, evidence_count, prob_real)
+        coord_penalty = float(factors.get("coordination_penalty", 0.0) or 0.0)
+        if coord_penalty > 0:
+            # coord_penalty is already 0-100; temper it so ML still has signal.
+            trust_score_pct = max(0.0, trust_score_pct - (coord_penalty * 0.5))
+
+        # Apply Community Votes Modifier
+        community_net = factors.get("community_net_votes", 0)
+        if community_net > 0:
+            trust_score_pct = min(100.0, trust_score_pct + (community_net * 5.0))
+        elif community_net < 0:
+            trust_score_pct = max(0.0, trust_score_pct + (community_net * 10.0))
+
+        # Re-evaluate labels based on final trust_score_pct
+        if trust_score_pct >= 85.0:
             prediction_label = "likely_real"
-        elif prob_real >= best_threshold - 0.1:
+        elif trust_score_pct >= 60.0:
             prediction_label = "suspicious"
+        elif trust_score_pct >= 30.0:
+            prediction_label = "uncertain"
         else:
             prediction_label = "fake"
-
-        trust_score_pct = prob_real * 100.0
+        
 
         prediction = MLPrediction(
             prediction_id=uuid4(),
             report_id=report.report_id,
             trust_score=Decimal(f"{trust_score_pct:.2f}"),
             prediction_label=prediction_label,
-            model_version=meta.get("model_version", "report_credibility_xgb_v1"),
-            model_type="xgboost",
+            model_version=str(meta.get("model_version") or DEFAULT_MODEL_VERSION),
+            model_type=str(meta.get("model_type") or "UnknownModel"),
             confidence=Decimal(f"{prob_real:.3f}"),
             is_final=True,
-            explanation=None,  # placeholder; can be filled with SHAP/feature attributions later
+            explanation=factors,  # Store the explainability breakdown here
             processing_time=None,
         )
         db.add(prediction)
@@ -241,6 +496,155 @@ def score_report_credibility(
         report.features_extracted_at = datetime.now(timezone.utc)
     except Exception:
         # Fail silently; this is an enhancement, not critical path
+        return
+
+
+def update_device_ml_aggregates(
+    db: Session,
+    device: Device,
+    *,
+    window: int = 30,
+) -> None:
+    """
+    Recompute device-level aggregates derived from ML + behavior and persist them
+    on the device row.
+
+    Updates:
+    - device.device_trust_score (blended ML + behavioral signals)
+    - device.is_blacklisted / device.blacklist_reason (heuristic thresholds)
+    - device.metadata_json (stores ML breakdown + last update timestamps)
+    """
+    try:
+        # Pull recent final predictions for reports submitted by this device
+        preds = (
+            db.query(MLPrediction)
+            .join(Report, MLPrediction.report_id == Report.report_id)
+            .filter(Report.device_id == device.device_id)
+            .filter(MLPrediction.trust_score.isnot(None))
+            .order_by(MLPrediction.evaluated_at.desc().nullslast())
+            .limit(window)
+            .all()
+        )
+
+        ml_scores: list[float] = []
+        confs: list[float] = []
+        dist = {"likely_real": 0, "suspicious": 0, "uncertain": 0, "fake": 0}  # FIXED: Added "uncertain"
+        model_versions: set[str] = set()
+        last_pred_at: Optional[datetime] = None
+        last_conf: Optional[float] = None
+
+        for p in preds:
+            try:
+                if p.trust_score is not None:
+                    ml_scores.append(float(p.trust_score))
+            except Exception:
+                pass
+            try:
+                if getattr(p, "confidence", None) is not None:
+                    c = float(p.confidence)
+                    confs.append(c)
+                    if last_conf is None:
+                        last_conf = c
+            except Exception:
+                pass
+            label = (p.prediction_label or "").lower()
+            if label in dist:
+                dist[label] += 1
+            if p.model_version:
+                model_versions.add(str(p.model_version))
+            if last_pred_at is None and getattr(p, "evaluated_at", None) is not None:
+                last_pred_at = p.evaluated_at
+
+        ml_avg = sum(ml_scores) / len(ml_scores) if ml_scores else None
+        conf_avg = sum(confs) / len(confs) if confs else None
+        total_preds = sum(dist.values())
+        fake_rate = (dist["fake"] / total_preds) if total_preds else 0.0
+        suspicious_rate = ((dist["suspicious"] + dist["uncertain"]) / total_preds) if total_preds else 0.0  # FIXED: Include uncertain
+
+        # Behavioral score: confirmation rate - spam penalty (0..100)
+        total_reports = float(getattr(device, "total_reports", 0) or 0)
+        trusted_reports = float(getattr(device, "trusted_reports", 0) or 0)
+        spam_flags = float(getattr(device, "spam_flags", 0) or 0)
+        flagged_reports = float(getattr(device, "flagged_reports", 0) or 0)
+
+        confirm_rate = (trusted_reports / total_reports) if total_reports > 0 else 0.0
+        spam_signal = spam_flags + flagged_reports
+        behavior_score = max(0.0, min(100.0, (confirm_rate * 100.0) - (spam_signal * 2.5)))
+
+        # Location diversity from recent reports (distinct villages / recent reports)
+        recent_reports = (
+            db.query(Report.village_location_id)
+            .filter(Report.device_id == device.device_id)
+            .order_by(Report.reported_at.desc())
+            .limit(window)
+            .all()
+        )
+        total_recent = len(recent_reports)
+        distinct_villages = len({v for (v,) in recent_reports if v is not None})
+        location_diversity = (distinct_villages / total_recent) if total_recent > 0 else 0.0
+
+        weights = _load_trust_formula(db)
+        blended = compute_trust_score(
+            ml_avg=float(ml_avg) if ml_avg is not None else None,
+            confirmation_rate=confirm_rate,
+            spam_signal=spam_signal,
+            location_diversity=location_diversity,
+            weights=weights,
+        )
+
+        # Clamp 0..100 and persist
+        blended = max(0.0, min(100.0, blended))
+        if hasattr(device, "device_trust_score"):
+            device.device_trust_score = Decimal(f"{blended:.2f}")
+
+        # Heuristic blacklist from ML rates and behavior
+        # (Keep "ban" as explicit admin action; blacklist is advisory/system-driven.)
+        if hasattr(device, "is_blacklisted"):
+            should_blacklist = False
+            reason = None
+            if fake_rate >= 0.6 and total_preds >= 5:
+                should_blacklist = True
+                reason = "ml_high_fake_rate"
+            elif ml_avg is not None and float(ml_avg) < 20 and total_preds >= 5:
+                should_blacklist = True
+                reason = "ml_low_trust_average"
+            elif spam_signal >= 10:
+                should_blacklist = True
+                reason = "high_spam_signal"
+
+            device.is_blacklisted = bool(should_blacklist)
+            if hasattr(device, "blacklist_reason"):
+                device.blacklist_reason = reason
+
+        # Persist breakdown to metadata JSONB (non-identifying)
+        meta = getattr(device, "metadata_json", None) or {}
+        if not isinstance(meta, dict):
+            meta = {}
+        meta["ml"] = {
+            "window": window,
+            "avg_trust_score": float(ml_avg) if ml_avg is not None else None,
+            "distribution": dist,
+            "fake_rate": round(fake_rate, 4),
+            "suspicious_rate": round(suspicious_rate, 4),
+            "model_versions": sorted(model_versions),
+            "last_prediction_at": last_pred_at.isoformat() if last_pred_at else None,
+            "avg_confidence": round(float(conf_avg), 4) if conf_avg is not None else None,
+            "last_confidence": round(float(last_conf), 4) if last_conf is not None else None,
+        }
+        meta["behavior"] = {
+            "confirmation_rate": round(confirm_rate, 4),
+            "behavior_score": round(behavior_score, 2),
+            "spam_signal": int(spam_signal),
+            "location_diversity": round(location_diversity, 4),
+        }
+        meta["trust_formula"] = {
+            "weights": _json_safe(weights),
+            "computed_score": round(blended, 2),
+        }
+        meta["last_aggregate_update_at"] = datetime.now(timezone.utc).isoformat()
+        device.metadata_json = _json_safe(meta)
+    except Exception:
+        # Best-effort; don't block request paths
         return
 
 
@@ -256,86 +660,50 @@ def get_report_prediction(db: Session, report_id: str, device_id: str):
     if not report:
         return None
     
-    # Get the latest ML prediction
+    # Get latest ML prediction
     prediction = db.query(MLPrediction).filter(
-        MLPrediction.report_id == report_id,
-        MLPrediction.is_final == True
+        MLPrediction.report_id == report_id
     ).order_by(MLPrediction.evaluated_at.desc()).first()
     
     return prediction
 
 
-def get_home_insights(db: Session, device_id: str):
-    """Get ML-powered insights for the home dashboard"""
-    device = db.query(Device).filter(Device.device_id == device_id).first()
-    if not device:
-        return []
+def get_home_insights(db: Session):
+    """Get ML insights for home dashboard"""
+    total_reports = db.query(Report).count()
     
-    insights = []
-    
-    # Get device statistics
-    total_reports = db.query(Report).filter(Report.device_id == device_id).count()
-    verified_reports = db.query(Report).filter(
-        Report.device_id == device_id,
-        (Report.status == 'verified') | (Report.rule_status == 'passed')
+    # Get prediction counts - FIXED: Include uncertain
+    likely_real = db.query(MLPrediction).filter(
+        MLPrediction.prediction_label == "likely_real"
     ).count()
     
-    # Get recent ML predictions
-    recent_predictions = db.query(MLPrediction).join(Report).filter(
-        Report.device_id == device_id,
-        MLPrediction.is_final == True
-    ).order_by(MLPrediction.evaluated_at.desc()).limit(10).all()
+    suspicious = db.query(MLPrediction).filter(
+        MLPrediction.prediction_label == "suspicious"
+    ).count()
     
-    if recent_predictions:
-        avg_confidence = sum(float(p.confidence) for p in recent_predictions) / len(recent_predictions)
-        credible_reports = sum(1 for p in recent_predictions if p.prediction_label == 'likely_real')
-        
-        insights.append({
-            'title': 'ML Credibility Score',
-            'description': f'Your recent reports have {avg_confidence:.1%} average confidence',
-            'type': 'trust',
-            'score': avg_confidence * 100,
-            'timestamp': datetime.now(timezone.utc).isoformat()
-        })
-        
-        if credible_reports > 0:
-            insights.append({
-                'title': 'Credible Reporting Pattern',
-                'description': f'{credible_reports} of your last {len(recent_predictions)} reports are highly credible',
-                'type': 'pattern',
-                'score': (credible_reports / len(recent_predictions)) * 100,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
+    uncertain = db.query(MLPrediction).filter(
+        MLPrediction.prediction_label == "uncertain"
+    ).count()  # FIXED: Added uncertain count
     
-    # Device trust score insight
-    if device.device_trust_score is not None:
-        trust_score = float(device.device_trust_score)
-        if trust_score >= 70:
-            insights.append({
-                'title': 'Excellent Trust Score',
-                'description': 'Your device has an excellent trust score. Keep up the good work!',
-                'type': 'safety',
-                'score': trust_score,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
-        elif trust_score >= 40:
-            insights.append({
-                'title': 'Moderate Trust Score',
-                'description': 'Continue submitting accurate reports to improve your trust score',
-                'type': 'safety',
-                'score': trust_score,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
-        else:
-            insights.append({
-                'title': 'Build Trust',
-                'description': 'Submit detailed reports with evidence to improve your credibility',
-                'type': 'safety',
-                'score': trust_score,
-                'timestamp': datetime.now(timezone.utc).isoformat()
-            })
+    fake = db.query(MLPrediction).filter(
+        MLPrediction.prediction_label == "fake"
+    ).count()
     
-    return insights
+    # Calculate average trust score
+    avg_score = db.query(MLPrediction).filter(
+        MLPrediction.trust_score.isnot(None)
+    ).with_entities(
+        func.avg(MLPrediction.trust_score)
+    ).scalar()
+    
+    return {
+        "total_reports": total_reports,
+        "likely_real_count": likely_real,
+        "suspicious_count": suspicious,
+        "uncertain_count": uncertain,  # FIXED: Added uncertain
+        "fake_count": fake,
+        "average_trust_score": float(avg_score) if avg_score else None
+    }
 
 
 def get_device_ml_stats(db: Session, device_id: str):
@@ -344,42 +712,42 @@ def get_device_ml_stats(db: Session, device_id: str):
     if not device:
         return None
     
-    # Get all predictions for this device
-    predictions = db.query(MLPrediction).join(Report).filter(
-        Report.device_id == device_id,
-        MLPrediction.is_final == True
-    ).all()
+    # Get all reports for this device
+    reports = db.query(Report).filter(Report.device_id == device_id).all()
+    report_ids = [r.report_id for r in reports]
     
-    # Calculate statistics
-    total_predictions = len(predictions)
-    if total_predictions == 0:
-        return {
-            'device_id': device_id,
-            'total_predictions': 0,
-            'average_trust_score': 0.0,
-            'credible_reports': 0,
-            'suspicious_reports': 0,
-            'fake_reports': 0,
-            'model_versions': [],
-            'last_prediction': None
-        }
-    
-    avg_trust_score = sum(float(p.trust_score) for p in predictions) / total_predictions
-    credible_count = sum(1 for p in predictions if p.prediction_label == 'likely_real')
-    suspicious_count = sum(1 for p in predictions if p.prediction_label == 'suspicious')
-    fake_count = sum(1 for p in predictions if p.prediction_label == 'fake')
-    
-    model_versions = list(set(p.model_version for p in predictions))
-    last_prediction = max(p.evaluated_at for p in predictions)
-    
+    # Get predictions for these reports (recent first)
+    predictions = []
+    if report_ids:
+        predictions = (
+            db.query(MLPrediction)
+            .filter(MLPrediction.report_id.in_(report_ids))
+            .order_by(MLPrediction.evaluated_at.desc().nullslast())
+            .all()
+        )
+
+    # Calculate distribution - FIXED: Include uncertain
+    distribution = {"likely_real": 0, "suspicious": 0, "uncertain": 0, "fake": 0}
+    for pred in predictions:
+        label = (pred.prediction_label or "").lower()
+        if label in distribution:
+            distribution[label] += 1
+
+    meta = getattr(device, "metadata_json", None)
+    ml_meta = meta.get("ml") if isinstance(meta, dict) else None
+    behavior_meta = meta.get("behavior") if isinstance(meta, dict) else None
+
     return {
-        'device_id': device_id,
-        'total_predictions': total_predictions,
-        'average_trust_score': avg_trust_score,
-        'credible_reports': credible_count,
-        'suspicious_reports': suspicious_count,
-        'fake_reports': fake_count,
-        'model_versions': model_versions,
-        'last_prediction': last_prediction.isoformat() if last_prediction else None
+        "device_id": str(device_id),
+        "total_reports": int(getattr(device, "total_reports", None) or len(reports) or 0),
+        "trust_score": float(device.device_trust_score) if device.device_trust_score is not None else None,
+        "prediction_distribution": distribution,
+        "last_prediction_at": (
+            predictions[0].evaluated_at.isoformat()
+            if predictions and getattr(predictions[0], "evaluated_at", None)
+            else (ml_meta.get("last_prediction_at") if isinstance(ml_meta, dict) else None)
+        ),
+        "ml": ml_meta if isinstance(ml_meta, dict) else None,
+        "behavior": behavior_meta if isinstance(behavior_meta, dict) else None,
     }
 

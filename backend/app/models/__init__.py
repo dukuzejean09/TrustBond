@@ -9,7 +9,6 @@ from app.models.police_user import PoliceUser
 from app.models.police_review import PoliceReview
 from app.models.hotspot import Hotspot
 from app.models.incident_group import IncidentGroup
-from app.models.station import Station
 from app.models.report_assignment import ReportAssignment
 from app.models.notification import Notification
 from app.models.audit_log import AuditLog
@@ -17,6 +16,7 @@ from app.models.password_reset_code import PasswordResetCode
 from app.models.case import Case, CaseReport
 from app.models.user_session import UserSession
 from app.models.system_config import SystemConfig
+from app.models.station import Station
 
 __all__ = [
     "Base",
@@ -30,7 +30,6 @@ __all__ = [
     "PoliceReview",
     "Hotspot",
     "IncidentGroup",
-    "Station",
     "ReportAssignment",
     "Notification",
     "AuditLog",
@@ -39,4 +38,5 @@ __all__ = [
     "CaseReport",
     "UserSession",
     "SystemConfig",
+    "Station",
 ]

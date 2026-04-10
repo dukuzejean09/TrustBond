@@ -1,41 +1,31 @@
+from typing import Optional, Any, Dict, List
 from pydantic import BaseModel
-from datetime import datetime
-from typing import List, Optional, Dict, Any
 
 class MLPredictionResponse(BaseModel):
     prediction_id: str
     report_id: str
-    trust_score: float
     prediction_label: str  # likely_real, suspicious, fake
-    model_version: str
-    confidence: float
-    evaluated_at: datetime
-    explanation: Optional[Dict[str, Any]] = None
-    model_type: Optional[str] = None
-    is_final: bool
-
-    class Config:
-        from_attributes = True
+    trust_score: Optional[float] = None
+    confidence: Optional[float] = None
+    model_version: Optional[str] = None
+    evaluated_at: Optional[str] = None
+    is_final: Optional[bool] = None
+    explanation: Optional[dict] = None
+    processing_time: Optional[int] = None
 
 class MLInsightResponse(BaseModel):
-    title: str
-    description: str
-    type: str  # safety, trust, pattern
-    score: Optional[float] = None
-    timestamp: datetime
-
-    class Config:
-        from_attributes = True
+    total_reports: int
+    likely_real_count: int
+    suspicious_count: int
+    fake_count: int
+    average_trust_score: Optional[float] = None
+    processing_time_avg_ms: Optional[float] = None
 
 class DeviceMLStatsResponse(BaseModel):
     device_id: str
-    total_predictions: int
-    average_trust_score: float
-    credible_reports: int
-    suspicious_reports: int
-    fake_reports: int
-    model_versions: List[str]
-    last_prediction: Optional[datetime] = None
-
-    class Config:
-        from_attributes = True
+    total_reports: int
+    trust_score: Optional[float] = None
+    prediction_distribution: Dict[str, int]
+    last_prediction_at: Optional[str] = None
+    ml: Optional[Dict[str, Any]] = None
+    behavior: Optional[Dict[str, Any]] = None
