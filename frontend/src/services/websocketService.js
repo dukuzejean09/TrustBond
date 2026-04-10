@@ -23,8 +23,7 @@ class WebSocketService {
 
     // Use the same API base URL as the REST API
     const apiBaseUrl =
-      import.meta.env.VITE_API_BASE_URL ||
-      "https://trustbond.onrender.com";
+      import.meta.env.VITE_API_BASE_URL || "https://trustbond.onrender.com";
     const wsProtocol = apiBaseUrl.startsWith("https") ? "wss:" : "ws:";
     const wsUrl = apiBaseUrl.replace(/^https?:/, wsProtocol) + "/api/v1/ws";
 
