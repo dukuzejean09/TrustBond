@@ -32,15 +32,23 @@ class PrivacySecurityScreen extends StatelessWidget {
             const SizedBox(height: 16),
             _buildSection(
               'Pseudonymous Reporting',
-              'Reports are tied to a local device identity so TrustBond can score reliability without asking for your name or public profile.',
+              'Reports are tied to a local device identity so TrustBond can score reliability without asking for your name or public profile. Your identity is pseudonymous: it is not shared publicly, but the device token is stored to prevent spam and enable trust scoring.',
             ),
             _buildSection(
               'Data Encryption',
-              'Reports and evidence are protected during transfer and stored on secured backend services. Access is limited to authorized TrustBond and police workflows.',
+              'Reports and evidence are protected during transfer using HTTPS and stored on secured backend services. Access is limited to authorised TrustBond and police workflows.',
             ),
             _buildSection(
               'Location Privacy',
               'Your location is captured when you submit a report so it can be routed, clustered, and investigated correctly. TrustBond does not continuously track your live movement.',
+            ),
+            _buildSection(
+              'AI-Assisted Verification',
+              'Submitted reports are scored by a machine-learning credibility model and rules engine. High-confidence reports may be verified automatically; others are queued for police review. The AI assists, but human officers retain final authority.',
+            ),
+            _buildSection(
+              'Your Rights',
+              'You can clear all locally stored data at any time from Settings → Clear All Data. You can also export your locally stored report history as a JSON file from Settings → Export My Data.',
             ),
           ],
         ),

@@ -136,24 +136,47 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return r * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
+def _trust_weighted_neighbor_mass(points: List[Dict[str, Any]], i: int, eps_meters: float) -> Tuple[List[int], float]:
+    """Return neighbour indices and their combined trust-weighted mass.
+
+    Each point contributes its normalised trust score (0-1) to the density mass
+    instead of a flat count of 1.  A perfectly-trusted report (score=100)
+    contributes 1.0; a low-trust report (score=50) contributes 0.5.  This means
+    the effective density threshold (min_pts) is measured in trust-weighted units
+    rather than raw report counts, which makes DBSCAN genuinely trust-aware
+    rather than just using trust as a pre-filter.
+    """
+    p = points[i]
+    nb_indices: List[int] = []
+    mass = 0.0
+    for j, q in enumerate(points):
+        if _haversine_meters(p["lat"], p["lon"], q["lat"], q["lon"]) <= eps_meters:
+            nb_indices.append(j)
+            mass += max(0.0, min(1.0, q.get("trust", 50.0) / 100.0))
+    return nb_indices, mass
+
+
 def _dbscan(points: List[Dict[str, Any]], eps_meters: float, min_pts: int) -> List[int]:
+    """Trust-weighted DBSCAN.
+
+    Density is measured as the sum of normalised trust scores of neighbours
+    within *eps_meters* rather than a raw neighbour count.  This embeds
+    trust directly into cluster formation: a cluster of 3 fully-trusted
+    reports outweighs a cluster of 10 low-trust reports.
+
+    *min_pts* is interpreted as the minimum trust-weighted mass required for
+    a core point.  With all reports at 100% trust this is identical to
+    standard DBSCAN; with mixed trust the effective threshold rises.
+    """
     n = len(points)
     labels = [-2] * n  # -2 unvisited, -1 noise, >=0 cluster id
     cluster_id = 0
 
-    def neighbors(i: int) -> List[int]:
-        p = points[i]
-        out: List[int] = []
-        for j, q in enumerate(points):
-            if _haversine_meters(p["lat"], p["lon"], q["lat"], q["lon"]) <= eps_meters:
-                out.append(j)
-        return out
-
     for i in range(n):
         if labels[i] != -2:
             continue
-        nbs = neighbors(i)
-        if len(nbs) < min_pts:
+        nbs, mass = _trust_weighted_neighbor_mass(points, i, eps_meters)
+        if mass < float(min_pts):
             labels[i] = -1
             continue
 
@@ -168,8 +191,8 @@ def _dbscan(points: List[Dict[str, Any]], eps_meters: float, min_pts: int) -> Li
                 qi += 1
                 continue
             labels[j] = cluster_id
-            jn = neighbors(j)
-            if len(jn) >= min_pts:
+            jn, jmass = _trust_weighted_neighbor_mass(points, j, eps_meters)
+            if jmass >= float(min_pts):
                 for cand in jn:
                     if cand not in queue:
                         queue.append(cand)
