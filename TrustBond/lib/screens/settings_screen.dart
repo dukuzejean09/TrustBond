@@ -1,4 +1,8 @@
+import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+import '../config/api_config.dart';
 import '../config/theme.dart';
 import '../services/device_service.dart';
 import '../services/local_cache_service.dart';
@@ -20,6 +24,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _hotspotAlerts = true;
   bool _reportUpdates = true;
   bool _clearing = false;
+  bool _exporting = false;
 
   final _deviceService = DeviceService();
   final _cacheService = LocalCacheService();
@@ -54,8 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _toggle('Report Updates', 'When your report status changes',
                       _reportUpdates, (v) => setState(() => _reportUpdates = v)),
                   _section('About'),
-                  _infoRow('Version', '2.1.0'),
-                  _infoRow('Build', '2024.12.01'),
+                  _infoRow('Version', AppConstants.appVersion),
+                  _infoRow('Build', AppConstants.appBuild),
                   _infoRow('Verification', 'Rules + AI scoring'),
                   const SizedBox(height: 24),
                   _buildDangerActions(),
@@ -168,10 +173,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.infinity,
           height: 44,
           child: OutlinedButton.icon(
-            onPressed: _showExportNotice,
-            icon: const Icon(Icons.download, size: 16),
-            label: const Text('Export My Data',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
+            onPressed: _exporting ? null : _showExportNotice,
+            icon: _exporting
+                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.download, size: 16),
+            label: Text(
+              _exporting ? 'Exporting...' : 'Export My Data',
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            ),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.border),
               foregroundColor: AppColors.text,
@@ -237,11 +246,66 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _showExportNotice() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Data export is not available yet. Use Clear All Data to remove local copies from this device.'),
-      ),
-    );
+    _exportMyData();
+  }
+
+  Future<void> _exportMyData() async {
+    if (_exporting) return;
+    setState(() => _exporting = true);
+    try {
+      final deviceId = await _deviceService.getDeviceId();
+      final deviceHash = await _deviceService.getDeviceHash();
+      final cachedReports = deviceId != null
+          ? await _cacheService.getCachedReports(deviceId)
+          : <Map<String, dynamic>>[];
+      final pendingItems = await _offlineQueue.getPendingItems();
+      final queuedReports = pendingItems.map((item) => {
+        'queue_id': item.queueId,
+        'status': item.status,
+        'report_id': item.reportId,
+        'attempts': item.attempts,
+        'evidence_count': item.evidenceCount,
+        'created_at': item.createdAt?.toIso8601String(),
+      }).toList();
+
+      final exportData = {
+        'exported_at': DateTime.now().toUtc().toIso8601String(),
+        'app_version': AppConstants.appVersion,
+        'device_id': deviceId,
+        'device_hash_prefix': deviceHash.length >= 8 ? '${deviceHash.substring(0, 8)}...' : deviceHash,
+        'cached_reports_count': cachedReports.length,
+        'queued_offline_reports_count': queuedReports.length,
+        'cached_reports': cachedReports,
+        'queued_offline_reports': queuedReports,
+      };
+
+      final dir = await getApplicationDocumentsDirectory();
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final file = File('${dir.path}/trustbond_export_$timestamp.json');
+      await file.writeAsString(
+        const JsonEncoder.withIndent('  ').convert(exportData),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Data exported to: ${file.path}',
+            style: const TextStyle(fontSize: 12),
+          ),
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Export failed. Please try again.'),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _exporting = false);
+    }
   }
 
   Future<void> _clearAllData() async {

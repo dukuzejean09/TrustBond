@@ -470,7 +470,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  '$_totalReports reports · $_verifiedReports accepted by AI',
+                  '$_totalReports reports · $_verifiedReports verified',
                   style:
                       const TextStyle(fontSize: 10, color: AppColors.muted),
                 ),
@@ -550,7 +550,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: _buildMLMetric(
                   'Workflow',
-                  'AI-led',
+                  'AI-assisted',
                   AppColors.ok,
                   Icons.auto_awesome,
                 ),

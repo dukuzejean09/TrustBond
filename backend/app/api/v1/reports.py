@@ -489,7 +489,7 @@ def run_hotspot_auto():
             analyze_all_reports=True,
         )
         if created > 0:
-            print(f"Background hotspot creation: {created} new hotspots created")
+            logger.debug(f"Background hotspot creation: {created} new hotspots created")
             
             # Broadcast hotspot update to all connected clients for real-time Safety Map updates
             try:
@@ -501,7 +501,7 @@ def run_hotspot_auto():
                 except RuntimeError:
                     asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "hotspot", "action": "auto_created"}))
             except Exception as e:
-                print(f"Failed to broadcast hotspot update: {e}")
+                logger.error(f'Failed to broadcast hotspot update: {e}')
             
             # Create notifications for admins and supervisors about new hotspots
             from app.api.v1.notifications import create_role_notifications
@@ -514,7 +514,7 @@ def run_hotspot_auto():
             )
         db.commit()
     except Exception as e:
-        print(f"Error in background hotspot creation: {e}")
+        logger.error(f'Error in background hotspot creation: {e}')
         db.rollback()
     finally:
         db.close()
@@ -719,7 +719,7 @@ def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optiona
 
         exif = {TAGS.get(k, k): v for k, v in exif_data.items()}
         # Debug: show that we actually saw EXIF keys
-        print(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
+        logger.debug(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
 
         # Try to get GPS info in a robust way
         gps_info = None
@@ -748,10 +748,10 @@ def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optiona
         dt_original = exif.get("DateTimeOriginal") or exif.get("DateTime")
 
         lat = lon = None
-        print(f"[EXIF] raw GPSInfo: {gps_info!r}")
+        logger.debug(f"[EXIF] raw GPSInfo: {gps_info!r}")
         if gps_info:
             gps_parsed = {GPSTAGS.get(k, k): v for k, v in gps_info.items()}
-            print(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
+            logger.debug(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
 
             def _to_deg(value, ref):
                 """
@@ -1044,36 +1044,36 @@ def create_report(
     evidence_count = len(report_data.evidence_files)
     
     # ML-based credibility scoring (best-effort; failures are ignored)
-    print("Running ML credibility scoring...")  # Debug log
+    logger.debug("Running ML credibility scoring...")
     score_report_credibility(db, report, device, evidence_count)
     _ensure_fallback_ml_prediction_if_missing(db, report)
     # Update device aggregates derived from recent ML predictions + behavior
     update_device_ml_aggregates(db, device, window=30)
-    print("ML scoring completed")  # Debug log
+    logger.debug("ML scoring completed")
     
     # FIXED: Commit ML prediction to ensure it's available for verification
     db.commit()
     db.refresh(report)  # Ensure we have the latest data including ML predictions
 
     # Apply AI-enhanced rules
-    print(f"Applying AI-enhanced rules - evidence_count: {evidence_count}, description_length: {len(report_data.description or '')}")  # Debug log
+    logger.debug(f"Applying AI-enhanced rules - evidence_count: {evidence_count}, description_length: {len(report_data.description or '')}")
     
     # Get ML prediction if available (now available after ML scoring)
     from app.models.ml_prediction import MLPrediction
     ml_prediction = db.query(MLPrediction).filter(MLPrediction.report_id == report.report_id).order_by(MLPrediction.evaluated_at.desc()).first()
     if ml_prediction:
-        print(f"Using ML prediction: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")  # Debug log
+        logger.debug(f"Using ML prediction: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")
     
     # Apply AI-enhanced rules
     from app.core.report_priority import apply_ai_enhanced_rules, calculate_report_priority
     rule_status, is_flagged, flag_reason = apply_ai_enhanced_rules(
         report, evidence_count, ml_prediction, db
     )
-    print(f"AI-enhanced rule result - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")  # Debug log
+    logger.debug(f"AI-enhanced rule result - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")
     
     # Calculate automatic priority
     priority = calculate_report_priority(report, ml_prediction, evidence_count, db)
-    print(f"Calculated report priority: {priority}")  # Debug log
+    logger.debug(f"Calculated report priority: {priority}")
     
     # Apply results to report
     report.rule_status = rule_status
@@ -1098,7 +1098,7 @@ def create_report(
     }
     if flag_reason in review_reasons:
         report.verification_status = "under_review"
-        print(f"Rule/AI review reason ({flag_reason}) - setting verification_status to under_review")  # Debug log
+        logger.debug(f"Rule/AI review reason ({flag_reason}) - setting verification_status to under_review")
 
     # Update device stats
     now_utc = datetime.now(timezone.utc)
@@ -1218,7 +1218,7 @@ def create_report(
     db.refresh(report)
 
     # FIXED: Clear verification logic - BOTH rules AND ML must pass for auto-verification
-    print(f"Verification check - rule_status: {rule_status}, is_flagged: {is_flagged}, verification_status: {report.verification_status}")  # Debug log
+    logger.debug(f"Verification check - rule_status: {rule_status}, is_flagged: {is_flagged}, verification_status: {report.verification_status}")
     
     if rule_status == "passed" and not is_flagged and _report_lifecycle_state(report) != "under_review":
         # Rules passed, now check ML
@@ -1229,7 +1229,7 @@ def create_report(
             trust_score = float(ml_prediction.trust_score) if ml_prediction.trust_score else 0
             prediction_label = ml_prediction.prediction_label
             
-            print(f"ML check - prediction: {prediction_label}, trust_score: {trust_score:.1f}%")  # Debug log
+            logger.debug(f"ML check - prediction: {prediction_label}, trust_score: {trust_score:.1f}%")
             
             # Get ML thresholds from system config
             from app.database import SessionLocal
@@ -1264,13 +1264,13 @@ def create_report(
             ml_safe = False
             ml_reason = "ML failed: no ML prediction available"
         
-        print(f"ML decision: {ml_reason}")  # Debug log
+        logger.debug(f"ML decision: {ml_reason}")
         
         # Auto-verify ONLY if both rules AND ML pass
         if ml_safe:
             report.status = "verified"
             report.verification_status = "verified"
-            print("✅ REPORT AUTO-VERIFIED: Both rules and ML passed")  # Debug log
+            logger.debug("✅ REPORT AUTO-VERIFIED: Both rules and ML passed")
             db.commit()
             
             # Count auto-verified reports toward device trusted_reports
@@ -1278,10 +1278,10 @@ def create_report(
                 device.trusted_reports = (device.trusted_reports or 0) + 1
                 db.commit()
         else:
-            print(f"❌ REPORT NOT AUTO-VERIFIED: {ml_reason}")  # Debug log
+            logger.debug(f"❌ REPORT NOT AUTO-VERIFIED: {ml_reason}")
             # Keep status as "pending" for manual review
     else:
-        print(f" REPORT NOT AUTO-VERIFIED: Rules failed - rule_status: {rule_status}, is_flagged: {is_flagged}")  # Debug log
+        logger.debug(f" REPORT NOT AUTO-VERIFIED: Rules failed - rule_status: {rule_status}, is_flagged: {is_flagged}")
 
     grouping_result = _auto_group_and_persist_verified_report(db, report)
     _queue_grouping_refresh(background_tasks, grouping_result)
@@ -1840,14 +1840,14 @@ def get_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     # DEBUG: Check evidence files loading
-    print(f"🔍 DEBUG: Report {report_id} evidence files:")
-    print(f"   Raw evidence_files attribute: {getattr(report, 'evidence_files', 'NOT_FOUND')}")
-    print(f"   Evidence files count: {len(report.evidence_files) if report.evidence_files else 0}")
+    logger.debug(f"🔍 DEBUG: Report {report_id} evidence files:")
+    logger.debug(f"   Raw evidence_files attribute: {getattr(report, 'evidence_files', 'NOT_FOUND')}")
+    logger.debug(f"   Evidence files count: {len(report.evidence_files) if report.evidence_files else 0}")
     if report.evidence_files:
         for i, ef in enumerate(report.evidence_files, 1):
-            print(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
+            logger.debug(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
     else:
-        print("   No evidence files found in query result")
+        logger.debug("   No evidence files found in query result")
 
     # Enforce mobile community visibility rules for non-owners.
     if device_id is not None and report.device_id != device_id:
@@ -2040,11 +2040,11 @@ def get_report(
     )
     
     # DEBUG: Check what's being returned
-    print(f"🔍 DEBUG: Returning response with evidence files:")
-    print(f"   Evidence files in response: {len(response.evidence_files) if response.evidence_files else 0}")
+    logger.debug(f"🔍 DEBUG: Returning response with evidence files:")
+    logger.debug(f"   Evidence files in response: {len(response.evidence_files) if response.evidence_files else 0}")
     if response.evidence_files:
         for i, ef in enumerate(response.evidence_files, 1):
-            print(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
+            logger.debug(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
     
     return response
 
@@ -2157,7 +2157,7 @@ def add_review(
             existing_ml.prediction_label = "likely_real"
             existing_ml.confidence = Decimal("0.95")
             existing_ml.is_final = True
-            print(f"Updated ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")  # Debug log
+            logger.debug(f"Updated ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")
         else:
             # Create new ML prediction if none exists
             new_ml = MLPrediction(
@@ -2171,7 +2171,7 @@ def add_review(
                 evaluated_at=now_utc
             )
             db.add(new_ml)
-            print(f"Created new ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")  # Debug log
+            logger.debug(f"Created new ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")
         
         # Update device trust score based on successful human confirmation
         if hasattr(report, "device") and report.device and hasattr(report.device, "device_trust_score"):
@@ -2179,7 +2179,7 @@ def add_review(
             # Increase device trust score but cap at 100
             new_device_score = min(100.0, current_device_score + 5.0)
             report.device.device_trust_score = Decimal(str(new_device_score))
-            print(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")  # Debug log
+            logger.debug(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")
         
         # Update trusted_reports count
         if hasattr(report.device, "trusted_reports"):
@@ -2219,7 +2219,7 @@ def add_review(
             existing_ml.prediction_label = "fake"
             existing_ml.confidence = Decimal("0.95")  # High confidence in this assessment
             existing_ml.is_final = True
-            print(f"Updated ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")  # Debug log
+            logger.debug(f"Updated ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")
         else:
             # Create new ML prediction if none exists
             new_ml = MLPrediction(
@@ -2233,7 +2233,7 @@ def add_review(
                 evaluated_at=now_utc
             )
             db.add(new_ml)
-            print(f"Created new ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")  # Debug log
+            logger.debug(f"Created new ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")
         
         # Update device trust score based on human rejection
         if hasattr(report, "device") and report.device and hasattr(report.device, "device_trust_score"):
@@ -2241,7 +2241,7 @@ def add_review(
             # Decrease device trust score but don't go below 0
             new_device_score = max(0.0, current_device_score - 10.0)
             report.device.device_trust_score = Decimal(str(new_device_score))
-            print(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")  # Debug log
+            logger.debug(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")
         
         # Update flagged_reports count
         if hasattr(report.device, "flagged_reports"):
@@ -2561,7 +2561,7 @@ async def upload_evidence(
     Mobile: pass device_id to add evidence to your own report (only within evidence_add_window_hours after submit).
     Police dashboard: no device_id; requires auth (future use).
     """
-    print(f"Evidence upload - report_id: {report_id}, device_id: {device_id}, filename: {file.filename}")  # Debug log
+    logger.debug(f"Evidence upload - report_id: {report_id}, device_id: {device_id}, filename: {file.filename}")
     
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
@@ -2583,9 +2583,9 @@ async def upload_evidence(
             raise HTTPException(status_code=400, detail="Invalid device_id format")
 
     if device_id_uuid is not None:
-        print(f"Device ID validation - report.device_id: {report.device_id}, device_id_uuid: {device_id_uuid}")  # Debug log
+        logger.debug(f"Device ID validation - report.device_id: {report.device_id}, device_id_uuid: {device_id_uuid}")
         if str(report.device_id) != str(device_id_uuid):
-            print("Device ID mismatch - raising 403")  # Debug log
+            logger.debug('Device ID mismatch - raising 403')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",
@@ -2601,9 +2601,9 @@ async def upload_evidence(
         reported_at = report.reported_at
         if reported_at.tzinfo is None:
             reported_at = reported_at.replace(tzinfo=timezone.utc)
-        print(f"Time window check - reported_at: {reported_at}, cutoff: {cutoff}, window_hours: {window_hours}")  # Debug log
+        logger.debug(f"Time window check - reported_at: {reported_at}, cutoff: {cutoff}, window_hours: {window_hours}")
         if reported_at < cutoff:
-            print("Time window exceeded - raising 400")  # Debug log
+            logger.debug('Time window exceeded - raising 400')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",
@@ -2618,7 +2618,7 @@ async def upload_evidence(
                 detail=f"You can add evidence only within {window_hours} hours of submitting the report",
             )
     elif current_user is None:
-        print("No device_id and no current_user - raising 400")  # Debug log
+        logger.debug('No device_id and no current_user - raising 400')
         _log_endpoint_failure(
             "report.evidence.upload",
             "evidence",
@@ -2776,8 +2776,7 @@ async def upload_evidence(
             )
 
     # Cloudinary upload if configured, otherwise save locally
-    print(f"Cloudinary enabled: {_CLOUDINARY_ENABLED}")  # Debug log
-    print(f"Cloudinary config - cloud_name: {settings.cloudinary_cloud_name}, api_key configured: {bool(settings.cloudinary_api_key)}")  # Debug log
+    logger.debug("Cloudinary enabled: %s, cloud_name=%s", _CLOUDINARY_ENABLED, settings.cloudinary_cloud_name)
     if _CLOUDINARY_ENABLED:
         upload_opts = {"folder": "trustbond/evidence"}
         # Cloudinary uses resource_type="video" for both video and audio
@@ -2795,7 +2794,7 @@ async def upload_evidence(
         except Exception as e:
             # In production mode with Cloudinary configured, we do NOT write to local disk.
             # The client (mobile app) should handle offline/low-network by queuing uploads locally.
-            print(f"[Cloudinary] upload error for report {report_id}: {e}")
+            logger.error(f'[Cloudinary] upload error for report {report_id}: {e}')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",
@@ -2861,7 +2860,7 @@ async def upload_evidence(
     report_after = db.query(Report).filter(Report.report_id == report.report_id).first()
     if report_after:
         evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_after.report_id).count()
-        print(f"Re-applying AI-enhanced rules after evidence upload - evidence_count: {evidence_count}")  # Debug log
+        logger.debug(f"Re-applying AI-enhanced rules after evidence upload - evidence_count: {evidence_count}")
 
         evidence_signal, evidence_signal_reason = _evidence_lifecycle_signal(
             evidence_analysis if isinstance(evidence_analysis, dict) else {}
@@ -2896,18 +2895,18 @@ async def upload_evidence(
         ml_prediction = None
         if hasattr(report_after, 'ml_predictions') and report_after.ml_predictions:
             ml_prediction = max(report_after.ml_predictions, key=lambda p: p.evaluated_at or datetime.min.replace(tzinfo=timezone.utc))
-            print(f"Using ML prediction for re-evaluation: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")  # Debug log
+            logger.debug(f"Using ML prediction for re-evaluation: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")
         
         # Apply AI-enhanced rules
         from app.core.report_priority import apply_ai_enhanced_rules, calculate_report_priority
         rule_status, is_flagged, flag_reason = apply_ai_enhanced_rules(
             report_after, evidence_count, ml_prediction, db
         )
-        print(f"AI-enhanced rule result after evidence upload - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")  # Debug log
+        logger.debug(f"AI-enhanced rule result after evidence upload - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")
         
         # Recalculate priority
         priority = calculate_report_priority(report_after, ml_prediction, evidence_count, db)
-        print(f"Recalculated priority after evidence upload: {priority}")  # Debug log
+        logger.debug(f"Recalculated priority after evidence upload: {priority}")
         
         report_after.rule_status = rule_status
         report_after.is_flagged = is_flagged
@@ -2930,7 +2929,7 @@ async def upload_evidence(
         }
         if flag_reason in review_reasons:
             report_after.verification_status = "under_review"
-            print(f"Rule/AI review reason after evidence upload ({flag_reason}) - setting verification_status to under_review")  # Debug log
+            logger.debug(f"Rule/AI review reason after evidence upload ({flag_reason}) - setting verification_status to under_review")
 
         # FIXED: Auto-verify if AI-enhanced rules pass and not flagged, using trust_score threshold
         ai_safe = True
@@ -2940,18 +2939,18 @@ async def upload_evidence(
         if ml_prediction:
             if ml_prediction.prediction_label in ["fake", "suspicious", "uncertain"]:
                 ai_safe = False
-                print(f"AI marked report as {ml_prediction.prediction_label} - not auto-verifying after evidence upload")  # Debug log
+                logger.debug(f"AI marked report as {ml_prediction.prediction_label} - not auto-verifying after evidence upload")
             
             # Use trust_score threshold (70%) for consistency
             trust_score = float(ml_prediction.trust_score) if ml_prediction.trust_score else 0
             if trust_score < 70.0:
                 ml_trust_ok = False
-                print(f"ML trust score too low ({trust_score:.1f}% < 70%) - not auto-verifying after evidence upload")  # Debug log
+                logger.debug(f"ML trust score too low ({trust_score:.1f}% < 70%) - not auto-verifying after evidence upload")
         
         if rule_status == "passed" and not is_flagged and ai_safe and ml_trust_ok and evidence_allows_auto_verify and _report_lifecycle_state(report_after) != "under_review":
             report_after.status = "verified"
             report_after.verification_status = "verified"
-            print("Report auto-verified after evidence upload with AI safety check")  # Debug log
+            logger.debug("Report auto-verified after evidence upload with AI safety check")
         db.commit()
 
         grouping_result = _auto_group_and_persist_verified_report(db, report_after)

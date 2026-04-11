@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:record/record.dart';
 import '../config/theme.dart';
 import '../widgets/shared_widgets.dart';
 import '../services/api_service.dart';
@@ -43,15 +44,20 @@ class ReportStep3Screen extends StatefulWidget {
 
 class _ReportStep3ScreenState extends State<ReportStep3Screen> {
   static const Duration _foregroundBudget = Duration(seconds: 5);
+  static const Duration _maxAudioDuration = Duration(seconds: 60);
   final _apiService = ApiService();
   final _deviceService = DeviceService();
   final _picker = ImagePicker();
   final _statusService = DeviceStatusService();
   final _offlineIntegration = OfflineReportingIntegration();
+  final _audioRecorder = AudioRecorder();
 
   final List<_EvidenceFile> _files = [];
   bool _submitting = false;
   String? _error;
+  bool _isRecordingAudio = false;
+  Timer? _audioTimer;
+  int _audioSeconds = 0;
 
   bool _isNetworkError(Object e) {
     return e is SocketException || e is TimeoutException;
@@ -59,6 +65,8 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
 
   @override
   void dispose() {
+    _audioTimer?.cancel();
+    _audioRecorder.dispose();
     super.dispose();
   }
 
@@ -104,6 +112,43 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
       final sanitizedPath = await _sanitizePhotoPath(img.path);
       setState(() => _files
           .add(_EvidenceFile(path: sanitizedPath, type: 'photo', isLive: false)));
+    }
+  }
+
+  Future<void> _startAudioRecording() async {
+    final hasPermission = await _audioRecorder.hasPermission();
+    if (!hasPermission) {
+      if (mounted) {
+        setState(() => _error = 'Microphone permission denied. Please allow microphone access in Settings.');
+      }
+      return;
+    }
+    final dir = await getTemporaryDirectory();
+    final audioPath = '${dir.path}/tb_audio_${DateTime.now().microsecondsSinceEpoch}.m4a';
+    await _audioRecorder.start(const RecordConfig(encoder: AudioEncoder.aacLc), path: audioPath);
+    setState(() {
+      _isRecordingAudio = true;
+      _audioSeconds = 0;
+    });
+    _audioTimer = Timer.periodic(const Duration(seconds: 1), (t) {
+      if (!mounted) { t.cancel(); return; }
+      setState(() => _audioSeconds++);
+      if (_audioSeconds >= _maxAudioDuration.inSeconds) {
+        _stopAudioRecording();
+      }
+    });
+  }
+
+  Future<void> _stopAudioRecording() async {
+    _audioTimer?.cancel();
+    _audioTimer = null;
+    final path = await _audioRecorder.stop();
+    setState(() {
+      _isRecordingAudio = false;
+      _audioSeconds = 0;
+    });
+    if (path != null) {
+      setState(() => _files.add(_EvidenceFile(path: path, type: 'audio', isLive: true)));
     }
   }
 
@@ -270,8 +315,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
                         style: TextStyle(
                             fontSize: 16, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 4),
-                    const Text(
-                        'Photos and videos strengthen report credibility',
+                    const Text('Photos, videos, and audio strengthen report credibility',
                         style:
                             TextStyle(fontSize: 12, color: AppColors.muted)),
                     const SizedBox(height: 16),
@@ -337,7 +381,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
           const Text('Upload Evidence',
               style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          const Text('Take a photo, record video, or choose from gallery',
+          const Text('Take a photo, record video, capture audio, or choose from gallery',
               style: TextStyle(fontSize: 11, color: AppColors.muted),
               textAlign: TextAlign.center),
           const SizedBox(height: 14),
@@ -351,6 +395,8 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
               _actionChip('🖼️ Gallery', _pickGallery),
             ],
           ),
+          const SizedBox(height: 8),
+          _buildAudioButton(),
         ],
       ),
     );
@@ -368,6 +414,53 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
         ),
         child: Text(label,
             style: const TextStyle(fontSize: 12, color: AppColors.text)),
+      ),
+    );
+  }
+
+  Widget _buildAudioButton() {
+    if (_isRecordingAudio) {
+      return GestureDetector(
+        onTap: _stopAudioRecording,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.danger.withValues(alpha: 0.1),
+            border: Border.all(color: AppColors.danger),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.stop_circle, size: 16, color: AppColors.danger),
+              const SizedBox(width: 6),
+              Text(
+                'Stop Recording  ${_audioSeconds}s / 60s',
+                style: const TextStyle(fontSize: 12, color: AppColors.danger, fontWeight: FontWeight.w600),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+    return GestureDetector(
+      onTap: _startAudioRecording,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surface2,
+          border: Border.all(color: AppColors.border),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text('🎙️', style: TextStyle(fontSize: 14)),
+            SizedBox(width: 6),
+            Text('Record Audio (max 60s)',
+                style: TextStyle(fontSize: 12, color: AppColors.text)),
+          ],
+        ),
       ),
     );
   }
@@ -401,8 +494,11 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
                           width: 44,
                           height: 44,
                           color: AppColors.surface3,
-                          child: const Icon(Icons.videocam,
-                              color: AppColors.accent2, size: 22),
+                          child: Icon(
+                            f.type == 'audio' ? Icons.mic : Icons.videocam,
+                            color: AppColors.accent2,
+                            size: 22,
+                          ),
                         ),
                 ),
                 const SizedBox(width: 10),
@@ -411,7 +507,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        f.type == 'photo' ? 'Photo' : 'Video',
+                        f.type == 'photo' ? 'Photo' : f.type == 'audio' ? 'Audio' : 'Video',
                         style: const TextStyle(
                             fontSize: 12, fontWeight: FontWeight.w600),
                       ),
