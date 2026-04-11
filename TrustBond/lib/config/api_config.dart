@@ -1,4 +1,10 @@
-/// API base URL. Change via --dart-define when running, or edit the default below.
+/// Shared application constants used across screens and services.
+class AppConstants {
+  /// Application version. Update this when incrementing the version in pubspec.yaml.
+  static const String appVersion = '2.1.0';
+  /// Application build identifier.
+  static const String appBuild = '2024.12.01';
+}
 ///
 /// **Production:** Uses Render-hosted backend (auto-deployed from GitHub).
 /// **Override:** flutter run --dart-define=API_BASE_URL=https://YOUR_URL/api/v1

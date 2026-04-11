@@ -496,7 +496,7 @@ class _ReportStep3ScreenState extends State<ReportStep3Screen> {
                           color: AppColors.surface3,
                           child: Icon(
                             f.type == 'audio' ? Icons.mic : Icons.videocam,
-                            color: f.type == 'audio' ? AppColors.accent2 : AppColors.accent2,
+                            color: AppColors.accent2,
                             size: 22,
                           ),
                         ),

@@ -501,7 +501,7 @@ def run_hotspot_auto():
                 except RuntimeError:
                     asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "hotspot", "action": "auto_created"}))
             except Exception as e:
-                logger.error('Failed to broadcast hotspot update: {e}')
+                logger.error(f'Failed to broadcast hotspot update: {e}')
             
             # Create notifications for admins and supervisors about new hotspots
             from app.api.v1.notifications import create_role_notifications
@@ -514,7 +514,7 @@ def run_hotspot_auto():
             )
         db.commit()
     except Exception as e:
-        logger.error('Error in background hotspot creation: {e}')
+        logger.error(f'Error in background hotspot creation: {e}')
         db.rollback()
     finally:
         db.close()
@@ -2585,7 +2585,7 @@ async def upload_evidence(
     if device_id_uuid is not None:
         logger.debug(f"Device ID validation - report.device_id: {report.device_id}, device_id_uuid: {device_id_uuid}")
         if str(report.device_id) != str(device_id_uuid):
-            logger.error('Device ID mismatch - raising 403')
+            logger.debug('Device ID mismatch - raising 403')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",
@@ -2603,7 +2603,7 @@ async def upload_evidence(
             reported_at = reported_at.replace(tzinfo=timezone.utc)
         logger.debug(f"Time window check - reported_at: {reported_at}, cutoff: {cutoff}, window_hours: {window_hours}")
         if reported_at < cutoff:
-            logger.error('Time window exceeded - raising 400')
+            logger.debug('Time window exceeded - raising 400')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",
@@ -2618,7 +2618,7 @@ async def upload_evidence(
                 detail=f"You can add evidence only within {window_hours} hours of submitting the report",
             )
     elif current_user is None:
-        logger.error('No device_id and no current_user - raising 400')
+        logger.debug('No device_id and no current_user - raising 400')
         _log_endpoint_failure(
             "report.evidence.upload",
             "evidence",
@@ -2794,7 +2794,7 @@ async def upload_evidence(
         except Exception as e:
             # In production mode with Cloudinary configured, we do NOT write to local disk.
             # The client (mobile app) should handle offline/low-network by queuing uploads locally.
-            logger.error('[Cloudinary] upload error for report {report_id}: {e}')
+            logger.error(f'[Cloudinary] upload error for report {report_id}: {e}')
             _log_endpoint_failure(
                 "report.evidence.upload",
                 "evidence",

@@ -136,6 +136,11 @@ def _haversine_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> flo
     return r * 2 * atan2(sqrt(a), sqrt(1 - a))
 
 
+def _normalize_trust(score: float) -> float:
+    """Normalise a raw trust score (0-100) to the 0-1 range used in density calculations."""
+    return max(0.0, min(1.0, score / 100.0))
+
+
 def _trust_weighted_neighbor_mass(points: List[Dict[str, Any]], i: int, eps_meters: float) -> Tuple[List[int], float]:
     """Return neighbour indices and their combined trust-weighted mass.
 
@@ -152,7 +157,7 @@ def _trust_weighted_neighbor_mass(points: List[Dict[str, Any]], i: int, eps_mete
     for j, q in enumerate(points):
         if _haversine_meters(p["lat"], p["lon"], q["lat"], q["lon"]) <= eps_meters:
             nb_indices.append(j)
-            mass += max(0.0, min(1.0, q.get("trust", 50.0) / 100.0))
+            mass += _normalize_trust(q.get("trust", 50.0))
     return nb_indices, mass
 
 

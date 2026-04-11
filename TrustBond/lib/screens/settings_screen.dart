@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
+import '../config/api_config.dart';
 import '../config/theme.dart';
 import '../services/device_service.dart';
 import '../services/local_cache_service.dart';
@@ -58,8 +59,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _toggle('Report Updates', 'When your report status changes',
                       _reportUpdates, (v) => setState(() => _reportUpdates = v)),
                   _section('About'),
-                  _infoRow('Version', '2.1.0'),
-                  _infoRow('Build', '2024.12.01'),
+                  _infoRow('Version', AppConstants.appVersion),
+                  _infoRow('Build', AppConstants.appBuild),
                   _infoRow('Verification', 'Rules + AI scoring'),
                   const SizedBox(height: 24),
                   _buildDangerActions(),
@@ -269,7 +270,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
       final exportData = {
         'exported_at': DateTime.now().toUtc().toIso8601String(),
-        'app_version': '2.1.0',
+        'app_version': AppConstants.appVersion,
         'device_id': deviceId,
         'device_hash_prefix': deviceHash.length >= 8 ? '${deviceHash.substring(0, 8)}...' : deviceHash,
         'cached_reports_count': cachedReports.length,
