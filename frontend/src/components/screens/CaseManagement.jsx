@@ -105,7 +105,7 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
     <>
       <div className="page-header">
         <h2>Case Management</h2>
-        <p>Unified cases - multiple reports grouped into a single coordinated investigation.</p>
+        <p>Unified cases — multiple reports grouped into a single coordinated investigation.</p>
       </div>
 
       <div className="stats-row">
@@ -125,9 +125,9 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
           <div className="stat-change"><span className="up">recent</span></div>
         </div>
         <div className="stat-card c-purple">
-          <div className="stat-label">Reports Linked</div>
+          <div className="stat-label">Reports Merged</div>
           <div className="stat-value sv-purple">{merged}</div>
-          <div className="stat-change">Auto-grouped and manual</div>
+          <div className="stat-change">Across all cases</div>
         </div>
       </div>
 
@@ -177,7 +177,7 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
             ))}
           </select>
           {isAdminOrSupervisor && (
-            <button className="btn btn-primary" onClick={() => openModal('newCase')}>+ Manual Case</button>
+            <button className="btn btn-primary" onClick={() => openModal('newCase')}>+ New Case</button>
           )}
         </div>
       </div>
@@ -206,16 +206,6 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
                     / 100
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
-                  {c.auto_created && (
-                    <span className="badge b-blue">Auto-created</span>
-                  )}
-                  {c.source && (
-                    <span className="badge b-gray" style={{ textTransform: 'capitalize' }}>
-                      {String(c.source).replaceAll('_', ' ')}
-                    </span>
-                  )}
-                </div>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                 <span className={`badge ${
@@ -235,13 +225,11 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
               </div>
             </div>
             <div style={{ fontSize: '12px', color: 'var(--text-dim)', lineHeight: 1.5, marginBottom: '10px' }}>
-              {c.description || (c.auto_created
-                ? 'Case created automatically from corroborating reports.'
-                : 'Manual case created to capture reports the auto-grouping flow did not combine yet.')}
+              {c.description || 'Case created from grouped reports.'}
             </div>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '11px', color: 'var(--muted)', marginBottom: '8px' }}>
               <span>Assigned: <strong style={{ color: 'var(--text)' }}>{c.assigned_to_name || 'Unassigned'}</strong></span>
-              <span>Opened {c.opened_at ? new Date(c.opened_at).toLocaleDateString() : '-'}</span>
+              <span>Opened {c.opened_at ? new Date(c.opened_at).toLocaleDateString() : '—'}</span>
             </div>
             <div className="case-progress">
               <div className="case-progress-label">
@@ -325,15 +313,15 @@ const CaseManagement = ({ goToScreen, openModal, wsRefreshKey }) => {
                     {index + 1}
                   </td>
                   <td style={{ fontWeight: 600, fontSize: '11px' }}>{c.case_number}</td>
-                  <td>{c.incident_type_name || '-'}</td>
-                  <td>{c.location_name || '-'}</td>
+                  <td>{c.incident_type_name || '—'}</td>
+                  <td>{c.location_name || '—'}</td>
                   <td>{c.report_count}</td>
-                  <td>{c.assigned_to_name || '-'}</td>
+                  <td>{c.assigned_to_name || '—'}</td>
                   <td style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                    {c.opened_at ? new Date(c.opened_at).toLocaleDateString() : '-'}
+                    {c.opened_at ? new Date(c.opened_at).toLocaleDateString() : '—'}
                   </td>
                   <td style={{ fontSize: '10px', color: 'var(--muted)' }}>
-                    {c.closed_at ? new Date(c.closed_at).toLocaleDateString() : '-'}
+                    {c.closed_at ? new Date(c.closed_at).toLocaleDateString() : '—'}
                   </td>
                   <td><span className="badge b-green">{c.outcome || 'Resolved'}</span></td>
                 </tr>

@@ -12,11 +12,10 @@ const friendlyFlagReason = (reason) => {
     incident_description_mismatch:
       "Description appears inconsistent with the selected incident type.",
     gibberish_description:
-      "Description looks meaningless or spammy and was routed to the exception queue.",
+      "Description looks meaningless or spammy and needs manual review.",
     ai_suspicious_review:
-      "AI marked this report as suspicious and routed it to the exception queue.",
-    ai_uncertain_review:
-      "AI confidence was too low, so this report moved to the exception queue.",
+      "AI marked this report as suspicious and requires human review.",
+    ai_uncertain_review: "AI result is uncertain and requires manual review.",
     ai_detected_fake: "AI detected possible fake/manipulated evidence.",
     device_burst_reporting:
       "Device submitted too many reports in a short period.",
@@ -26,43 +25,21 @@ const friendlyFlagReason = (reason) => {
       "Evidence was uploaded without enough description context.",
     minimal_description: "Description is too short for reliable triage.",
     high_severity_incident:
-      "High-severity incident was held for exception handling.",
+      "High-severity incident automatically requires manual review.",
   };
   if (!reason) return "";
   return m[reason] || reason.replaceAll("_", " ");
 };
 
-const getLatestReviewDecision = (report) => {
-  const reviews = Array.isArray(report?.reviews) ? [...report.reviews] : [];
-  if (!reviews.length) return null;
-  reviews.sort(
-    (a, b) =>
-      new Date(b.reviewed_at || 0).getTime() -
-      new Date(a.reviewed_at || 0).getTime(),
-  );
-  return (reviews[0]?.decision || "").toLowerCase() || null;
-};
-
-const getEffectiveLifecycleStatus = (report) => {
-  const reviewDecision = getLatestReviewDecision(report);
-  if (reviewDecision === "confirmed") return "verified";
-  if (reviewDecision === "rejected") return "rejected";
-  if (reviewDecision === "investigation") return "under_review";
-
-  const verificationStatus = (report?.verification_status || "").toLowerCase();
-  if (verificationStatus) return verificationStatus;
-
-  const status = (report?.status || "").toLowerCase();
-  if (status) return status;
-
-  return (report?.rule_status || "").toLowerCase();
-};
-
 // Verification helper functions
 const isReportVerified = (report, mlPrediction) => {
-  const status = getEffectiveLifecycleStatus(report);
-  if (status === "verified") {
-    return true;
+  const status = (report.rule_status || "").toLowerCase();
+  const hasOfficerConfirmed = report.reviews?.some(
+    (rv) => (rv.decision || "").toLowerCase() === "confirmed",
+  );
+
+  if (hasOfficerConfirmed) {
+    return true; // Officer-verified
   }
 
   if (status === "passed") {
@@ -81,10 +58,12 @@ const isReportVerified = (report, mlPrediction) => {
 };
 
 const getVerificationStatus = (report, mlPrediction) => {
-  const status = getEffectiveLifecycleStatus(report);
-  const latestDecision = getLatestReviewDecision(report);
+  const status = (report.rule_status || "").toLowerCase();
+  const hasOfficerConfirmed = report.reviews?.some(
+    (rv) => (rv.decision || "").toLowerCase() === "confirmed",
+  );
 
-  if (latestDecision === "confirmed") {
+  if (hasOfficerConfirmed) {
     return (
       <div
         style={{
@@ -95,10 +74,10 @@ const getVerificationStatus = (report, mlPrediction) => {
         }}
       >
         <span style={{ color: "#4caf50", fontWeight: 600 }}>
-          Manual override applied
+          Officer verified
         </span>
         <span style={{ color: "#666" }}>
-          - Confirmed by{" "}
+          — Confirmed by{" "}
           {report.reviews.find(
             (rv) => (rv.decision || "").toLowerCase() === "confirmed",
           )?.reviewer_name || "officer"}
@@ -129,7 +108,7 @@ const getVerificationStatus = (report, mlPrediction) => {
               Auto-verified
             </span>
             <span style={{ color: "#666" }}>
-              - ML confidence: {mlConfidence.toFixed(1)}%
+              — ML confidence: {mlConfidence.toFixed(1)}%
             </span>
           </div>
         );
@@ -165,7 +144,7 @@ const getVerificationStatus = (report, mlPrediction) => {
           <span style={{ color: "#ff9800", fontWeight: 600 }}>
             No ML Analysis
           </span>
-          <span style={{ color: "#666" }}>- Awaiting automated scoring or an exception override</span>
+          <span style={{ color: "#666" }}>- Requires officer verification</span>
         </div>
       );
     }
@@ -182,10 +161,10 @@ const getVerificationStatus = (report, mlPrediction) => {
         }}
       >
         <span style={{ color: "#ff9800", fontWeight: 600 }}>
-            AI Triage Running
+          Pending Review
         </span>
         <span style={{ color: "#666" }}>
-          - Waiting for automated checks or exception routing
+          - Needs officer assignment and confirmation
         </span>
       </div>
     );
@@ -225,8 +204,10 @@ const getVerificationStatus = (report, mlPrediction) => {
 };
 
 const getVerificationRequirements = (report, mlPrediction) => {
-  const status = getEffectiveLifecycleStatus(report);
-  const hasOfficerConfirmed = getLatestReviewDecision(report) === "confirmed";
+  const status = (report.rule_status || "").toLowerCase();
+  const hasOfficerConfirmed = report.reviews?.some(
+    (rv) => (rv.decision || "").toLowerCase() === "confirmed",
+  );
 
   if (hasOfficerConfirmed) {
     return null; // Already verified
@@ -247,7 +228,7 @@ const getVerificationRequirements = (report, mlPrediction) => {
               ML confidence too low ({mlConfidence.toFixed(1)}% &lt; 80%)
             </div>
             <div style={{ marginBottom: "4px" }}>
-              <strong>Option 1:</strong> Leave it in the exception queue while the system waits for corroboration
+              <strong>Option 1:</strong> Assign to officer for confirmation
             </div>
             <div>
               <strong>Option 2:</strong> Wait for higher ML confidence (≥80%)
@@ -260,7 +241,7 @@ const getVerificationRequirements = (report, mlPrediction) => {
         <div>
           <div style={{ marginBottom: "4px" }}>No ML analysis available</div>
           <div>
-              <strong>Recommended:</strong> Wait for automated scoring, or use a manual override if the case is time-sensitive
+            <strong>Required:</strong> Assign to officer for manual verification
           </div>
         </div>
       );
@@ -271,10 +252,10 @@ const getVerificationRequirements = (report, mlPrediction) => {
     return (
       <div>
         <div style={{ marginBottom: "4px" }}>
-          Report is still in automated triage
+          Report status is "pending" (needs officer review)
         </div>
         <div>
-          <strong>Recommended:</strong> Let AI finish unless an exception override is needed
+          <strong>Required:</strong> Assign to officer and get confirmation
         </div>
       </div>
     );
@@ -284,10 +265,10 @@ const getVerificationRequirements = (report, mlPrediction) => {
     return (
       <div>
         <div style={{ marginBottom: "4px" }}>
-          Report is {status} and is no longer on the normal auto-verification path
+          Report is {status} (cannot be verified)
         </div>
         <div>
-          <strong>Result:</strong> This report will not feed hotspot scoring unless an override changes its state
+          <strong>Result:</strong> This report cannot contribute to hotspots
         </div>
       </div>
     );
@@ -297,7 +278,7 @@ const getVerificationRequirements = (report, mlPrediction) => {
     <div>
       <div style={{ marginBottom: "4px" }}>Verification status unclear</div>
       <div>
-        <strong>Recommended:</strong> Check AI evidence and use manual override only if necessary
+        <strong>Required:</strong> Assign to officer for review
       </div>
     </div>
   );
@@ -523,7 +504,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
   if (loading) {
     return (
       <div style={{ padding: 16, fontSize: 13, color: "var(--muted)" }}>
-        Loading report...
+        Loading report…
       </div>
     );
   }
@@ -557,17 +538,17 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
   // Status configuration
   const getStatusConfig = (status) => {
     const configs = {
-      pending: { color: "b-yellow", text: "AI Triage" },
-      under_review: { color: "b-yellow", text: "Exception Review" },
-      passed: { color: "b-green", text: "AI Verified" },
+      pending: { color: "b-yellow", text: "Pending Review" },
+      under_review: { color: "b-yellow", text: "Pending Review" },
+      passed: { color: "b-green", text: "Verified" },
       verified: { color: "b-green", text: "Verified" },
-      flagged: { color: "b-red", text: "Exception Queue" },
+      flagged: { color: "b-red", text: "Flagged" },
       rejected: { color: "b-red", text: "Rejected" },
     };
     return configs[status] || { color: "b-gray", text: "Unknown" };
   };
 
-  const statusConfig = getStatusConfig(lifecycleStatus);
+  const statusConfig = getStatusConfig(report.status || report.rule_status);
 
   return (
     <>
@@ -607,7 +588,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
               className="badge b-blue"
               style={{ fontSize: "12px", padding: "4px 8px" }}
             >
-              Case linked
+              Linked to case
             </span>
           )}
         </div>
@@ -619,7 +600,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
             flexWrap: "wrap",
           }}
         >
-          {/* Manual overrides are available when AI needs help or a supervisor must intervene */}
+          {/* Review Status Buttons: available to all roles */}
           <button
             className="btn btn-success btn-sm"
             onClick={() => submitReview("confirmed")}
@@ -627,8 +608,8 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
             style={{ display: "flex", alignItems: "center", gap: 4 }}
           >
             {savingDecision === "confirmed"
-              ? "Applying override..."
-              : "Approve override"}
+              ? "Verifying…"
+              : "Verify report"}
           </button>
           <button
             className="btn btn-danger btn-sm"
@@ -636,10 +617,10 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
             disabled={!!savingDecision}
             style={{ display: "flex", alignItems: "center", gap: 4 }}
           >
-            {savingDecision === "rejected" ? "Rejecting..." : "Reject report"}
+            {savingDecision === "rejected" ? "Flagging…" : "Flag report"}
           </button>
           
-          {/* Exception handling and case management: admin/supervisor only */}
+          {/* Assignment and Case Management: admin/supervisor only */}
           {(role === "admin" || role === "supervisor") && (
             <>
               <button
@@ -656,7 +637,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                   onClick={() => openModal("newCase")}
                   style={{ display: "flex", alignItems: "center", gap: 4 }}
                 >
-                  Create override case
+                  Create case
                 </button>
               ) : (
                 <button
@@ -722,13 +703,13 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
               <div className="detail-field">
                 <div className="dfl">Incident Type</div>
                 <div className="dfv" style={{ color: "var(--danger)" }}>
-                  {report.incident_type_name || "-"}
+                  {report.incident_type_name || "—"}
                 </div>
               </div>
               <div className="detail-field">
                 <div className="dfl">Location</div>
                 <div className="dfv">
-                  {report.incident_village_name || report.village_name || "-"}
+                  {report.incident_village_name || report.village_name || "—"}
                 </div>
               </div>
               <div className="detail-field">
@@ -745,7 +726,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                 <div className="dfv" style={{ fontSize: "12px" }}>
                   {report.gps_accuracy != null
                     ? `${Number(report.gps_accuracy).toFixed(1)}m`
-                    : "-"}
+                    : "—"}
                 </div>
               </div>
               <div className="detail-field">
@@ -1132,7 +1113,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         </span>
                       ))
                     ) : (
-                      <span style={{ color: "var(--muted)" }}>-</span>
+                      <span style={{ color: "var(--muted)" }}>—</span>
                     )}
                   </div>
                 </div>
@@ -1150,16 +1131,16 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     Motion
                   </div>
                   <div style={{ marginTop: 6, color: "var(--text)" }}>
-                    Level: {report.motion_level || "-"}
+                    Level: {report.motion_level || "—"}
                     <div style={{ marginTop: 4, color: "var(--muted)" }}>
                       Speed:{" "}
                       {report.movement_speed != null
                         ? `${Number(report.movement_speed).toFixed(2)} m/s`
-                        : "-"}
+                        : "—"}
                       {" · "}
                       Stationary:{" "}
                       {report.was_stationary == null
-                        ? "-"
+                        ? "—"
                         : report.was_stationary
                           ? "Yes"
                           : "No"}
@@ -1178,7 +1159,12 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
               <span
                 className={`badge ${isReportVerified(report, mlPrediction) ? "b-green" : "b-orange"}`}
               >
-                {statusConfig.text}
+                {isReportVerified(report, mlPrediction)
+                  ? "Verified"
+                  : report.verification_status === "pending" ? "Pending" 
+                  : report.verification_status === "under_review" ? "Under Review"
+                  : report.verification_status === "rejected" ? "Rejected"
+                  : "Needs verification"}
               </span>
             </div>
             <div style={{ padding: "12px" }}>
@@ -1198,12 +1184,12 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>
                       {report.rule_status === "passed" 
                         ? "Auto-approved by ML confidence and rule checks"
-                        : "Auto-routed to exception handling by system rules"}
+                        : "Auto-flagged by system rules for manual review"}
                     </div>
                     {mlPrediction && (
                       <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>
                         ML Confidence: {Math.round((mlPrediction.confidence || 0) * 100)}% 
-                        {mlPrediction.confidence >= 80 ? " (Auto-verified)" : " (Requires exception override)"}
+                        {mlPrediction.confidence >= 80 ? " (Auto-verified)" : " (Requires officer review)"}
                       </div>
                     )}
                   </div>
@@ -1222,17 +1208,17 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                 )}
 
                 {/* Pending Status */}
-                {lifecycleStatus === "pending" && (
+                {report.rule_status === "pending" && (
                   <div style={{ marginTop: "8px", padding: "8px", background: "rgba(255, 152, 0, 0.1)", borderRadius: "4px", border: "1px solid rgba(255, 152, 0, 0.3)" }}>
                     <div style={{ fontSize: "11px", color: "var(--warning)", fontWeight: 600 }}>
                       ⏳ Pending System Processing
                     </div>
                     <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>
-                      Automated checks are still running for this report.
+                      Report rules haven't been fully processed yet
                     </div>
                     {mlPrediction && (
                       <div style={{ fontSize: "10px", color: "var(--muted)", marginTop: "2px" }}>
-                        Note: ML confidence is {Math.round((mlPrediction.confidence || 0) * 100)}% while triage is still processing.
+                        Note: ML confidence is {Math.round((mlPrediction.confidence || 0) * 100)}% - should auto-verify once processed
                       </div>
                     )}
                   </div>
@@ -1439,16 +1425,16 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     </div>
 
                     {/* Quality Badge */}
-                    {ef.quality_label && (
+                    {ef.ai_quality_label && (
                       <div
                         style={{
                           position: "absolute",
                           top: "12px",
                           right: "12px",
                           background:
-                            ef.quality_label === "good"
+                            ef.ai_quality_label === "good"
                               ? "#28a745"
-                              : ef.quality_label === "fair"
+                              : ef.ai_quality_label === "fair"
                                 ? "#fd7e14"
                                 : "#dc3545",
                           color: "white",
@@ -1459,7 +1445,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                           textTransform: "uppercase",
                         }}
                       >
-                        {ef.quality_label}
+                        {ef.ai_quality_label}
                       </div>
                     )}
                   </div>
@@ -1518,7 +1504,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     )}
 
                     {/* AI Analysis */}
-                    {(ef.quality_label ||
+                    {(ef.ai_quality_label ||
                       ef.blur_score ||
                       ef.tamper_score) && (
                       <div
@@ -1780,7 +1766,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                 >
                   {mlPrediction
                     ? Math.round(mlPrediction.trust_score ?? 0)
-                    : "-"}
+                    : "—"}
                 </span>
               </div>
               <div className="prog-bar" style={{ marginBottom: "8px" }}>
@@ -1839,7 +1825,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     marginTop: 6,
                   }}
                 >
-                  Loading ML prediction...
+                  Loading ML prediction…
                 </div>
               )}
               {mlPrediction && !mlLoading && (
@@ -1882,7 +1868,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         Content score
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.content_score ?? "-"}
+                        {trustFactors.content_score ?? "—"}
                       </span>
                     </div>
                     <div
@@ -1895,7 +1881,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         Location score
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.location_score ?? "-"}
+                        {trustFactors.location_score ?? "—"}
                       </span>
                     </div>
                     <div
@@ -1908,7 +1894,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         Cluster score
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.cluster_score ?? "-"}
+                        {trustFactors.cluster_score ?? "—"}
                       </span>
                     </div>
                     <div
@@ -1921,7 +1907,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         User behavior score
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.user_behavior_score ?? "-"}
+                        {trustFactors.user_behavior_score ?? "—"}
                       </span>
                     </div>
                     <div
@@ -1934,7 +1920,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         Community net votes
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.community_net_votes ?? "-"}
+                        {trustFactors.community_net_votes ?? "—"}
                       </span>
                     </div>
                     <div
@@ -1947,7 +1933,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                         Coordination penalty
                       </span>
                       <span style={{ fontSize: "11px", fontWeight: 800 }}>
-                        {trustFactors.coordination_penalty ?? "-"}
+                        {trustFactors.coordination_penalty ?? "—"}
                       </span>
                     </div>
                   </div>
@@ -1968,7 +1954,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
             <div style={{ padding: "10px 14px", fontSize: "12px" }}>
               {relatedLoading && (
                 <div style={{ fontSize: "12px", color: "var(--muted)" }}>
-                  Loading related reports...
+                  Loading related reports…
                 </div>
               )}
               {!relatedLoading && relatedReports.length === 0 && (
@@ -2014,7 +2000,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                     </span>
                   </div>
                   <div style={{ fontSize: "11px" }}>
-                    {r.incident_type_name || "-"} - {r.village_name || "-"}
+                    {r.incident_type_name || "—"} · {r.village_name || "—"}
                   </div>
                   <div
                     style={{
@@ -2074,7 +2060,7 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                 disabled={!reviewReason.trim() || !!savingDecision}
               >
                 {savingDecision === pendingDecision 
-                  ? (pendingDecision === "confirmed" ? "Applying override..." : "Rejecting...")
+                  ? (pendingDecision === "confirmed" ? "Verifying…" : "Flagging…")
                   : (pendingDecision === "confirmed" ? "Verify" : "Flag")
                 }
               </button>

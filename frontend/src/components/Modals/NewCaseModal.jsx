@@ -195,7 +195,7 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
     <div className="modal-overlay open" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <div className="modal-title">Create Manual Case</div>
+          <div className="modal-title">Create New Case</div>
           <div className="modal-close" onClick={onClose}>✕</div>
         </div>
 
@@ -208,9 +208,6 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
         
         <div className="input-group">
           <div className="input-label">Case Title *</div>
-          <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '6px' }}>
-            Use this only when the auto-grouping flow has not already created the case you need.
-          </div>
           <input
             className="input"
             placeholder="e.g. Muhoza Market Assault Series"
@@ -234,7 +231,7 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
                 }
               }}
             >
-              <option value="">- Select type -</option>
+              <option value="">— Select type —</option>
               {(incidentTypes || []).map((t) => (
                 <option key={t.incident_type_id} value={t.incident_type_id}>
                   {t.type_name}
@@ -267,7 +264,7 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
                 loadOfficersForLocation(val);
               }}
             >
-              <option value="">- Select station -</option>
+              <option value="">— Select station —</option>
               {(stations || []).map((s) => (
                 <option key={s.station_id} value={s.station_id}>
                   {s.station_name}
@@ -297,13 +294,13 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
           <div className="input-label">Link Reports in Station</div>
           {!stationId && (
             <div style={{ fontSize: '11px', color: 'var(--muted)' }}>
-              Select a <strong>Station</strong> first to see reports available for manual override grouping in that station
+              Select a <strong>Station</strong> first to see unassigned reports in that station
               {incidentTypeId && ` for the selected incident type`}.
             </div>
           )}
           {stationId && (
             <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '4px' }}>
-              Showing reports in the selected station that are available for manual override grouping
+              Showing unassigned reports in selected station
               {incidentTypeId && ` for incident type: ${incidentTypes.find(t => t.incident_type_id === Number(incidentTypeId))?.type_name}`}
             </div>
           )}
@@ -365,7 +362,7 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
         <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
           <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancel</button>
           <button className="btn btn-primary" onClick={submit} disabled={saving}>
-            {saving ? 'Creating...' : 'Create Override Case'}
+            {saving ? 'Creating…' : 'Create Case'}
           </button>
         </div>
       </div>

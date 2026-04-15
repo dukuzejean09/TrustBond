@@ -1,17 +1,10 @@
 """
 Audit logging: write actions to audit_logs table.
 """
-import json
-import logging
-from datetime import datetime, timezone
 from typing import Any, Optional
 from sqlalchemy.orm import Session
 
-from app.core.request_context import get_request_id
 from app.models.audit_log import AuditLog
-
-
-structured_logger = logging.getLogger("app.structured")
 
 
 def log_action(
@@ -40,21 +33,3 @@ def log_action(
         success=success,
     )
     db.add(entry)
-
-
-def structured_log(action: str, entity: str, outcome: str, **tags: Any) -> dict[str, Any]:
-    """Emit a structured log event with the current request correlation id."""
-    payload: dict[str, Any] = {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "action": action,
-        "entity": entity,
-        "outcome": outcome,
-    }
-    request_id = get_request_id()
-    if request_id:
-        payload["request_id"] = request_id
-    if tags:
-        payload.update(tags)
-
-    structured_logger.info(json.dumps(payload, default=str))
-    return payload

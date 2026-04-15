@@ -97,14 +97,6 @@ def apply_ai_enhanced_rules(
     if stale_reason:
         return "flagged", True, stale_reason
 
-    evidence_reason = _evidence_quality_reason(report, db)
-    if evidence_reason:
-        if evidence_reason == "evidence_tamper_or_poor_quality":
-            return "rejected", True, evidence_reason
-        if base_status == "rejected":
-            return base_status, base_flagged, base_reason
-        return "flagged", True, evidence_reason
-
     # 2) Incident type vs description mismatch (semantic first, keyword fallback).
     gibberish = _gibberish_description(report)
     if gibberish:
@@ -203,37 +195,6 @@ def _stale_evidence_reason(report: Report, db: Optional[Session]) -> Optional[st
             return "stale_live_capture_timestamp"
         if delta_minutes > (max_regular_gap_hours * 60):
             return "evidence_time_mismatch"
-    return None
-
-
-def _evidence_quality_reason(report: Report, db: Optional[Session]) -> Optional[str]:
-    """Read stored evidence AI metrics and turn them into lifecycle signals."""
-    if db is None or not report or not report.report_id:
-        return None
-
-    evidence_rows = (
-        db.query(EvidenceFile.tamper_score, EvidenceFile.blur_score, EvidenceFile.quality_label)
-        .filter(EvidenceFile.report_id == report.report_id)
-        .all()
-    )
-    if not evidence_rows:
-        return None
-
-    for tamper_score, blur_score, quality_label in evidence_rows:
-        tamper = float(tamper_score) if tamper_score is not None else None
-        blur = float(blur_score) if blur_score is not None else None
-        quality = str(getattr(quality_label, "value", quality_label) or "").strip().lower()
-
-        if tamper is not None and tamper >= 0.75:
-            return "evidence_tamper_or_poor_quality"
-        if quality == "poor":
-            return "evidence_tamper_or_poor_quality"
-        if tamper is not None and tamper >= 0.4:
-            return "evidence_quality_review"
-        if quality == "fair":
-            return "evidence_quality_review"
-        if blur is not None and blur < 10.0:
-            return "evidence_quality_review"
     return None
 
 

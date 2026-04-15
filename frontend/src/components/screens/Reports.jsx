@@ -24,37 +24,6 @@ const friendlyFlagReason = (reason) => {
   return m[reason] || reason.replaceAll("_", " ");
 };
 
-const getLatestReviewDecision = (report) => {
-  const reviews = Array.isArray(report?.reviews) ? [...report.reviews] : [];
-  if (!reviews.length) return null;
-  reviews.sort(
-    (a, b) =>
-      new Date(b.reviewed_at || 0).getTime() -
-      new Date(a.reviewed_at || 0).getTime(),
-  );
-  return (reviews[0]?.decision || "").toLowerCase() || null;
-};
-
-const getReportLifecycleStatus = (report) => {
-  const reviewDecision = getLatestReviewDecision(report);
-  if (reviewDecision === "confirmed") return "verified";
-  if (reviewDecision === "rejected") return "rejected";
-  if (reviewDecision === "investigation") return "under_review";
-
-  const verificationStatus = (report?.verification_status || "").toLowerCase();
-  if (verificationStatus) return verificationStatus;
-
-  const status = (report?.status || "").toLowerCase();
-  if (status) return status;
-
-  return (report?.rule_status || "").toLowerCase();
-};
-
-const isExceptionQueueReport = (report) => {
-  const status = getReportLifecycleStatus(report);
-  return status === "pending" || status === "under_review";
-};
-
 const Reports = ({
   onOpenReport,
   wsRefreshKey,
@@ -117,10 +86,12 @@ const Reports = ({
       params.set("search", debouncedSearchText.trim());
     }
 
-    if (statusFilter !== "all" && statusFilter !== "pending") {
+    if (statusFilter !== "all") {
+      // Map UI labels to status values used by backend (using 'status' field now)
       let statusValue = null;
+      if (statusFilter === "pending") statusValue = "pending";
       if (statusFilter === "verified") statusValue = "verified";
-      if (statusFilter === "flagged") statusValue = "rejected";
+      if (statusFilter === "flagged") statusValue = "flagged";
       if (statusValue) params.set("status", statusValue);
     }
     if (typeFilter !== "all") {
@@ -214,17 +185,6 @@ const Reports = ({
       return id.includes(q) || type.includes(q) || loc.includes(q);
     });
   }
-  if (statusFilter !== "all") {
-    items = items.filter((r) => {
-      const lifecycleStatus = getReportLifecycleStatus(r);
-      if (statusFilter === "pending") return isExceptionQueueReport(r);
-      if (statusFilter === "verified") return lifecycleStatus === "verified";
-      if (statusFilter === "flagged") {
-        return lifecycleStatus === "flagged" || lifecycleStatus === "rejected";
-      }
-      return true;
-    });
-  }
   const total = data.total || items.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const currentPage = Math.floor(offset / pageSize) + 1;
@@ -244,16 +204,16 @@ const Reports = ({
   // Use Dashboard API stats for accurate counts, fall back to Reports API data
   const pending =
     dashboardStats?.pending ??
-    items.filter((r) => isExceptionQueueReport(r)).length;
+    items.filter(
+      (r) => r.status === "pending" || r.verification_status === "under_review",
+    ).length;
   const verified =
     dashboardStats?.verified ??
-    items.filter((r) => getReportLifecycleStatus(r) === "verified").length;
+    items.filter((r) => r.status === "verified").length;
   const flagged =
     dashboardStats?.flagged ??
-    items.filter((r) => {
-      const lifecycleStatus = getReportLifecycleStatus(r);
-      return lifecycleStatus === "flagged" || lifecycleStatus === "rejected";
-    }).length;
+    items.filter((r) => r.status === "flagged" || r.status === "rejected")
+      .length;
   const allReports = dashboardStats?.total_reports ?? total;
 
   return (
@@ -261,7 +221,7 @@ const Reports = ({
       <div className="page-header">
         <h2>Reports</h2>
         <p>
-          All citizen-submitted incident reports - filter, sort, and take
+          All citizen-submitted incident reports — filter, sort, and take
           action.
         </p>
       </div>
@@ -272,7 +232,7 @@ const Reports = ({
           <div className="stat-value sv-blue">{allReports}</div>
         </div>
         <div className="stat-card c-orange">
-          <div className="stat-label">AI / Exception Queue</div>
+          <div className="stat-label">Pending review</div>
           <div className="stat-value sv-orange">{pending}</div>
         </div>
         <div className="stat-card c-green">
@@ -317,7 +277,7 @@ const Reports = ({
             onChange={(e) => setStatusFilter(e.target.value)}
           >
             <option value="all">All Statuses</option>
-            <option value="pending">AI / Exception Queue</option>
+            <option value="pending">Pending</option>
             <option value="verified">Verified</option>
             <option value="flagged">Flagged</option>
           </select>
@@ -441,7 +401,7 @@ const Reports = ({
               {items.map((r, index) => {
                 const score = r.trust_score ?? 0;
                 const width = Math.max(0, Math.min(100, Number(score)));
-                const status = getReportLifecycleStatus(r);
+                const status = r.status;
                 const assignmentPriority = (
                   r.assignment_priority || ""
                 ).toLowerCase();
@@ -463,9 +423,9 @@ const Reports = ({
                       {r.report_number || String(r.report_id).slice(0, 8)}
                     </td>
                     <td>
-                      <strong>{r.incident_type_name || "-"}</strong>
+                      <strong>{r.incident_type_name || "—"}</strong>
                     </td>
-                    <td>{r.village_name || "-"}</td>
+                    <td>{r.village_name || "—"}</td>
                     <td>
                       <div className="trust-wrap">
                         <div className="trust-track">
@@ -502,15 +462,15 @@ const Reports = ({
                           {r.ml_prediction_label === "likely_real"
                             ? "Likely real"
                             : r.ml_prediction_label === "suspicious"
-                              ? "Exception queue"
+                              ? "Suspicious"
                               : r.ml_prediction_label === "uncertain"
-                                ? "Needs corroboration"
+                                ? "Needs Review"
                                 : r.ml_prediction_label === "fake"
                                   ? "Low Credibility"
                                   : "Unknown"}
                         </span>
                       ) : (
-                        <span className="badge b-gray">No AI yet</span>
+                        <span className="badge b-gray">No ML</span>
                       )}
                     </td>
                     <td style={{ whiteSpace: "nowrap" }}>
@@ -528,7 +488,7 @@ const Reports = ({
                           {shownPriority}
                         </span>
                       ) : (
-                        <span className="badge b-gray">-</span>
+                        <span className="badge b-gray">—</span>
                       )}
                     </td>
                     <td>
@@ -541,11 +501,7 @@ const Reports = ({
                               : "b-red"
                         }`}
                       >
-                        {status === "under_review"
-                          ? "exception review"
-                          : status === "pending"
-                            ? "AI triage"
-                            : status}
+                        {status === "under_review" ? "pending" : status}
                       </span>
                       {r.flag_reason && (
                         <div

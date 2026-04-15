@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, SmallInteger, String, Text, DateTime, ForeignKey, Boolean, Numeric
+from sqlalchemy import Column, Integer, SmallInteger, String, Text, DateTime, ForeignKey, Numeric
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -19,16 +19,14 @@ class Case(Base):
     incident_group_id = Column(
         UUID(as_uuid=True),
         ForeignKey("incident_groups.group_id", ondelete="SET NULL"),
-        nullable=True,
         unique=True,
+        index=True,
     )
     assigned_to_id = Column(Integer, ForeignKey("police_users.police_user_id"))
     created_by = Column(Integer, ForeignKey("police_users.police_user_id"))
     report_count = Column(Integer, default=0)
-    device_count = Column(Integer, default=1)
-    auto_created = Column(Boolean, nullable=False, default=False)
-    source = Column(String(30), nullable=False, default="manual")
-    auto_group_confidence = Column(Numeric(5, 2))
+    latitude = Column(Numeric(10, 7))
+    longitude = Column(Numeric(10, 7))
     opened_at = Column(DateTime(timezone=True), server_default=func.now())
     closed_at = Column(DateTime(timezone=True))
     outcome = Column(String(50))
@@ -37,7 +35,7 @@ class Case(Base):
 
     location = relationship("Location", backref="cases")
     incident_type = relationship("IncidentType", backref="cases")
-    incident_group = relationship("IncidentGroup", back_populates="case")
+    incident_group = relationship("IncidentGroup", backref="case", uselist=False)
     assigned_to = relationship("PoliceUser", foreign_keys=[assigned_to_id])
     created_by_user = relationship("PoliceUser", foreign_keys=[created_by])
 

@@ -2,8 +2,6 @@ from typing import List, Dict, Any
 import json
 from fastapi import WebSocket
 
-from app.core.request_context import get_request_id
-
 class ConnectionManager:
     def __init__(self):
         # Store active connections
@@ -17,21 +15,12 @@ class ConnectionManager:
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
 
-    @staticmethod
-    def _with_request_context(message: Dict[str, Any]) -> Dict[str, Any]:
-        payload = dict(message)
-        if "request_id" not in payload:
-            request_id = get_request_id()
-            if request_id:
-                payload["request_id"] = request_id
-        return payload
-
     async def broadcast(self, message: Dict[str, Any]):
         """
         Send a JSON message to all active connected clients.
         Example: {"type": "refresh_data", "entity": "case", "action": "created", "id": "123"}
         """
-        payload = json.dumps(self._with_request_context(message))
+        payload = json.dumps(message)
         dead_connections = []
         for connection in self.active_connections:
             try:

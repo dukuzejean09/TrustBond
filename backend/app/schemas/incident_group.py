@@ -3,6 +3,7 @@ from typing import Optional
 from uuid import UUID
 
 from pydantic import BaseModel
+from pydantic import Field
 from decimal import Decimal
 
 
@@ -14,14 +15,9 @@ class IncidentGroupResponse(BaseModel):
     start_time: datetime
     end_time: datetime
     report_count: int
-    distinct_device_count: int = 0
-    radius_meters: Optional[Decimal] = None
-    confidence_score: Optional[Decimal] = None
-    grouping_method: Optional[str] = None
-    is_active: bool = True
-    case_id: Optional[UUID] = None
-    case_number: Optional[str] = None
     created_at: Optional[datetime] = None
+    report_ids: list[UUID] = Field(default_factory=list)
+    duration_minutes: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -34,3 +30,4 @@ class IncidentGroupCreate(BaseModel):
     start_time: datetime
     end_time: datetime
     report_count: int
+    report_ids: list[UUID] = Field(default_factory=list)

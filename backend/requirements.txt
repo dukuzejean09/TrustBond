@@ -14,8 +14,10 @@ pillow
 cloudinary
 email-validator
 scikit-learn
+xgboost 
 joblib
 pandas
 websockets
 geopy
-pytest
+celery
+redis

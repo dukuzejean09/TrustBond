@@ -18,7 +18,7 @@ from PIL.ExifTags import TAGS, GPSTAGS
 from app.config import settings
 from app.database import get_db, SessionLocal
 from app.models.report import Report
-from app.models.evidence_file import EvidenceFile, EvidenceQuality
+from app.models.evidence_file import EvidenceFile
 from app.models.hotspot import Hotspot, hotspot_reports_table
 from app.models.device import Device
 from app.models.incident_type import IncidentType
@@ -43,102 +43,33 @@ from app.core.security import verify_password
 from app.core.websocket import manager
 from app.api.v1.auth import get_optional_user, get_current_user, get_current_admin_or_supervisor
 from app.api.v1.notifications import create_notification
-from app.core.auto_case_grouping import auto_group_verified_report
-from app.core.evidence_analysis import evidence_metadata_summary, similarity_score
 from app.core.report_rules import apply_rule_based_status, is_likely_screenshot_or_screen_recording
 from app.core.report_review import (
     needs_police_review_clause,
-    resolve_display_trust_score,
     resolve_ml_prediction_for_report,
-    resolve_ml_prediction_label_for_display,
 )
 from app.core.credibility_model import score_report_credibility, update_device_ml_aggregates, _json_safe
-from app.core.audit import log_action, structured_log
+from app.core.audit import log_action
 from app.core.hotspot_auto import (
     create_hotspots_from_reports,
     get_hotspot_params_from_db,
     get_hotspot_trust_min_from_db,
 )
+from app.core.incident_grouping import (
+    detach_report_from_incident_group,
+    find_related_reports_for_report,
+    sync_case_for_group_id,
+    sync_cases_for_groups,
+    sync_incident_groups_for_report,
+)
 from app.core.village_lookup import get_village_location_id, get_village_location_info
 from app.schemas.report import CommunityVoteRequest
 from sqlalchemy import text, or_, func, cast, String
+from sqlalchemy.exc import IntegrityError
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
 logger = logging.getLogger(__name__)
-
-
-def _log_endpoint_failure(
-    action: str,
-    entity: str,
-    *,
-    request: Optional[Request] = None,
-    status_code: Optional[int] = None,
-    reason: Optional[str] = None,
-    **tags: Any,
-) -> None:
-    structured_log(
-        action,
-        entity,
-        "failed",
-        status_code=status_code,
-        reason=reason,
-        client_ip=request.client.host if request and request.client else None,
-        **tags,
-    )
-
-
-def _content_fingerprint(content: bytes) -> dict[str, Any]:
-    digest = hashlib.sha256(content).hexdigest()
-    return {
-        "content_size_bytes": len(content),
-        "content_sha256_prefix": digest[:12],
-    }
-
-
-def _enforce_evidence_size_limit(content: bytes) -> None:
-    max_bytes = int(getattr(settings, "evidence_max_upload_mb", 25) or 25) * 1024 * 1024
-    if len(content) > max_bytes:
-        raise HTTPException(
-            status_code=413,
-            detail=f"Evidence file exceeds the max upload size of {getattr(settings, 'evidence_max_upload_mb', 25)}MB.",
-        )
-
-
-def _resolve_evidence_type(*, filename: Optional[str], content_type: Optional[str]) -> tuple[bool, bool, str]:
-    file_ext = filename.split(".")[-1].lower() if filename and "." in filename else ""
-
-    image_exts = {"jpg", "jpeg", "png", "gif", "bmp", "webp"}
-    video_exts = {"mp4", "mov", "m4v", "avi", "mkv", "webm"}
-    audio_exts = {"mp3", "wav", "aac", "m4a", "ogg", "flac"}
-
-    is_image = False
-    is_audio = False
-
-    if content_type:
-        ct = content_type.lower()
-        if ct.startswith("image/"):
-            is_image = True
-        elif ct.startswith("audio/"):
-            is_audio = True
-        elif ct.startswith("video/"):
-            pass
-
-    if not (is_image or is_audio):
-        if file_ext in image_exts:
-            is_image = True
-        elif file_ext in audio_exts:
-            is_audio = True
-        elif file_ext in video_exts:
-            pass
-        else:
-            raise HTTPException(
-                status_code=400,
-                detail="Unsupported evidence format. Please upload image, video, or audio files.",
-            )
-
-    file_type = "photo" if is_image else "audio" if is_audio else "video"
-    return is_image, is_audio, file_type
 
 
 def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -290,7 +221,7 @@ def _enforce_device_submission_guards(
 
 def _ensure_fallback_ml_prediction_if_missing(db: Session, report: Report) -> None:
     """
-    Model scoring may skip inserting a row (no model, bad meta, errors).
+    XGBoost scoring may skip inserting a row (no model, bad meta, errors).
     Persist a heuristic evaluation so list/detail APIs always have ml_predictions
     (prediction_label, trust_score, etc.) when possible.
 
@@ -338,96 +269,12 @@ def _ensure_fallback_ml_prediction_if_missing(db: Session, report: Report) -> No
         )
 
 
-def _auto_group_and_persist_verified_report(db: Session, report: Report):
-    if report is None:
-        return None
-
-    grouping_result = auto_group_verified_report(db, report)
-    if grouping_result.incident_group is not None or grouping_result.case is not None:
-        db.commit()
-        db.refresh(report)
-        if grouping_result.incident_group is not None:
-            db.refresh(grouping_result.incident_group)
-        if grouping_result.case is not None:
-            db.refresh(grouping_result.case)
-    return grouping_result
-
-
-def _queue_grouping_refresh(background_tasks: Optional[BackgroundTasks], grouping_result) -> None:
-    if background_tasks is None or grouping_result is None:
-        return
-
-    if grouping_result.incident_group is not None:
-        background_tasks.add_task(
-            manager.broadcast,
-            {"type": "refresh_data", "entity": "incident_group", "action": "auto_grouped"},
-        )
-    if grouping_result.case is not None:
-        background_tasks.add_task(
-            manager.broadcast,
-            {"type": "refresh_data", "entity": "case", "action": "auto_grouped"},
-        )
-
-
-def _broadcast_refresh_sync(entity: str, action: str) -> None:
-    try:
-        import asyncio
-
-        payload = {"type": "refresh_data", "entity": entity, "action": action}
-        try:
-            loop = asyncio.get_running_loop()
-            loop.create_task(manager.broadcast(payload))
-        except RuntimeError:
-            asyncio.run(manager.broadcast(payload))
-    except Exception as exc:
-        logger.warning("Failed to broadcast %s refresh for %s: %s", action, entity, exc)
-
-
-def _evidence_lifecycle_signal(evidence_analysis: Dict[str, Any]) -> tuple[str, Optional[str]]:
-    quality = str(evidence_analysis.get("quality_label") or "").strip().lower()
-    tamper_score = evidence_analysis.get("tamper_score")
-    blur_score = evidence_analysis.get("blur_score")
-    similarity_score_value = evidence_analysis.get("hash_similarity_score")
-
-    def _as_float(value: Any) -> float:
-        try:
-            if value is None:
-                return 0.0
-            return float(value)
-        except Exception:
-            return 0.0
-
-    tamper = _as_float(tamper_score)
-    blur = _as_float(blur_score)
-    similarity = _as_float(similarity_score_value) if similarity_score_value is not None else None
-
-    if similarity is not None and similarity >= 0.95:
-        return "rejected", "duplicate_evidence_similarity"
-    if tamper >= 0.75 or quality == "poor":
-        return "rejected", "evidence_tamper_or_poor_quality"
-    if tamper >= 0.4 or quality == "fair" or (blur and blur < 10.0):
-        return "under_review", "evidence_quality_review"
-    return "ok", None
-
-
 #this marks the biggining of changes I did to implement AI-enhanced rules and ML-based auto-verification in the create_report endpoint. The improvements include:
 #1) AI-enhanced rules: Implemented a new function apply_ai_enhanced_rules
 def _to_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None
     return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
-
-
-def _report_lifecycle_state(report: Optional[Report]) -> str:
-    if report is None:
-        return "pending"
-    for field in ("verification_status", "status", "rule_status"):
-        value = getattr(report, field, None)
-        if value:
-            normalized = str(value).strip().lower()
-            if normalized:
-                return normalized
-    return "pending"
 
 
 def _auto_reject_report_for_invalid_evidence(
@@ -489,7 +336,7 @@ def run_hotspot_auto():
             analyze_all_reports=True,
         )
         if created > 0:
-            logger.debug(f"Background hotspot creation: {created} new hotspots created")
+            print(f"Background hotspot creation: {created} new hotspots created")
             
             # Broadcast hotspot update to all connected clients for real-time Safety Map updates
             try:
@@ -501,7 +348,7 @@ def run_hotspot_auto():
                 except RuntimeError:
                     asyncio.run(manager.broadcast({"type": "refresh_data", "entity": "hotspot", "action": "auto_created"}))
             except Exception as e:
-                logger.error(f'Failed to broadcast hotspot update: {e}')
+                print(f"Failed to broadcast hotspot update: {e}")
             
             # Create notifications for admins and supervisors about new hotspots
             from app.api.v1.notifications import create_role_notifications
@@ -514,8 +361,27 @@ def run_hotspot_auto():
             )
         db.commit()
     except Exception as e:
-        logger.error(f'Error in background hotspot creation: {e}')
+        print(f"Error in background hotspot creation: {e}")
         db.rollback()
+    finally:
+        db.close()
+
+
+def _sync_incident_group_for_report_id(report_id: str) -> None:
+    """Best-effort grouping sync using a fresh session so report endpoints stay isolated."""
+    db = SessionLocal()
+    try:
+        report = db.query(Report).filter(Report.report_id == report_id).first()
+        if report is None:
+            return
+
+        if (report.verification_status or "").lower() == "verified" and (report.status or "").lower() == "verified":
+            sync_incident_groups_for_report(db, report)
+        else:
+            detach_report_from_incident_group(db, report)
+    except Exception as exc:
+        db.rollback()
+        logger.error("Incident-group sync failed for report %s: %s", report_id, exc, exc_info=True)
     finally:
         db.close()
 
@@ -659,41 +525,6 @@ UPLOAD_DIR = "uploads/evidence"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
-def _analyze_existing_evidence_url(
-    file_url: Optional[str],
-    *,
-    submitted_lat: Optional[float] = None,
-    submitted_lon: Optional[float] = None,
-    submitted_captured_at: Optional[datetime] = None,
-) -> Dict[str, Any]:
-    if not file_url:
-        return {}
-
-    local_path = None
-    normalized = str(file_url).replace("/", os.sep)
-    if str(file_url).startswith("/uploads/evidence/"):
-        filename = str(file_url).split("/uploads/evidence/", 1)[1]
-        local_path = os.path.join(UPLOAD_DIR, filename)
-    elif os.path.isabs(normalized) or os.path.exists(normalized):
-        local_path = normalized
-
-    if not local_path or not os.path.exists(local_path):
-        return {}
-
-    try:
-        with open(local_path, "rb") as handle:
-            content = handle.read()
-        return evidence_metadata_summary(
-            image_bytes=content,
-            submitted_lat=submitted_lat,
-            submitted_lon=submitted_lon,
-            submitted_captured_at=submitted_captured_at,
-        )
-    except Exception as exc:
-        logger.warning("Evidence URL analysis skipped for %s: %s", file_url, exc)
-        return {}
-
-
 # Configure Cloudinary using settings (Pydantic loads .env for us)
 cloudinary.config(
     cloud_name=settings.cloudinary_cloud_name,
@@ -719,7 +550,7 @@ def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optiona
 
         exif = {TAGS.get(k, k): v for k, v in exif_data.items()}
         # Debug: show that we actually saw EXIF keys
-        logger.debug(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
+        print(f"[EXIF] Found EXIF keys: {list(exif.keys())[:10]}")
 
         # Try to get GPS info in a robust way
         gps_info = None
@@ -748,10 +579,10 @@ def _extract_exif_metadata(image_bytes: bytes) -> tuple[Optional[float], Optiona
         dt_original = exif.get("DateTimeOriginal") or exif.get("DateTime")
 
         lat = lon = None
-        logger.debug(f"[EXIF] raw GPSInfo: {gps_info!r}")
+        print(f"[EXIF] raw GPSInfo: {gps_info!r}")
         if gps_info:
             gps_parsed = {GPSTAGS.get(k, k): v for k, v in gps_info.items()}
-            logger.debug(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
+            print(f"[EXIF] GPSInfo keys: {list(gps_parsed.keys())}")
 
             def _to_deg(value, ref):
                 """
@@ -815,14 +646,6 @@ def create_report(
     if report_data.device_id:
         device = db.query(Device).filter(Device.device_id == report_data.device_id).first()
         if not device:
-            _log_endpoint_failure(
-                "report.create",
-                "report",
-                request=request,
-                status_code=404,
-                reason="device_not_found",
-                device_id=str(report_data.device_id),
-            )
             raise HTTPException(status_code=404, detail="Device not found")
     if device is None and report_data.device_hash and str(report_data.device_hash).strip():
         device = (
@@ -838,24 +661,9 @@ def create_report(
             db.add(device)
             db.flush()
     if not device:
-        _log_endpoint_failure(
-            "report.create",
-            "report",
-            request=request,
-            status_code=400,
-            reason="missing_device_identifier",
-        )
         raise HTTPException(status_code=400, detail="Either device_id or device_hash is required")
     # Block reporting from banned devices (admin action)
     if getattr(device, "is_banned", False):
-        _log_endpoint_failure(
-            "report.create",
-            "report",
-            request=request,
-            status_code=403,
-            reason="device_banned",
-            device_id=str(device.device_id),
-        )
         raise HTTPException(status_code=403, detail="This device is banned from submitting reports")
 
     _enforce_device_submission_guards(db, device, report_data, request)
@@ -870,14 +678,6 @@ def create_report(
         .first()
     )
     if not incident_type:
-        _log_endpoint_failure(
-            "report.create",
-            "report",
-            request=request,
-            status_code=400,
-            reason="invalid_incident_type",
-            incident_type_id=report_data.incident_type_id,
-        )
         raise HTTPException(status_code=400, detail="Invalid or inactive incident type")
 
     # Boundary validation: reports outside Musanze are persisted but explicitly
@@ -904,27 +704,23 @@ def create_report(
             out_of_boundary = True
             out_of_boundary_reason = f"out_of_musanze_boundary: district={district_name}"
     except (ValueError, TypeError) as e:
-        _log_endpoint_failure(
-            "report.create",
-            "report",
-            request=request,
-            status_code=400,
-            reason="invalid_coordinates",
-        )
         raise HTTPException(status_code=400, detail=f"Invalid coordinates: {e}")
     except Exception as e:
-        _log_endpoint_failure(
-            "report.create",
-            "report",
-            request=request,
-            status_code=400,
-            reason="location_validation_failed",
-        )
         raise HTTPException(status_code=400, detail=f"Location validation failed: {e}")
     
+    incoming_report_id = report_data.report_id or uuid4()
+    if report_data.report_id:
+        existing_report = (
+            db.query(Report)
+            .filter(Report.report_id == report_data.report_id)
+            .first()
+        )
+        if existing_report:
+            raise HTTPException(status_code=409, detail="Report already exists")
+
     report_num = _generate_report_number(db) if hasattr(Report, "report_number") else None
     report = Report(
-        report_id=uuid4(),
+        report_id=incoming_report_id,
         report_number=report_num,
         device_id=device.device_id,
         incident_type_id=report_data.incident_type_id,
@@ -950,25 +746,14 @@ def create_report(
         report.village_location_id = village_id
         report.location_id = village_id
     db.add(report)
-    db.flush()  # Get report_id
+    try:
+        db.flush()  # Get report_id
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Report already exists")
 
     # Add evidence files
     for evidence_data in report_data.evidence_files:
-        evidence_ai = {}
-        quality_label = None
-        if str(evidence_data.file_type or "").lower() == "photo":
-            evidence_ai = _analyze_existing_evidence_url(
-                evidence_data.file_url,
-                submitted_lat=float(evidence_data.media_latitude) if evidence_data.media_latitude is not None else None,
-                submitted_lon=float(evidence_data.media_longitude) if evidence_data.media_longitude is not None else None,
-                submitted_captured_at=evidence_data.captured_at,
-            )
-            quality_label = str(evidence_ai.get("quality_label") or "").strip().lower()
-
-        analyzed_at = evidence_ai.get("analyzed_at") if isinstance(evidence_ai, dict) else None
-        if isinstance(analyzed_at, datetime) and analyzed_at.tzinfo is not None:
-            analyzed_at = analyzed_at.replace(tzinfo=None)
-
         evidence = EvidenceFile(
             evidence_id=uuid4(),
             report_id=report.report_id,
@@ -978,11 +763,6 @@ def create_report(
             media_longitude=evidence_data.media_longitude,
             captured_at=evidence_data.captured_at,
             is_live_capture=evidence_data.is_live_capture,
-            perceptual_hash=evidence_ai.get("perceptual_hash") if isinstance(evidence_ai, dict) else None,
-            blur_score=evidence_ai.get("blur_score") if isinstance(evidence_ai, dict) else None,
-            tamper_score=evidence_ai.get("tamper_score") if isinstance(evidence_ai, dict) else None,
-            quality_label=EvidenceQuality(quality_label) if quality_label in EvidenceQuality._value2member_map_ else None,
-            ai_checked_at=analyzed_at,
         )
         db.add(evidence)
 
@@ -1022,18 +802,12 @@ def create_report(
             success=True,
         )
 
-        db.commit()
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Report already exists")
         db.refresh(report)
-        structured_log(
-            "report.create",
-            "report",
-            "success",
-            report_id=str(report.report_id),
-            verification_status=report.verification_status,
-            rule_status=report.rule_status,
-            boundary_status="out_of_musanze",
-            device_id=str(device.device_id),
-        )
         background_tasks.add_task(
             manager.broadcast,
             {"type": "refresh_data", "entity": "report", "action": "created"},
@@ -1044,36 +818,35 @@ def create_report(
     evidence_count = len(report_data.evidence_files)
     
     # ML-based credibility scoring (best-effort; failures are ignored)
-    logger.debug("Running ML credibility scoring...")
+    print("Running ML credibility scoring...")  # Debug log
     score_report_credibility(db, report, device, evidence_count)
     _ensure_fallback_ml_prediction_if_missing(db, report)
     # Update device aggregates derived from recent ML predictions + behavior
     update_device_ml_aggregates(db, device, window=30)
-    logger.debug("ML scoring completed")
+    print("ML scoring completed")  # Debug log
     
     # FIXED: Commit ML prediction to ensure it's available for verification
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="Report already exists")
     db.refresh(report)  # Ensure we have the latest data including ML predictions
 
-    # Apply AI-enhanced rules
-    logger.debug(f"Applying AI-enhanced rules - evidence_count: {evidence_count}, description_length: {len(report_data.description or '')}")
-    
-    # Get ML prediction if available (now available after ML scoring)
+    # Rule verification is deterministic (location/speed/motion/incident validity).
+    rule_status, is_flagged, flag_reason = apply_rule_based_status(
+        report, evidence_count, db
+    )
+
+    # Get ML prediction if available (used for backend AI verification and trust scoring).
     from app.models.ml_prediction import MLPrediction
     ml_prediction = db.query(MLPrediction).filter(MLPrediction.report_id == report.report_id).order_by(MLPrediction.evaluated_at.desc()).first()
-    if ml_prediction:
-        logger.debug(f"Using ML prediction: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")
-    
-    # Apply AI-enhanced rules
-    from app.core.report_priority import apply_ai_enhanced_rules, calculate_report_priority
-    rule_status, is_flagged, flag_reason = apply_ai_enhanced_rules(
-        report, evidence_count, ml_prediction, db
-    )
-    logger.debug(f"AI-enhanced rule result - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")
+
+    from app.core.report_priority import calculate_report_priority
     
     # Calculate automatic priority
     priority = calculate_report_priority(report, ml_prediction, evidence_count, db)
-    logger.debug(f"Calculated report priority: {priority}")
+    print(f"Calculated report priority: {priority}")  # Debug log
     
     # Apply results to report
     report.rule_status = rule_status
@@ -1084,21 +857,18 @@ def create_report(
     if rule_status == "rejected":
         report.status = "rejected"
         report.verification_status = "rejected"
-    
-    # Set verification_status based on AI results
-    review_reasons = {
-        "ai_suspicious_review",
-        "ai_uncertain_review",
-        "incident_description_mismatch",
-        "gibberish_description",
-        "evidence_time_mismatch",
-        "stale_live_capture_timestamp",
-        "device_burst_reporting",
-        "duplicate_description_recent",
-    }
-    if flag_reason in review_reasons:
+    elif is_flagged:
+        report.status = "pending"
         report.verification_status = "under_review"
-        logger.debug(f"Rule/AI review reason ({flag_reason}) - setting verification_status to under_review")
+    else:
+        report.status = "pending"
+        report.verification_status = "pending"
+    
+    # Set ai_ready = true to indicate AI processing complete
+    report.ai_ready = True
+    report.features_extracted_at = datetime.now(timezone.utc)
+    
+    # AI decision is applied later in the combined rule+ML verification block.
 
     # Update device stats
     now_utc = datetime.now(timezone.utc)
@@ -1218,9 +988,9 @@ def create_report(
     db.refresh(report)
 
     # FIXED: Clear verification logic - BOTH rules AND ML must pass for auto-verification
-    logger.debug(f"Verification check - rule_status: {rule_status}, is_flagged: {is_flagged}, verification_status: {report.verification_status}")
+    print(f"Verification check - rule_status: {rule_status}, is_flagged: {is_flagged}, verification_status: {report.verification_status}")  # Debug log
     
-    if rule_status == "passed" and not is_flagged and _report_lifecycle_state(report) != "under_review":
+    if rule_status == "passed" and not is_flagged and report.verification_status != "under_review":
         # Rules passed, now check ML
         ml_safe = False
         ml_reason = ""
@@ -1229,7 +999,7 @@ def create_report(
             trust_score = float(ml_prediction.trust_score) if ml_prediction.trust_score else 0
             prediction_label = ml_prediction.prediction_label
             
-            logger.debug(f"ML check - prediction: {prediction_label}, trust_score: {trust_score:.1f}%")
+            print(f"ML check - prediction: {prediction_label}, trust_score: {trust_score:.1f}%")  # Debug log
             
             # Get ML thresholds from system config
             from app.database import SessionLocal
@@ -1264,13 +1034,13 @@ def create_report(
             ml_safe = False
             ml_reason = "ML failed: no ML prediction available"
         
-        logger.debug(f"ML decision: {ml_reason}")
+        print(f"ML decision: {ml_reason}")  # Debug log
         
         # Auto-verify ONLY if both rules AND ML pass
         if ml_safe:
             report.status = "verified"
             report.verification_status = "verified"
-            logger.debug("✅ REPORT AUTO-VERIFIED: Both rules and ML passed")
+            print("✅ REPORT AUTO-VERIFIED: Both rules and ML passed")  # Debug log
             db.commit()
             
             # Count auto-verified reports toward device trusted_reports
@@ -1278,29 +1048,17 @@ def create_report(
                 device.trusted_reports = (device.trusted_reports or 0) + 1
                 db.commit()
         else:
-            logger.debug(f"❌ REPORT NOT AUTO-VERIFIED: {ml_reason}")
+            print(f"❌ REPORT NOT AUTO-VERIFIED: {ml_reason}")  # Debug log
             # Keep status as "pending" for manual review
     else:
-        logger.debug(f" REPORT NOT AUTO-VERIFIED: Rules failed - rule_status: {rule_status}, is_flagged: {is_flagged}")
-
-    grouping_result = _auto_group_and_persist_verified_report(db, report)
-    _queue_grouping_refresh(background_tasks, grouping_result)
-
-    structured_log(
-        "report.create",
-        "report",
-        "success",
-        report_id=str(report.report_id),
-        verification_status=report.verification_status,
-        rule_status=report.rule_status,
-        priority=report.priority,
-        is_flagged=bool(report.is_flagged),
-        device_id=str(device.device_id),
-    )
+        print(f" REPORT NOT AUTO-VERIFIED: Rules failed - rule_status: {rule_status}, is_flagged: {is_flagged}")  # Debug log
 
     # Run hotspot auto-creation in background when criteria are met (no user intervention)
     background_tasks.add_task(run_hotspot_auto)
-    
+
+    if report.verification_status == "verified":
+        background_tasks.add_task(_sync_incident_group_for_report_id, str(report.report_id))
+
     background_tasks.add_task(manager.broadcast, {"type": "refresh_data", "entity": "report", "action": "created"})
     
     return report
@@ -1348,9 +1106,16 @@ def _build_report_response(r: Report, db: Optional[Session] = None, request_devi
 
     ml_prediction = resolve_ml_prediction_for_report(r)
     trust_factors = ml_prediction.explanation if ml_prediction else None
-    trust_score = resolve_display_trust_score(r)
-    if trust_score is not None:
-        trust_score = float(trust_score)
+    trust_score = (
+        float(ml_prediction.trust_score)
+        if ml_prediction is not None and ml_prediction.trust_score is not None
+        else None
+    )
+    ml_prediction_label = None
+    if ml_prediction is not None:
+        raw_label = getattr(ml_prediction, "prediction_label", None)
+        if raw_label is not None and str(raw_label).strip():
+            ml_prediction_label = str(raw_label).strip().lower()
 
     # Aggregate assignment priority/status for list views
     assignment_priority = None
@@ -1396,7 +1161,6 @@ def _build_report_response(r: Report, db: Optional[Session] = None, request_devi
         report_id=r.report_id,
         report_number=getattr(r, "report_number", None),
         case_id=linked_case_id,
-        incident_group_id=getattr(r, "incident_group_id", None),
         device_id=r.device_id,
         incident_type_id=r.incident_type_id,
         description=r.description,
@@ -1412,13 +1176,14 @@ def _build_report_response(r: Report, db: Optional[Session] = None, request_devi
         status=getattr(r, "status", None),
         verification_status=getattr(r, "verification_status", None),
         village_location_id=r.village_location_id,
+        incident_group_id=getattr(r, "incident_group_id", None),
         village_name=village_name,
         incident_type_name=r.incident_type.type_name if r.incident_type else None,
         evidence_count=len(evidence_files),
         evidence_preview=evidence_preview,
         trust_score=float(trust_score) if trust_score is not None else None,
         trust_factors=trust_factors,
-        ml_prediction_label=resolve_ml_prediction_label_for_display(r),
+        ml_prediction_label=ml_prediction_label,
         hotspot_id=hotspot_id,
         hotspot_risk_level=hotspot_risk_level,
         hotspot_incident_count=hotspot_incident_count,
@@ -1471,35 +1236,7 @@ def list_related_reports(
     if not base:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
 
-    # Time window +/- 3 days
-    window = timedelta(days=3)
-    from_time = (base.reported_at or datetime.now(timezone.utc)) - window
-    to_time = (base.reported_at or datetime.now(timezone.utc)) + window
-
-    q = db.query(Report).options(
-        joinedload(Report.incident_type),
-        joinedload(Report.village_location),
-        joinedload(Report.device),
-        joinedload(Report.ml_predictions),
-        selectinload(Report.case_reports),
-        # joinedload(Report.hotspots).joinedload(Hotspot.incident_type),  # Hotspots relationship not available yet
-    )
-
-    q = q.filter(
-        Report.report_id != base.report_id,
-        Report.incident_type_id == base.incident_type_id,
-        Report.reported_at >= from_time,
-        Report.reported_at <= to_time,
-    )
-
-    if base.village_location_id is not None:
-        q = q.filter(Report.village_location_id == base.village_location_id)
-
-    related = (
-        q.order_by(Report.reported_at.desc())
-        .limit(limit)
-        .all()
-    )
+    related = find_related_reports_for_report(db, base, limit=limit)
 
     return [_build_report_response(r, db) for r in related]
 
@@ -1610,7 +1347,6 @@ def list_reports(
     db: Session = Depends(get_db),
     rule_status: Optional[str] = Query(None, description="Filter by rule_status: pending, passed, flagged, rejected."),
     report_status: Optional[str] = Query(None, alias="status", description="Filter by report status: pending, verified, flagged, rejected. For list consistency, flagged includes rejected."),
-    verification_status: Optional[str] = Query(None, description="Filter by verification status: pending, under_review, verified, rejected."),
     boundary_status: Optional[str] = Query(
         None,
         description="Filter by boundary status: out_of_boundary | in_boundary.",
@@ -1651,8 +1387,6 @@ def list_reports(
             mobile_query = mobile_query.filter(
                 or_(Report.flag_reason.is_(None), ~Report.flag_reason.like("out_of_musanze_boundary%"))
             )
-        if verification_status:
-            mobile_query = mobile_query.filter(Report.verification_status == verification_status)
 
         reports = mobile_query.order_by(Report.reported_at.desc()).all()
         return [_build_report_response(r, db, request_device_id=device_id) for r in reports]
@@ -1731,8 +1465,6 @@ def list_reports(
             )
     if rule_status:
         query = query.filter(Report.rule_status == rule_status)
-    if verification_status:
-        query = query.filter(Report.verification_status == verification_status)
     if report_status:
         if report_status == "flagged":
             query = query.filter(Report.status.in_(["flagged", "rejected"]))
@@ -1840,14 +1572,14 @@ def get_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     # DEBUG: Check evidence files loading
-    logger.debug(f"🔍 DEBUG: Report {report_id} evidence files:")
-    logger.debug(f"   Raw evidence_files attribute: {getattr(report, 'evidence_files', 'NOT_FOUND')}")
-    logger.debug(f"   Evidence files count: {len(report.evidence_files) if report.evidence_files else 0}")
+    print(f"🔍 DEBUG: Report {report_id} evidence files:")
+    print(f"   Raw evidence_files attribute: {getattr(report, 'evidence_files', 'NOT_FOUND')}")
+    print(f"   Evidence files count: {len(report.evidence_files) if report.evidence_files else 0}")
     if report.evidence_files:
         for i, ef in enumerate(report.evidence_files, 1):
-            logger.debug(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
+            print(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
     else:
-        logger.debug("   No evidence files found in query result")
+        print("   No evidence files found in query result")
 
     # Enforce mobile community visibility rules for non-owners.
     if device_id is not None and report.device_id != device_id:
@@ -1963,8 +1695,18 @@ def get_report(
 
     incident_lat, incident_lon, incident_source, incident_location_info = _compute_incident_location_with_villages(report, db)
 
-    # Trust score and ML label: same resolution as list API (ML trust first, else device).
-    trust_score = resolve_display_trust_score(report)
+    # Trust score and ML label come from backend ML prediction only.
+    ml_prediction = resolve_ml_prediction_for_report(report)
+    trust_score = (
+        float(ml_prediction.trust_score)
+        if ml_prediction is not None and ml_prediction.trust_score is not None
+        else None
+    )
+    ml_prediction_label = None
+    if ml_prediction is not None:
+        raw_label = getattr(ml_prediction, "prediction_label", None)
+        if raw_label is not None and str(raw_label).strip():
+            ml_prediction_label = str(raw_label).strip().lower()
     context_tags_list = getattr(report, "context_tags", None) or []
 
     community_votes = {"real": 0, "false": 0, "unknown": 0}
@@ -2003,7 +1745,7 @@ def get_report(
         village_location_id=report.village_location_id,
         incident_type_name=report.incident_type.type_name if report.incident_type else None,
         trust_score=float(trust_score) if trust_score is not None else None,
-        ml_prediction_label=resolve_ml_prediction_label_for_display(report),
+        ml_prediction_label=ml_prediction_label,
         context_tags=context_tags_list,
         is_flagged=getattr(report, "is_flagged", None),
         flag_reason=getattr(report, "flag_reason", None),
@@ -2040,11 +1782,11 @@ def get_report(
     )
     
     # DEBUG: Check what's being returned
-    logger.debug(f"🔍 DEBUG: Returning response with evidence files:")
-    logger.debug(f"   Evidence files in response: {len(response.evidence_files) if response.evidence_files else 0}")
+    print(f"🔍 DEBUG: Returning response with evidence files:")
+    print(f"   Evidence files in response: {len(response.evidence_files) if response.evidence_files else 0}")
     if response.evidence_files:
         for i, ef in enumerate(response.evidence_files, 1):
-            logger.debug(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
+            print(f"     {i}. {ef.evidence_id} - {ef.file_type} - {ef.file_url}")
     
     return response
 
@@ -2069,14 +1811,6 @@ def add_review(
 
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
-        _log_endpoint_failure(
-            "report.evidence.upload",
-            "evidence",
-            request=request,
-            status_code=404,
-            reason="report_not_found",
-            report_id=str(report_id),
-        )
         raise HTTPException(status_code=404, detail="Report not found")
 
     role = getattr(current_user, "role", None)
@@ -2157,7 +1891,7 @@ def add_review(
             existing_ml.prediction_label = "likely_real"
             existing_ml.confidence = Decimal("0.95")
             existing_ml.is_final = True
-            logger.debug(f"Updated ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")
+            print(f"Updated ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")  # Debug log
         else:
             # Create new ML prediction if none exists
             new_ml = MLPrediction(
@@ -2171,7 +1905,7 @@ def add_review(
                 evaluated_at=now_utc
             )
             db.add(new_ml)
-            logger.debug(f"Created new ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")
+            print(f"Created new ML prediction based on police confirmation: trust_score={max_trust_score}%, label=likely_real")  # Debug log
         
         # Update device trust score based on successful human confirmation
         if hasattr(report, "device") and report.device and hasattr(report.device, "device_trust_score"):
@@ -2179,7 +1913,7 @@ def add_review(
             # Increase device trust score but cap at 100
             new_device_score = min(100.0, current_device_score + 5.0)
             report.device.device_trust_score = Decimal(str(new_device_score))
-            logger.debug(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")
+            print(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")  # Debug log
         
         # Update trusted_reports count
         if hasattr(report.device, "trusted_reports"):
@@ -2219,7 +1953,7 @@ def add_review(
             existing_ml.prediction_label = "fake"
             existing_ml.confidence = Decimal("0.95")  # High confidence in this assessment
             existing_ml.is_final = True
-            logger.debug(f"Updated ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")
+            print(f"Updated ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")  # Debug log
         else:
             # Create new ML prediction if none exists
             new_ml = MLPrediction(
@@ -2233,7 +1967,7 @@ def add_review(
                 evaluated_at=now_utc
             )
             db.add(new_ml)
-            logger.debug(f"Created new ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")
+            print(f"Created new ML prediction based on police rejection: trust_score={min_trust_score}%, label=fake")  # Debug log
         
         # Update device trust score based on human rejection
         if hasattr(report, "device") and report.device and hasattr(report.device, "device_trust_score"):
@@ -2241,7 +1975,7 @@ def add_review(
             # Decrease device trust score but don't go below 0
             new_device_score = max(0.0, current_device_score - 10.0)
             report.device.device_trust_score = Decimal(str(new_device_score))
-            logger.debug(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")
+            print(f"Updated device trust score: {current_device_score:.1f}% → {new_device_score:.1f}%")  # Debug log
         
         # Update flagged_reports count
         if hasattr(report.device, "flagged_reports"):
@@ -2306,8 +2040,6 @@ def add_review(
             raise HTTPException(status_code=400, detail="You have already reviewed this report")
         raise
 
-    grouping_result = _auto_group_and_persist_verified_report(db, report)
-
     # Create notifications for report review
     from app.api.v1.notifications import create_role_notifications, create_notification
     
@@ -2341,20 +2073,9 @@ def add_review(
     db.commit()
     db.refresh(review)
     reviewer_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or current_user.email
-    
-    _queue_grouping_refresh(background_tasks, grouping_result)
-    background_tasks.add_task(manager.broadcast, {"type": "refresh_data", "entity": "report", "action": "reviewed"})
 
-    structured_log(
-        "report.review",
-        "report",
-        "success",
-        report_id=str(report.report_id),
-        reviewer_id=getattr(current_user, "police_user_id", None),
-        decision=body.decision,
-        verification_status=report.verification_status,
-        rule_status=report.rule_status,
-    )
+    background_tasks.add_task(_sync_incident_group_for_report_id, str(report_id))
+    background_tasks.add_task(manager.broadcast, {"type": "refresh_data", "entity": "report", "action": "reviewed"})
 
     return ReviewResponse(
         review_id=review.review_id,
@@ -2561,7 +2282,7 @@ async def upload_evidence(
     Mobile: pass device_id to add evidence to your own report (only within evidence_add_window_hours after submit).
     Police dashboard: no device_id; requires auth (future use).
     """
-    logger.debug(f"Evidence upload - report_id: {report_id}, device_id: {device_id}, filename: {file.filename}")
+    print(f"Evidence upload - report_id: {report_id}, device_id: {device_id}, filename: {file.filename}")  # Debug log
     
     report = db.query(Report).filter(Report.report_id == report_id).first()
     if not report:
@@ -2572,100 +2293,64 @@ async def upload_evidence(
         try:
             device_id_uuid = UUID(device_id.strip())
         except (ValueError, TypeError):
-            _log_endpoint_failure(
-                "report.evidence.upload",
-                "evidence",
-                request=request,
-                status_code=400,
-                reason="invalid_device_id",
-                report_id=str(report_id),
-            )
             raise HTTPException(status_code=400, detail="Invalid device_id format")
 
     if device_id_uuid is not None:
-        logger.debug(f"Device ID validation - report.device_id: {report.device_id}, device_id_uuid: {device_id_uuid}")
+        print(f"Device ID validation - report.device_id: {report.device_id}, device_id_uuid: {device_id_uuid}")  # Debug log
         if str(report.device_id) != str(device_id_uuid):
-            logger.debug('Device ID mismatch - raising 403')
-            _log_endpoint_failure(
-                "report.evidence.upload",
-                "evidence",
-                request=request,
-                status_code=403,
-                reason="device_report_mismatch",
-                report_id=str(report_id),
-                device_id=str(device_id_uuid),
-            )
+            print("Device ID mismatch - raising 403")  # Debug log
             raise HTTPException(status_code=403, detail="You can only add evidence to your own report")
         window_hours = getattr(settings, "evidence_add_window_hours", 72)
         cutoff = datetime.now(timezone.utc) - timedelta(hours=window_hours)
         reported_at = report.reported_at
         if reported_at.tzinfo is None:
             reported_at = reported_at.replace(tzinfo=timezone.utc)
-        logger.debug(f"Time window check - reported_at: {reported_at}, cutoff: {cutoff}, window_hours: {window_hours}")
+        print(f"Time window check - reported_at: {reported_at}, cutoff: {cutoff}, window_hours: {window_hours}")  # Debug log
         if reported_at < cutoff:
-            logger.debug('Time window exceeded - raising 400')
-            _log_endpoint_failure(
-                "report.evidence.upload",
-                "evidence",
-                request=request,
-                status_code=400,
-                reason="evidence_window_exceeded",
-                report_id=str(report_id),
-                window_hours=window_hours,
-            )
+            print("Time window exceeded - raising 400")  # Debug log
             raise HTTPException(
                 status_code=400,
                 detail=f"You can add evidence only within {window_hours} hours of submitting the report",
             )
     elif current_user is None:
-        logger.debug('No device_id and no current_user - raising 400')
-        _log_endpoint_failure(
-            "report.evidence.upload",
-            "evidence",
-            request=request,
-            status_code=400,
-            reason="missing_device_id_or_auth",
-            report_id=str(report_id),
-        )
+        print("No device_id and no current_user - raising 400")  # Debug log
         raise HTTPException(status_code=400, detail="device_id required to add evidence (mobile)")
 
     # Read file content once
     content = await file.read()
-    content_metrics = _content_fingerprint(content)
-    try:
-        _enforce_evidence_size_limit(content)
-    except HTTPException:
-        _log_endpoint_failure(
-            "report.evidence.upload",
-            "evidence",
-            request=request,
-            status_code=413,
-            reason="file_too_large",
-            report_id=str(report_id),
-            **content_metrics,
-        )
-        raise
-
-    try:
-        is_image, is_audio, file_type = _resolve_evidence_type(
-            filename=file.filename,
-            content_type=file.content_type,
-        )
-    except HTTPException:
-        _log_endpoint_failure(
-            "report.evidence.upload",
-            "evidence",
-            request=request,
-            status_code=400,
-            reason="unsupported_evidence_format",
-            report_id=str(report_id),
-            content_type=file.content_type,
-            filename=file.filename,
-            **content_metrics,
-        )
-        raise
 
     file_ext = file.filename.split(".")[-1].lower() if file.filename and "." in file.filename else ""
+    # Basic extension-based type detection (content_type first, then extension)
+    image_exts = {"jpg", "jpeg", "png", "gif", "bmp", "webp"}
+    video_exts = {"mp4", "mov", "m4v", "avi", "mkv", "webm"}
+    audio_exts = {"mp3", "wav", "aac", "m4a", "ogg", "flac"}
+
+    is_image = False
+    is_audio = False
+
+    # 1) Try to classify by content_type
+    if file.content_type:
+        ct = file.content_type.lower()
+        if ct.startswith("image/"):
+            is_image = True
+        elif ct.startswith("audio/"):
+            is_audio = True
+        # if it's "application/octet-stream" or something else, we'll fall back to extension
+
+    # 2) If still unknown, fall back to extension
+    if not (is_image or is_audio):
+        if file_ext in image_exts:
+            is_image = True
+        elif file_ext in audio_exts:
+            is_audio = True
+        # otherwise we'll treat it as video by default
+
+    if is_image:
+        file_type = "photo"
+    elif is_audio:
+        file_type = "audio"
+    else:
+        file_type = "video"
 
     # Rule-based: no screenshots or screen recordings (image, audio, or video)
     # Conservative check: filename + optional image metadata.
@@ -2674,16 +2359,6 @@ async def upload_evidence(
         image_bytes=content if is_image else None,
     )
     if is_screenshot:
-        _log_endpoint_failure(
-            "report.evidence.upload",
-            "evidence",
-            request=request,
-            status_code=400,
-            reason="screenshot_or_screen_recording_detected",
-            report_id=str(report_id),
-            file_type=file_type,
-            **content_metrics,
-        )
         _log_blocked_attempt(
             db,
             action_type="evidence_blocked_screenshot",
@@ -2701,61 +2376,19 @@ async def upload_evidence(
             detail="Screenshots and screen recordings are not allowed. Please upload a photo, audio, or video taken with your camera or recorder.",
         )
 
-    # Run lightweight AI metadata analysis for images before persistence.
-    content_hash = hashlib.sha256(content).hexdigest()
-    evidence_analysis = {}
-    perceptual_hash = content_hash
-    duplicate_match = None
-    if is_image:
-        evidence_analysis = evidence_metadata_summary(
-            image_bytes=content,
-            submitted_lat=media_latitude,
-            submitted_lon=media_longitude,
-            submitted_captured_at=captured_at,
-        )
-        perceptual_hash = evidence_analysis.get("perceptual_hash") or content_hash
-
     # Prevent evidence reuse from the same device (common fake-evidence pattern).
+    content_hash = hashlib.sha256(content).hexdigest()
     if device_id_uuid is not None:
         duplicate_evidence = (
-            db.query(EvidenceFile)
+            db.query(EvidenceFile.evidence_id)
             .join(Report, EvidenceFile.report_id == Report.report_id)
             .filter(
                 Report.device_id == device_id_uuid,
+                EvidenceFile.perceptual_hash == content_hash,
             )
-            .order_by(EvidenceFile.uploaded_at.desc())
-            .limit(100)
-            .all()
+            .first()
         )
-        for existing_evidence in duplicate_evidence:
-            existing_hash = getattr(existing_evidence, "perceptual_hash", None)
-            if not existing_hash:
-                continue
-
-            is_duplicate = existing_hash == perceptual_hash
-            similarity = None
-            if not is_duplicate and is_image:
-                similarity = similarity_score(perceptual_hash, existing_hash)
-                is_duplicate = similarity is not None and similarity >= 0.95
-
-            if is_duplicate:
-                duplicate_match = {
-                    "evidence_id": str(existing_evidence.evidence_id),
-                    "similarity_score": similarity,
-                }
-                break
-
-        if duplicate_match:
-            _log_endpoint_failure(
-                "report.evidence.upload",
-                "evidence",
-                request=request,
-                status_code=409,
-                reason="duplicate_evidence_hash",
-                report_id=str(report_id),
-                matched_evidence_id=duplicate_match["evidence_id"],
-                **content_metrics,
-            )
+        if duplicate_evidence:
             _log_blocked_attempt(
                 db,
                 action_type="evidence_blocked_reuse",
@@ -2766,8 +2399,6 @@ async def upload_evidence(
                     "filename": file.filename,
                     "file_type": file_type,
                     "reason": "duplicate_evidence_hash",
-                    "matched_evidence_id": duplicate_match["evidence_id"],
-                    "hash_similarity_score": duplicate_match["similarity_score"],
                 },
             )
             raise HTTPException(
@@ -2776,7 +2407,8 @@ async def upload_evidence(
             )
 
     # Cloudinary upload if configured, otherwise save locally
-    logger.debug("Cloudinary enabled: %s, cloud_name=%s", _CLOUDINARY_ENABLED, settings.cloudinary_cloud_name)
+    print(f"Cloudinary enabled: {_CLOUDINARY_ENABLED}")  # Debug log
+    print(f"Cloudinary config - cloud_name: {settings.cloudinary_cloud_name}, api_key configured: {bool(settings.cloudinary_api_key)}")  # Debug log
     if _CLOUDINARY_ENABLED:
         upload_opts = {"folder": "trustbond/evidence"}
         # Cloudinary uses resource_type="video" for both video and audio
@@ -2793,18 +2425,8 @@ async def upload_evidence(
             file_url = upload_result.get("secure_url") or upload_result.get("url")
         except Exception as e:
             # In production mode with Cloudinary configured, we do NOT write to local disk.
-            # The client (mobile app) should handle offline/low-network by queuing uploads locally.
-            logger.error(f'[Cloudinary] upload error for report {report_id}: {e}')
-            _log_endpoint_failure(
-                "report.evidence.upload",
-                "evidence",
-                request=request,
-                status_code=500,
-                reason="cloudinary_upload_failed",
-                report_id=str(report_id),
-                file_type=file_type,
-                **content_metrics,
-            )
+            # The mobile client may queue retries locally and resend later.
+            print(f"[Cloudinary] upload error for report {report_id}: {e}")
             raise HTTPException(status_code=500, detail=f"Cloudinary upload failed: {e}")
     else:
         # Dev mode without Cloudinary configured: save to local disk
@@ -2815,14 +2437,11 @@ async def upload_evidence(
             f.write(content)
         file_url = f"/uploads/evidence/{file_name}"
 
-    exif = evidence_analysis.get("exif") if isinstance(evidence_analysis, dict) else {}
-    exif_lat = exif.get("latitude") if isinstance(exif, dict) else None
-    exif_lon = exif.get("longitude") if isinstance(exif, dict) else None
-    exif_dt = exif.get("captured_at") if isinstance(exif, dict) else None
-    quality_label = evidence_analysis.get("quality_label") if isinstance(evidence_analysis, dict) else None
-    analyzed_at = evidence_analysis.get("analyzed_at") if isinstance(evidence_analysis, dict) else None
-    if isinstance(analyzed_at, datetime) and analyzed_at.tzinfo is not None:
-        analyzed_at = analyzed_at.replace(tzinfo=None)
+    # EXIF-based metadata extraction for images
+    exif_lat = exif_lon = None
+    exif_dt = None
+    if is_image:
+        exif_lat, exif_lon, exif_dt = _extract_exif_metadata(content)
 
     final_lat = exif_lat if exif_lat is not None else media_latitude
     final_lon = exif_lon if exif_lon is not None else media_longitude
@@ -2842,16 +2461,35 @@ async def upload_evidence(
         report_id=report.report_id,
         file_url=file_url,
         file_type=file_type,
-        perceptual_hash=perceptual_hash,
+        perceptual_hash=content_hash,
         media_latitude=final_lat,
         media_longitude=final_lon,
         captured_at=final_captured_at,
         is_live_capture=is_live_capture,
-        blur_score=evidence_analysis.get("blur_score") if isinstance(evidence_analysis, dict) else None,
-        tamper_score=evidence_analysis.get("tamper_score") if isinstance(evidence_analysis, dict) else None,
-        quality_label=EvidenceQuality(quality_label) if quality_label in EvidenceQuality._value2member_map_ else None,
-        ai_checked_at=analyzed_at,
     )
+    
+    # Run image analysis for blur/tamper detection (for photos only)
+    if file_type in ["photo", "image"] and content:
+        from app.core.evidence_analysis import compute_image_metrics
+        try:
+            analysis_result = compute_image_metrics(content)
+            if analysis_result.get("blur_score") is not None:
+                evidence.blur_score = analysis_result["blur_score"]
+            if analysis_result.get("tamper_score") is not None:
+                evidence.tamper_score = analysis_result["tamper_score"]
+            if analysis_result.get("perceptual_hash") is not None:
+                evidence.perceptual_hash = analysis_result["perceptual_hash"]
+            if analysis_result.get("quality_label") is not None:
+                from app.models.evidence_file import EvidenceQuality
+                try:
+                    evidence.quality_label = EvidenceQuality[analysis_result["quality_label"]]
+                except KeyError:
+                    pass  # Keep default
+            if analysis_result.get("ai_checked_at") is not None:
+                evidence.ai_checked_at = analysis_result["ai_checked_at"]
+            print(f"Evidence analysis: blur={analysis_result.get('blur_score')}, tamper={analysis_result.get('tamper_score')}, quality={analysis_result.get('quality_label')}")  # Debug log
+        except Exception as e:
+            print(f"Evidence analysis failed: {e}")  # Debug log
     db.add(evidence)
     db.commit()
     db.refresh(evidence)
@@ -2860,53 +2498,24 @@ async def upload_evidence(
     report_after = db.query(Report).filter(Report.report_id == report.report_id).first()
     if report_after:
         evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_after.report_id).count()
-        logger.debug(f"Re-applying AI-enhanced rules after evidence upload - evidence_count: {evidence_count}")
-
-        evidence_signal, evidence_signal_reason = _evidence_lifecycle_signal(
-            evidence_analysis if isinstance(evidence_analysis, dict) else {}
-        )
-        fv = getattr(report_after, "feature_vector", None)
-        if not isinstance(fv, dict):
-            fv = {}
-        fv["latest_evidence_analysis"] = {
-            "perceptual_hash": perceptual_hash,
-            "quality_label": quality_label,
-            "blur_score": evidence_analysis.get("blur_score") if isinstance(evidence_analysis, dict) else None,
-            "tamper_score": evidence_analysis.get("tamper_score") if isinstance(evidence_analysis, dict) else None,
-            "hash_similarity_score": duplicate_match["similarity_score"] if duplicate_match else None,
-            "evidence_signal": evidence_signal,
-            "evidence_signal_reason": evidence_signal_reason,
-        }
-        report_after.feature_vector = _json_safe(fv)
-
-        if evidence_signal == "rejected":
-            report_after.rule_status = "rejected"
-            report_after.status = "rejected"
-            report_after.verification_status = "rejected"
-            report_after.is_flagged = True
-            report_after.flag_reason = evidence_signal_reason
-        elif evidence_signal == "under_review" and _report_lifecycle_state(report_after) != "rejected":
-            report_after.verification_status = "under_review"
-            report_after.is_flagged = True
-            if not report_after.flag_reason:
-                report_after.flag_reason = evidence_signal_reason
-
+        print(f"Re-applying AI-enhanced rules after evidence upload - evidence_count: {evidence_count}")  # Debug log
+        
         # Get ML prediction if available
         ml_prediction = None
         if hasattr(report_after, 'ml_predictions') and report_after.ml_predictions:
             ml_prediction = max(report_after.ml_predictions, key=lambda p: p.evaluated_at or datetime.min.replace(tzinfo=timezone.utc))
-            logger.debug(f"Using ML prediction for re-evaluation: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")
+            print(f"Using ML prediction for re-evaluation: {ml_prediction.prediction_label}, trust_score: {ml_prediction.trust_score}")  # Debug log
         
         # Apply AI-enhanced rules
         from app.core.report_priority import apply_ai_enhanced_rules, calculate_report_priority
         rule_status, is_flagged, flag_reason = apply_ai_enhanced_rules(
             report_after, evidence_count, ml_prediction, db
         )
-        logger.debug(f"AI-enhanced rule result after evidence upload - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")
+        print(f"AI-enhanced rule result after evidence upload - rule_status: {rule_status}, is_flagged: {is_flagged}, flag_reason: {flag_reason}")  # Debug log
         
         # Recalculate priority
         priority = calculate_report_priority(report_after, ml_prediction, evidence_count, db)
-        logger.debug(f"Recalculated priority after evidence upload: {priority}")
+        print(f"Recalculated priority after evidence upload: {priority}")  # Debug log
         
         report_after.rule_status = rule_status
         report_after.is_flagged = is_flagged
@@ -2923,63 +2532,40 @@ async def upload_evidence(
             "stale_live_capture_timestamp",
             "device_burst_reporting",
             "duplicate_description_recent",
-            "evidence_quality_review",
-            "evidence_tamper_or_poor_quality",
-            "duplicate_evidence_similarity",
         }
         if flag_reason in review_reasons:
             report_after.verification_status = "under_review"
-            logger.debug(f"Rule/AI review reason after evidence upload ({flag_reason}) - setting verification_status to under_review")
-
+            print(f"Rule/AI review reason after evidence upload ({flag_reason}) - setting verification_status to under_review")  # Debug log
+        
         # FIXED: Auto-verify if AI-enhanced rules pass and not flagged, using trust_score threshold
         ai_safe = True
         ml_trust_ok = True
-        evidence_allows_auto_verify = evidence_signal == "ok"
         
         if ml_prediction:
             if ml_prediction.prediction_label in ["fake", "suspicious", "uncertain"]:
                 ai_safe = False
-                logger.debug(f"AI marked report as {ml_prediction.prediction_label} - not auto-verifying after evidence upload")
+                print(f"AI marked report as {ml_prediction.prediction_label} - not auto-verifying after evidence upload")  # Debug log
             
             # Use trust_score threshold (70%) for consistency
             trust_score = float(ml_prediction.trust_score) if ml_prediction.trust_score else 0
             if trust_score < 70.0:
                 ml_trust_ok = False
-                logger.debug(f"ML trust score too low ({trust_score:.1f}% < 70%) - not auto-verifying after evidence upload")
+                print(f"ML trust score too low ({trust_score:.1f}% < 70%) - not auto-verifying after evidence upload")  # Debug log
         
-        if rule_status == "passed" and not is_flagged and ai_safe and ml_trust_ok and evidence_allows_auto_verify and _report_lifecycle_state(report_after) != "under_review":
+        if rule_status == "passed" and not is_flagged and ai_safe and ml_trust_ok and report_after.verification_status != "under_review":
             report_after.status = "verified"
             report_after.verification_status = "verified"
-            logger.debug("Report auto-verified after evidence upload with AI safety check")
+            print("Report auto-verified after evidence upload with AI safety check")  # Debug log
         db.commit()
-
-        grouping_result = _auto_group_and_persist_verified_report(db, report_after)
-        if grouping_result and grouping_result.incident_group is not None:
-            await manager.broadcast({"type": "refresh_data", "entity": "incident_group", "action": "auto_grouped"})
-        if grouping_result and grouping_result.case is not None:
-            await manager.broadcast({"type": "refresh_data", "entity": "case", "action": "auto_grouped"})
+        _sync_incident_group_for_report_id(str(report_after.report_id))
     
     await manager.broadcast({"type": "refresh_data", "entity": "report", "action": "evidence_added"})
-
-    structured_log(
-        "report.evidence.upload",
-        "evidence",
-        "success",
-        report_id=str(report.report_id),
-        evidence_id=str(evidence.evidence_id),
-        file_type=file_type,
-        verification_status=getattr(report_after, "verification_status", None) if report_after else None,
-        rule_status=getattr(report_after, "rule_status", None) if report_after else None,
-        quality_label=quality_label,
-        **content_metrics,
-    )
     
     return {"evidence_id": str(evidence.evidence_id), "file_url": file_url}
 @router.post("/{report_id}/confirm")
 def add_community_confirmation(
     report_id: UUID,
     body: CommunityVoteRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """
@@ -3013,15 +2599,24 @@ def add_community_confirmation(
     fv["community_votes"] = votes
     
     # Must explicitly set it for SQLAlchemy JSONB mutation
-    report.feature_vector = fv
+    report.feature_vector = fv 
+    
+    db.commit()
+    db.refresh(report)
+    
+    device = report.device
+    # Recalculate credibility score since community votes changed
+    evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_id).count()
+    score_report_credibility(db, report, device, evidence_count)
+    _ensure_fallback_ml_prediction_if_missing(db, report)
+    update_device_ml_aggregates(db, device)
 
+    # Persist updated ML prediction + device aggregates so the response includes fresh trust.
+    db.commit()
+    db.refresh(report)
+
+    # Update report lifecycle state based on the new ML trust score
     try:
-        device = report.device
-        evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_id).count()
-        score_report_credibility(db, report, device, evidence_count)
-        _ensure_fallback_ml_prediction_if_missing(db, report)
-        update_device_ml_aggregates(db, device)
-
         from app.models.ml_prediction import MLPrediction
         latest_ml = (
             db.query(MLPrediction)
@@ -3033,28 +2628,27 @@ def add_community_confirmation(
         if latest_ml:
             trust_score = float(latest_ml.trust_score) if latest_ml.trust_score is not None else 0.0
             prediction_label = (latest_ml.prediction_label or "").lower()
-            current_state = _report_lifecycle_state(report)
 
             # Get ML thresholds from system config
             from app.database import SessionLocal
             from app.models.system_config import SystemConfig
-
-            db_config = SessionLocal()
+            
+            db = SessionLocal()
             try:
-                auto_verify_config = db_config.query(SystemConfig).filter(
+                auto_verify_config = db.query(SystemConfig).filter(
                     SystemConfig.config_key == 'ml.auto_verification_threshold'
                 ).first()
-                under_review_config = db_config.query(SystemConfig).filter(
+                under_review_config = db.query(SystemConfig).filter(
                     SystemConfig.config_key == 'ml.under_review_threshold'
                 ).first()
-
+                
                 auto_verify_threshold = float(auto_verify_config.config_value.get('value', 70.0)) if auto_verify_config else 70.0
                 under_review_threshold = float(under_review_config.config_value.get('value', 45.0)) if under_review_config else 45.0
             finally:
-                db_config.close()
+                db.close()
 
-            # Do not override already-finalized lifecycle decisions; only move pending/under_review reports.
-            if current_state in ("pending", "under_review"):
+            # Do not override police decisions; only move pending/under_review reports.
+            if report.verification_status in ("pending", "under_review"):
                 if report.rule_status == "passed" and not bool(getattr(report, "is_flagged", False)) and prediction_label == "likely_real" and trust_score >= auto_verify_threshold:
                     report.status = "verified"
                     report.verification_status = "verified"
@@ -3071,15 +2665,12 @@ def add_community_confirmation(
                         report.flag_reason = "community_low_trust"
 
                 db.add(report)
-
-        grouping_result = _auto_group_and_persist_verified_report(db, report)
-        db.commit()
-        db.refresh(report)
-        _queue_grouping_refresh(background_tasks, grouping_result)
-    except Exception as exc:
-        db.rollback()
-        logger.exception("Community vote state update failed for report %s", report_id)
-        raise HTTPException(status_code=500, detail="Failed to update report after community vote") from exc
+                db.commit()
+                db.refresh(report)
+                _sync_incident_group_for_report_id(str(report.report_id))
+    except Exception:
+        # Best-effort only: community vote must not fail if state update is blocked
+        pass
     
     return _build_report_response(report, db, request_device_id=device_id_str)
 
@@ -3210,10 +2801,358 @@ def delete_report(
     db.delete(report)
     db.commit()
     return {}
-    if device:
-        evidence_count = db.query(EvidenceFile).filter(EvidenceFile.report_id == report_id).count()
-        score_report_credibility(db, report, device, evidence_count)
-        update_device_ml_aggregates(db, device, window=30)
+
+
+AUTO_CASE_TIME_WINDOW_HOURS = 24
+AUTO_CASE_MIN_DISTINCT_DEVICES = 2
+
+
+def _get_auto_case_params(db: Session) -> tuple[float, float, int, int]:
+    """Read auto-case clustering parameters from system config when present."""
+    from app.models.system_config import SystemConfig
+
+    cluster_radius_meters = 200.0
+    min_reports_threshold = 3
+    time_window_hours = AUTO_CASE_TIME_WINDOW_HOURS
+
+    dbscan_config = (
+        db.query(SystemConfig)
+        .filter(SystemConfig.config_key == "dbscan.epsilon")
+        .first()
+    )
+    if dbscan_config and isinstance(dbscan_config.config_value, dict):
+        cluster_radius_meters = float(dbscan_config.config_value.get("value", cluster_radius_meters))
+
+    min_samples_config = (
+        db.query(SystemConfig)
+        .filter(SystemConfig.config_key == "dbscan.min_samples")
+        .first()
+    )
+    if min_samples_config and isinstance(min_samples_config.config_value, dict):
+        min_reports_threshold = int(min_samples_config.config_value.get("value", min_reports_threshold))
+
+    time_window_config = (
+        db.query(SystemConfig)
+        .filter(SystemConfig.config_key == "dbscan.time_window_hours")
+        .first()
+    )
+    if time_window_config and isinstance(time_window_config.config_value, dict):
+        time_window_hours = int(time_window_config.config_value.get("value", time_window_hours))
+
+    cluster_radius_meters = max(50.0, cluster_radius_meters)
+    min_reports_threshold = max(2, min_reports_threshold)
+    time_window_hours = max(1, time_window_hours)
+    return cluster_radius_meters, cluster_radius_meters / 1000.0, min_reports_threshold, time_window_hours
+
+
+def _report_is_verified_for_auto_case(report: Report) -> bool:
+    return (
+        (report.verification_status or "").lower() == "verified"
+        and (report.status or "").lower() == "verified"
+    )
+
+
+def _report_sort_key(report: Report) -> datetime:
+    return _to_utc(report.reported_at) or datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _cluster_has_distinct_devices(reports: List[Report], min_distinct_devices: int = AUTO_CASE_MIN_DISTINCT_DEVICES) -> bool:
+    device_ids = {str(r.device_id) for r in reports if getattr(r, "device_id", None) is not None}
+    return len(device_ids) >= min_distinct_devices
+
+
+def _cluster_reports_by_time_window(reports: List[Report], time_window_hours: int) -> List[List[Report]]:
+    if not reports:
+        return []
+
+    sorted_reports = sorted(reports, key=_report_sort_key)
+    window = timedelta(hours=time_window_hours)
+    clusters: List[List[Report]] = []
+    current: List[Report] = [sorted_reports[0]]
+
+    for report in sorted_reports[1:]:
+        last_report_time = _report_sort_key(current[-1])
+        current_time = _report_sort_key(report)
+        if current_time - last_report_time <= window:
+            current.append(report)
+        else:
+            clusters.append(current)
+            current = [report]
+
+    clusters.append(current)
+    return clusters
+
+
+def _cluster_reports_by_geo(
+    reports: List[Report],
+    radius_km: float,
+    time_window_hours: int,
+) -> List[List[Report]]:
+    if not reports:
+        return []
+
+    sorted_reports = sorted(reports, key=_report_sort_key)
+    processed_ids: set[str] = set()
+    clusters: List[List[Report]] = []
+    window = timedelta(hours=time_window_hours)
+
+    for base_report in sorted_reports:
+        base_id = str(base_report.report_id)
+        if base_id in processed_ids:
+            continue
+
+        base_time = _report_sort_key(base_report)
+        cluster = [base_report]
+        processed_ids.add(base_id)
+
+        for candidate in sorted_reports:
+            candidate_id = str(candidate.report_id)
+            if candidate_id in processed_ids:
+                continue
+
+            if candidate.incident_type_id != base_report.incident_type_id:
+                continue
+
+            candidate_time = _report_sort_key(candidate)
+            if abs(candidate_time - base_time) > window:
+                continue
+
+            distance_km = _haversine_km(
+                float(base_report.latitude),
+                float(base_report.longitude),
+                float(candidate.latitude),
+                float(candidate.longitude),
+            )
+            if distance_km <= radius_km:
+                cluster.append(candidate)
+                processed_ids.add(candidate_id)
+
+        clusters.append(cluster)
+
+    return clusters
+
+
+def _build_auto_case_title(report: Report, report_count: int) -> str:
+    incident_label = (
+        getattr(getattr(report, "incident_type", None), "type_name", None)
+        or f"Incident Type {report.incident_type_id}"
+    )
+    area_label = (
+        getattr(getattr(report, "village_location", None), "location_name", None)
+        or getattr(getattr(report, "location", None), "location_name", None)
+        or "reported area"
+    )
+    return f"{incident_label} cluster in {area_label} ({report_count} reports)"
+
+
+def _check_and_create_auto_case(report_id: str):
+    """Background task to sync a case from the report's incident group."""
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        report = db.query(Report).filter(Report.report_id == report_id).first()
+        if report is None:
+            return
+        if not _report_is_verified_for_auto_case(report):
+            return
+
+        if getattr(report, "incident_group_id", None) is None:
+            sync_incident_groups_for_report(db, report)
+            db.refresh(report)
+
+        if getattr(report, "incident_group_id", None) is None:
+            return
+
+        sync_case_for_group_id(db, report.incident_group_id)
         db.commit()
-    
-    return {"message": "Vote recorded", "vote": body.vote.lower()}
+    except Exception as exc:
+        db.rollback()
+        logger.error("Error in auto-case creation for report %s: %s", report_id, exc)
+    finally:
+        db.close()
+
+def _assign_officer_to_case_based_on_location(db: Session, case_lat: float, case_lon: float) -> Optional[int]:
+    try:
+        from app.models.station import Station
+        from app.models.police_user import PoliceUser
+        from app.models.case import Case
+        from math import radians, cos, sin, asin, sqrt
+        from sqlalchemy import func
+
+        def calculate_distance(lat1, lon1, lat2, lon2):
+            if lat1 is None or lon1 is None or lat2 is None or lon2 is None:
+                return float('inf')
+            lat1, lon1, lat2, lon2 = map(radians, map(float, [lat1, lon1, lat2, lon2]))
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+            c = 2 * asin(sqrt(a))
+            return 6371 * c
+
+        stations = db.query(Station).filter(Station.is_active == True).all()
+        if not stations:
+            return None
+
+        ranked_stations = sorted(stations, key=lambda s: calculate_distance(case_lat, case_lon, s.latitude, s.longitude))
+
+        for station in ranked_stations:
+            officers = db.query(PoliceUser).filter(
+                PoliceUser.is_active == True,
+                PoliceUser.role == 'officer',
+                PoliceUser.station_id == station.station_id
+            ).all()
+
+            if officers:
+                officer_ids = [o.police_user_id for o in officers]
+                case_counts = db.query(Case.assigned_to_id, func.count(Case.case_id)).filter(
+                    Case.assigned_to_id.in_(officer_ids),
+                    Case.status != 'closed'
+                ).group_by(Case.assigned_to_id).all()
+                
+                count_dict = dict(case_counts)
+                selected_officer = min(officers, key=lambda o: count_dict.get(o.police_user_id, 0))
+                return selected_officer.police_user_id
+        
+        return None
+    except Exception as e:
+        logger.error(f"Error assigning officer to case: {e}")
+        return None
+
+def _create_case_from_reports(db: Session, reports: List[Report]) -> Dict[str, int]:
+    """Create a case from a cluster of reports"""
+    stats = {"cases_created": 0}
+
+    try:
+        from app.models.case import Case, CaseReport
+
+        case_reports_table = CaseReport.__table__
+
+        deduped_reports: List[Report] = []
+        seen_report_ids: set[str] = set()
+        for report in sorted(reports, key=_report_sort_key):
+            report_id = str(report.report_id)
+            if report_id in seen_report_ids:
+                continue
+            seen_report_ids.add(report_id)
+            deduped_reports.append(report)
+
+        if len(deduped_reports) < 2:
+            return stats
+
+        linked_report_ids = {
+            str(row[0])
+            for row in db.query(case_reports_table.c.report_id)
+            .filter(case_reports_table.c.report_id.in_([r.report_id for r in deduped_reports]))
+            .all()
+        }
+        candidate_reports = [r for r in deduped_reports if str(r.report_id) not in linked_report_ids]
+        if len(candidate_reports) < 2:
+            return stats
+
+        report = candidate_reports[0]
+        case_number = _generate_case_number(db)
+
+        if any((r.priority or "").lower() == "urgent" for r in candidate_reports):
+            priority = "urgent"
+        elif sum(1 for r in candidate_reports if (r.priority or "").lower() == "high") >= 2:
+            priority = "high"
+        else:
+            priority = "medium"
+
+        case_lat = sum(r.latitude for r in candidate_reports) / len(candidate_reports)
+        case_lon = sum(r.longitude for r in candidate_reports) / len(candidate_reports)
+        officer_id = _assign_officer_to_case_based_on_location(db, float(case_lat), float(case_lon))
+
+        case = Case(
+            case_id=uuid4(),
+            case_number=case_number,
+            title=_build_auto_case_title(report, len(candidate_reports)),
+            description=(
+                f"Auto-generated case from {len(candidate_reports)} verified reports "
+                f"across {len({str(r.device_id) for r in candidate_reports})} devices."
+            ),
+            incident_type_id=report.incident_type_id,
+            priority=priority,
+            status="open",
+            assigned_to_id=officer_id,
+            created_by=None,
+            opened_at=datetime.now(timezone.utc),
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+            report_count=len(candidate_reports),
+            location_id=report.location_id or report.village_location_id,
+            latitude=case_lat,
+            longitude=case_lon,
+        )
+
+        db.add(case)
+        db.flush()
+
+        # Link reports to case
+        for report in candidate_reports:
+            db.execute(
+                case_reports_table.insert().values(
+                    case_id=case.case_id,
+                    report_id=report.report_id,
+                    added_at=datetime.now(timezone.utc),
+                )
+            )
+
+        db.commit()
+        stats["cases_created"] += 1
+        stats["case_number"] = case.case_number
+        logger.info(
+            "Created auto-case %s with %s reports across %s devices",
+            case.case_number,
+            len(candidate_reports),
+            len({str(r.device_id) for r in candidate_reports}),
+        )
+
+    except Exception as exc:
+        db.rollback()
+        logger.error("Error creating case from reports: %s", exc, exc_info=True)
+
+    return stats
+
+
+def _create_auto_cases(db: Session, seed_report_id: Optional[str] = None) -> Dict[str, int]:
+    """Synchronize cases from existing incident groups."""
+    stats = {
+        "cases_created": 0,
+        "cases_updated": 0,
+        "cases_deleted": 0,
+        "cases_matched": 0,
+    }
+
+    try:
+        from app.models.incident_group import IncidentGroup
+
+        groups_query = db.query(IncidentGroup).order_by(IncidentGroup.created_at.desc())
+        if seed_report_id is not None:
+            seed_report = db.query(Report).filter(Report.report_id == seed_report_id).first()
+            if seed_report is None:
+                return stats
+            group_id = getattr(seed_report, "incident_group_id", None)
+            if group_id is None:
+                sync_incident_groups_for_report(db, seed_report)
+                db.refresh(seed_report)
+                group_id = getattr(seed_report, "incident_group_id", None)
+            if group_id is None:
+                return stats
+            groups_query = groups_query.filter(IncidentGroup.group_id == group_id)
+
+        groups = groups_query.all()
+        case_stats = sync_cases_for_groups(db, groups)
+        db.commit()
+        stats["cases_created"] = int(case_stats.get("created", 0))
+        stats["cases_updated"] = int(case_stats.get("updated", 0))
+        stats["cases_deleted"] = int(case_stats.get("deleted", 0))
+        stats["cases_matched"] = int(case_stats.get("matched", 0))
+
+        return stats
+
+    except Exception as exc:
+        db.rollback()
+        logger.error("Auto-case creation error: %s", exc, exc_info=True)
+        return stats

@@ -1,12 +1,11 @@
 from typing import Annotated, List, Optional, Dict, Any
 
-from fastapi import APIRouter, Depends, Query, HTTPException, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Query, HTTPException, status
 from sqlalchemy.orm import Session, joinedload, selectinload
 from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from app.core.cluster_classifier import predict_cluster_classification
-from app.core.audit import structured_log
 from app.database import get_db
 from app.models.hotspot import Hotspot, hotspot_reports_table
 from app.models.report import Report
@@ -24,7 +23,6 @@ from app.core.hotspot_auto import (
     get_hotspot_trust_min_from_db,
 )
 from app.core.village_lookup import get_village_location_info
-from app.core.websocket import manager
 
 router = APIRouter(prefix="/hotspots", tags=["hotspots"])
 
@@ -488,8 +486,9 @@ def get_hotspot_params(db: Session = Depends(get_db)):
 
 
 @router.post("/recompute")
-async def recompute_hotspots(
+def recompute_hotspots(
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     payload: Optional[RecomputeHotspotsPayload] = None,
     time_window_hours: Optional[int] = Query(None),
@@ -556,30 +555,9 @@ async def recompute_hotspots(
         incident_type_id=eff_incident_type_id,
         analyze_all_reports=False,  # Use time-filtered reports for 24-hour consistency
     )
-
-    # Broadcast hotspot update to all connected clients for real-time Safety Map updates.
-    try:
-        await manager.broadcast({"type": "refresh_data", "entity": "hotspot", "action": "recomputed"})
-    except Exception as exc:
-        structured_log(
-            "hotspot.recompute.broadcast",
-            "hotspot",
-            "failed",
-            reason=str(exc),
-        )
-
-    structured_log(
-        "hotspot.recompute",
-        "hotspot",
-        "success",
-        created=created,
-        time_window_hours=eff_tw,
-        min_incidents=eff_min,
-        radius_meters=float(eff_rad),
-        trust_min=float(eff_trust),
-        incident_type_id=eff_incident_type_id,
-        actor_id=getattr(current_user, "user_id", None),
-    )
+    
+    # Broadcast hotspot update to all connected clients for real-time Safety Map updates
+    background_tasks.add_task(manager.broadcast, {"type": "refresh_data", "entity": "hotspot", "action": "recomputed"})
     
     return {
         "created": created,

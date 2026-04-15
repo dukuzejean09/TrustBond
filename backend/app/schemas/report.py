@@ -15,6 +15,7 @@ class EvidenceFileCreate(BaseModel):
 
 
 class ReportCreate(BaseModel):
+    report_id: Optional[UUID] = None
     device_id: Optional[UUID] = None
     device_hash: Optional[str] = None
     incident_type_id: int
@@ -51,7 +52,6 @@ class ReportResponse(BaseModel):
     report_number: Optional[str] = None  # RPT-YYYY-NNNN
     # When set (e.g. list_reports with join), clients can filter reports by case without a dedicated endpoint.
     case_id: Optional[UUID] = None
-    incident_group_id: Optional[UUID] = None
     device_id: UUID
     incident_type_id: int
     description: Optional[str]
@@ -63,6 +63,7 @@ class ReportResponse(BaseModel):
     status: Optional[str] = None  # report_status: pending, verified, flagged, rejected
     verification_status: Optional[str] = None  # pending, under_review, verified, rejected
     village_location_id: Optional[int] = None
+    incident_group_id: Optional[UUID] = None
     village_name: Optional[str] = None  # from locations table (village containing the point)
     incident_type_name: Optional[str] = None  # set when listing/loading with join
     evidence_count: int = 0

@@ -1,5 +1,4 @@
 from typing import Optional, List
-from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 
@@ -31,8 +30,6 @@ class Settings(BaseSettings):
 
     # How many hours after submitting a report the user (device) can still add evidence (mobile).
     evidence_add_window_hours: int = 72
-    # Max raw upload size per evidence file (MB).
-    evidence_max_upload_mb: int = 25
     # Optional semantic description matcher (disabled by default to avoid model downloads/runtime overhead).
     enable_semantic_match: bool = False
 
@@ -43,22 +40,6 @@ class Settings(BaseSettings):
     impossible_travel_window_seconds: int = 300
     impossible_travel_min_distance_km: float = 20.0
     max_plausible_speed_kmh: float = 250.0
-
-    # Lightweight API throttles (per-client-IP, fixed-window, per minute).
-    rate_limit_report_create_per_minute: int = 20
-    rate_limit_evidence_upload_per_minute: int = 30
-    rate_limit_report_confirm_per_minute: int = 40
-
-    @field_validator("debug", mode="before")
-    @classmethod
-    def normalize_debug_value(cls, value):
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"release", "prod", "production"}:
-                return False
-            if normalized in {"debug", "dev", "development"}:
-                return True
-        return value
 
     def get_cors_origins_list(self) -> List[str]:
         default_local_origins = [

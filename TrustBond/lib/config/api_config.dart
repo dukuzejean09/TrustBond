@@ -1,10 +1,4 @@
-/// Shared application constants used across screens and services.
-class AppConstants {
-  /// Application version. Update this when incrementing the version in pubspec.yaml.
-  static const String appVersion = '2.1.0';
-  /// Application build identifier.
-  static const String appBuild = '2024.12.01';
-}
+/// API base URL. Change via --dart-define when running, or edit the default below.
 ///
 /// **Production:** Uses Render-hosted backend (auto-deployed from GitHub).
 /// **Override:** flutter run --dart-define=API_BASE_URL=https://YOUR_URL/api/v1
@@ -13,7 +7,7 @@ class ApiConfig {
   static const String baseUrl = String.fromEnvironment(
     'API_BASE_URL',
     // defaultValue: 'http://localhost:8000/api/v1',
-    defaultValue: 'https://trustbond.onrender.com/api/v1',
+    defaultValue: 'https://trustbondmobileapp.onrender.com/api/v1',
   );
 
   static String get devicesUrl => _url('$baseUrl/devices');

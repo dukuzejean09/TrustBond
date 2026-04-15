@@ -46,10 +46,6 @@ class CaseResponse(BaseModel):
     assigned_to_station_id: Optional[int] = None
     created_by: Optional[int] = None
     report_count: int = 0
-    device_count: int = 0
-    auto_created: bool = False
-    source: str = "manual"
-    auto_group_confidence: Optional[Decimal] = None
     opened_at: Optional[datetime] = None
     closed_at: Optional[datetime] = None
     outcome: Optional[str] = None

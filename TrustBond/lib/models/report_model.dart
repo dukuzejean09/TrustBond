@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import '../utils/date_time_utils.dart';
 
 /// One report as returned from GET /reports (list or detail).
@@ -98,25 +99,28 @@ class ReportListItem {
         verificationStatus: json['verification_status'] as String?,
         trustScore: _doubleFromJson(json['trust_score']),
         reportNumber: json['report_number'] as String?,
-        contextTags: tags is List ? (tags as List).map((e) => e.toString()).toList() : [],
+        contextTags: tags is List ? tags.map((e) => e.toString()).toList() : [],
         isFlagged: json['is_flagged'] as bool?,
         flagReason: json['flag_reason'] as String?,
         verifiedAt: json['verified_at'] != null ? parseApiDateTimeToLocal(json['verified_at'] as String) : null,
       );
     } catch (e) {
-      print('Error parsing ReportListItem: $e');
-      print('JSON data: $json');
+      debugPrint('Error parsing ReportListItem: $e');
+      debugPrint('JSON data: $json');
       
       // Try to identify the specific field causing issues
       final fields = ['report_id', 'device_id', 'incident_type_id', 'latitude', 'longitude', 'reported_at', 'trust_score'];
       for (final field in fields) {
         final value = json[field];
-        print('Field $field: $value (type: ${value.runtimeType})');
+        debugPrint('Field $field: $value (type: ${value.runtimeType})');
       }
       
       rethrow;
     }
   }
+
+  String get workflowStatus =>
+      (verificationStatus ?? status ?? ruleStatus).trim().toLowerCase();
 
 }
 
@@ -132,13 +136,11 @@ class ReportEvidenceItem {
 
   final String fileType; // photo | video
 
-  final String? qualityLabel; // good, fair, poor, suspicious (from ML/DB)
+  final String? aiQualityLabel; // good, fair, poor, suspicious (from ML/DB)
 
   final double? blurScore;
 
   final double? tamperScore;
-
-  String? get aiQualityLabel => qualityLabel;
 
 
 
@@ -150,7 +152,7 @@ class ReportEvidenceItem {
 
     required this.fileType,
 
-    this.qualityLabel,
+    this.aiQualityLabel,
 
     this.blurScore,
 
@@ -170,7 +172,9 @@ class ReportEvidenceItem {
 
       fileType: json['file_type'] as String? ?? 'photo',
 
-      qualityLabel: (json['quality_label'] ?? json['ai_quality_label']) as String?,
+      // Backend may send either ai_quality_label (old) or quality_label (new).
+
+      aiQualityLabel: (json['ai_quality_label'] ?? json['quality_label']) as String?,
 
       blurScore: _doubleFromJson(json['blur_score']),
 
@@ -323,7 +327,7 @@ class ReportDetailItem {
 
       reportNumber: json['report_number'] as String?,
 
-      contextTags: tags is List ? (tags as List).map((e) => e.toString()).toList() : [],
+      contextTags: tags is List ? tags.map((e) => e.toString()).toList() : [],
 
       isFlagged: json['is_flagged'] as bool?,
 
@@ -338,6 +342,9 @@ class ReportDetailItem {
     );
 
   }
+
+  String get workflowStatus =>
+      (verificationStatus ?? status ?? ruleStatus).trim().toLowerCase();
 
 }
 

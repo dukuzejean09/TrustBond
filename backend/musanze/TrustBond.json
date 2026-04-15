@@ -1,20 +1,14 @@
 {
   "best_params": {
-    "clf__n_estimators": 600,
-    "clf__min_samples_split": 4,
-    "clf__min_samples_leaf": 6,
-    "clf__max_features": 0.6,
-    "clf__max_depth": 15
+    "clf__subsample": 0.7,
+    "clf__n_estimators": 300,
+    "clf__min_child_weight": 7,
+    "clf__max_depth": 4,
+    "clf__learning_rate": 0.01,
+    "clf__gamma": 0.0,
+    "clf__colsample_bytree": 1.0
   },
-  "best_threshold": 0.5566409260285055,
-  "model_version": "report_credibility_rf_v1",
-  "model_type": "RandomForestClassifier",
-  "model_family": "random_forest",
-  "artifact_name": "TrustBond.joblib",
-  "metadata_name": "TrustBond.json",
-  "trained_at": "2026-04-09T18:04:46.588519+00:00",
-  "target_positive_label": "real",
-  "threshold_strategy": "youden_j",
+  "best_threshold": 0.5262405872344971,
   "feature_columns": [
     "latitude",
     "longitude",
@@ -81,212 +75,212 @@
   ],
   "n_rows": 6388,
   "validation": {
-    "roc_auc": 0.976933446000322,
-    "pr_auc": 0.9891356498571114
+    "roc_auc": 0.9777331804281346,
+    "pr_auc": 0.9897982755262659
   },
   "test": {
-    "roc_auc": 0.9781420765027322
+    "roc_auc": 0.9810397553516819
   },
   "feature_importances_top50": [
     {
       "feature": "num__device_trust_score",
-      "importance": 0.5121860499918705
+      "importance": 0.29541516304016113
     },
     {
       "feature": "num__confirmation_rate",
-      "importance": 0.1985369933438389
+      "importance": 0.2441318780183792
     },
     {
       "feature": "num__evidence_count",
-      "importance": 0.09750799969275438
+      "importance": 0.06466751545667648
     },
     {
       "feature": "num__has_live_capture",
-      "importance": 0.03942712556014828
-    },
-    {
-      "feature": "num__device_trusted_reports",
-      "importance": 0.032480704196628074
-    },
-    {
-      "feature": "num__gps_accuracy",
-      "importance": 0.011509064546839604
-    },
-    {
-      "feature": "num__longitude",
-      "importance": 0.011054389508748978
-    },
-    {
-      "feature": "num__device_total_reports",
-      "importance": 0.010826008102770027
-    },
-    {
-      "feature": "num__description_length",
-      "importance": 0.010361588883337268
-    },
-    {
-      "feature": "num__latitude",
-      "importance": 0.01020211346806217
-    },
-    {
-      "feature": "num__village_id",
-      "importance": 0.00975008124500797
-    },
-    {
-      "feature": "num__cell_id",
-      "importance": 0.009315970783205937
-    },
-    {
-      "feature": "num__movement_speed",
-      "importance": 0.006362079556776446
-    },
-    {
-      "feature": "num__gps_speed_check",
-      "importance": 0.006353260838112087
-    },
-    {
-      "feature": "num__sector_id",
-      "importance": 0.005932066792815064
-    },
-    {
-      "feature": "num__incident_type_id",
-      "importance": 0.004289838972562696
-    },
-    {
-      "feature": "num__device_flagged_reports",
-      "importance": 0.00380427754867589
-    },
-    {
-      "feature": "num__spam_flag_count",
-      "importance": 0.003615973763061459
-    },
-    {
-      "feature": "cat__network_type_wifi",
-      "importance": 0.0014561369568182085
+      "importance": 0.05897578224539757
     },
     {
       "feature": "cat__network_type_mobile",
-      "importance": 0.0013656483076803496
-    },
-    {
-      "feature": "cat__time_of_day_night",
-      "importance": 0.0011364167554057283
-    },
-    {
-      "feature": "cat__time_of_day_evening",
-      "importance": 0.001123904049096219
-    },
-    {
-      "feature": "cat__motion_level_medium",
-      "importance": 0.0010247094036176401
-    },
-    {
-      "feature": "cat__incident_type_name_Harassment",
-      "importance": 0.0008982667620546058
-    },
-    {
-      "feature": "cat__time_of_day_day",
-      "importance": 0.0008038837859751293
+      "importance": 0.028519101440906525
     },
     {
       "feature": "cat__motion_level_low",
-      "importance": 0.0006072922500620838
-    },
-    {
-      "feature": "cat__time_of_day_morning",
-      "importance": 0.0005767925933467028
+      "importance": 0.023263445124030113
     },
     {
       "feature": "cat__motion_level_high",
-      "importance": 0.0005270059392918254
+      "importance": 0.019313545897603035
     },
     {
-      "feature": "cat__incident_type_name_Vandalism",
-      "importance": 0.000452671142096089
+      "feature": "num__device_flagged_reports",
+      "importance": 0.019179528579115868
     },
     {
-      "feature": "cat__sector_Nyange",
-      "importance": 0.0004367743138807838
+      "feature": "num__gps_accuracy",
+      "importance": 0.018897945061326027
+    },
+    {
+      "feature": "cat__incident_type_name_Harassment",
+      "importance": 0.01888621784746647
+    },
+    {
+      "feature": "num__sector_id",
+      "importance": 0.01767319068312645
+    },
+    {
+      "feature": "num__cell_id",
+      "importance": 0.017205271869897842
+    },
+    {
+      "feature": "num__village_id",
+      "importance": 0.01704215258359909
+    },
+    {
+      "feature": "num__movement_speed",
+      "importance": 0.01566295325756073
+    },
+    {
+      "feature": "num__description_length",
+      "importance": 0.015636203810572624
+    },
+    {
+      "feature": "cat__network_type_wifi",
+      "importance": 0.015467504970729351
+    },
+    {
+      "feature": "num__latitude",
+      "importance": 0.01533746812492609
+    },
+    {
+      "feature": "cat__time_of_day_night",
+      "importance": 0.014578597620129585
+    },
+    {
+      "feature": "num__device_trusted_reports",
+      "importance": 0.013090068474411964
+    },
+    {
+      "feature": "num__longitude",
+      "importance": 0.012568850070238113
+    },
+    {
+      "feature": "num__device_total_reports",
+      "importance": 0.012197518721222878
+    },
+    {
+      "feature": "num__incident_type_id",
+      "importance": 0.01202524732798338
+    },
+    {
+      "feature": "cat__motion_level_medium",
+      "importance": 0.011447391472756863
+    },
+    {
+      "feature": "num__gps_speed_check",
+      "importance": 0.010054415091872215
     },
     {
       "feature": "cat__incident_type_name_Assault",
-      "importance": 0.0004041714352387441
-    },
-    {
-      "feature": "cat__sector_Kinigi",
-      "importance": 0.0003884079578982562
-    },
-    {
-      "feature": "cat__sector_Gacaca",
-      "importance": 0.0003780605796270597
+      "importance": 0.0077103604562580585
     },
     {
       "feature": "cat__incident_type_name_Drug Activity",
-      "importance": 0.0003320052416599469
-    },
-    {
-      "feature": "cat__incident_type_name_Theft",
-      "importance": 0.0002468961724561654
-    },
-    {
-      "feature": "cat__sector_Remera",
-      "importance": 0.00024144280396659235
-    },
-    {
-      "feature": "cat__incident_type_name_Domestic Violence",
-      "importance": 0.00023393094518104048
-    },
-    {
-      "feature": "cat__network_type_offline",
-      "importance": 0.00020786110361422887
-    },
-    {
-      "feature": "cat__sector_Muhoza",
-      "importance": 0.00019823727056845626
-    },
-    {
-      "feature": "cat__incident_type_name_Fraud / Scam",
-      "importance": 0.00019442672808403733
-    },
-    {
-      "feature": "cat__cell_Nyarubuye",
-      "importance": 0.0001936594062008712
-    },
-    {
-      "feature": "cat__sector_Kimonyi",
-      "importance": 0.00015965975538846354
-    },
-    {
-      "feature": "cat__sector_Rwaza",
-      "importance": 0.0001490230504709492
-    },
-    {
-      "feature": "cat__sector_Musanze",
-      "importance": 0.00014587153020048993
-    },
-    {
-      "feature": "cat__cell_Kigombe",
-      "importance": 0.00013378990616996227
-    },
-    {
-      "feature": "cat__sector_Cyuve",
-      "importance": 0.0001250820743231497
-    },
-    {
-      "feature": "cat__incident_type_name_Suspicious Activity",
-      "importance": 0.00011771891264346696
-    },
-    {
-      "feature": "cat__sector_Nkotsi",
-      "importance": 0.00011747527127921446
+      "importance": 0.0010527060367166996
     },
     {
       "feature": "num__was_stationary",
-      "importance": 0.00011213345517074978
+      "importance": 0.0
     },
     {
-      "feature": "cat__cell_Nyonirima",
-      "importance": 8.752709725088094e-05
+      "feature": "num__spam_flag_count",
+      "importance": 0.0
+    },
+    {
+      "feature": "num__gps_anomaly_flag",
+      "importance": 0.0
+    },
+    {
+      "feature": "num__future_timestamp_flag",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Busogo",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Cyuve",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Gacaca",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Gashaki",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Gataraga",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Kimonyi",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Kinigi",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Muhoza",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Muko",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Musanze",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Nkotsi",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Nyange",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Remera",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Rwaza",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__sector_Shingiro",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__cell_Bikara",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__cell_Birira",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__cell_Bisoke",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__cell_Bukinanyana",
+      "importance": 0.0
+    },
+    {
+      "feature": "cat__cell_Bumara",
+      "importance": 0.0
     }
   ]
 }

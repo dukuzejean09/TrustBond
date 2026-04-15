@@ -1,13 +1,7 @@
-import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:path_provider/path_provider.dart';
-import '../config/api_config.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../config/theme.dart';
 import '../services/device_service.dart';
-import '../services/local_cache_service.dart';
-import '../services/offline_database_service.dart';
-import '../services/offline_report_queue.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -23,13 +17,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _pushNotif = true;
   bool _hotspotAlerts = true;
   bool _reportUpdates = true;
-  bool _clearing = false;
-  bool _exporting = false;
-
-  final _deviceService = DeviceService();
-  final _cacheService = LocalCacheService();
-  final _offlineQueue = OfflineReportQueue();
-  final _offlineDatabase = OfflineDatabaseService();
 
   @override
   Widget build(BuildContext context) {
@@ -45,11 +32,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 children: [
                   _section('Privacy'),
-                  _toggle('Pseudonymous Mode', 'Use a rotating local device identity instead of personal account details',
+                  _toggle('Anonymous Mode', 'Hide all personal identifiers',
                       _anonymousMode, (v) => setState(() => _anonymousMode = v)),
                   _toggle('Location Sharing', 'Share GPS when submitting reports',
                       _locationSharing, (v) => setState(() => _locationSharing = v)),
-                  _toggle('Data Encryption', 'Protect report data during storage and secure transfer',
+                  _toggle('Data Encryption', 'End-to-end encrypt report data',
                       _dataEncryption, (v) => setState(() => _dataEncryption = v)),
                   _section('Notifications'),
                   _toggle('Push Notifications', 'Report status updates',
@@ -59,9 +46,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   _toggle('Report Updates', 'When your report status changes',
                       _reportUpdates, (v) => setState(() => _reportUpdates = v)),
                   _section('About'),
-                  _infoRow('Version', AppConstants.appVersion),
-                  _infoRow('Build', AppConstants.appBuild),
-                  _infoRow('Verification', 'Rules + AI scoring'),
+                  _infoRow('Version', '2.1.0'),
+                  _infoRow('Build', '2024.12.01'),
+                  _infoRow('AI Model', 'TrustNet v3.2'),
                   const SizedBox(height: 24),
                   _buildDangerActions(),
                   const SizedBox(height: 32),
@@ -173,14 +160,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.infinity,
           height: 44,
           child: OutlinedButton.icon(
-            onPressed: _exporting ? null : _showExportNotice,
-            icon: _exporting
-                ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                : const Icon(Icons.download, size: 16),
-            label: Text(
-              _exporting ? 'Exporting...' : 'Export My Data',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
+            onPressed: () => _exportData(),
+            icon: const Icon(Icons.download, size: 16),
+            label: const Text('Export My Data',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.border),
               foregroundColor: AppColors.text,
@@ -194,12 +177,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
           width: double.infinity,
           height: 44,
           child: OutlinedButton.icon(
-            onPressed: _clearing ? null : _showClearDialog,
+            onPressed: () => _showClearDialog(),
             icon: const Icon(Icons.delete_outline, size: 16),
-            label: Text(
-              _clearing ? 'Clearing Local Data...' : 'Clear All Data',
-              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-            ),
+            label: const Text('Clear All Data',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
             style: OutlinedButton.styleFrom(
               side: const BorderSide(color: AppColors.danger),
               foregroundColor: AppColors.danger,
@@ -210,6 +191,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _exportData() async {
+    // TODO: Implement actual data export - gather local data and create downloadable file
+    // For now, show a message
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Export feature coming soon - your data will be prepared for download'),
+        duration: Duration(seconds: 2),
+      ),
+    );
+  }
+
+  Future<void> _clearAllData() async {
+    try {
+      // Clear local storage keys
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      
+      // Clear device identity
+      final deviceService = DeviceService();
+      await deviceService.clearDeviceIdentity();
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('All local data cleared. App will restart.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+        // Could trigger app restart here
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to clear data: $e'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    }
   }
 
   void _showClearDialog() {
@@ -231,11 +254,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: AppColors.muted)),
           ),
           TextButton(
-            onPressed: _clearing
-                ? null
-                : () {
+            onPressed: () {
               Navigator.of(ctx).pop();
-              _clearAllData();
+              // TODO: implement clear
             },
             child: const Text('Clear',
                 style: TextStyle(color: AppColors.danger)),
@@ -243,100 +264,5 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
-  }
-
-  void _showExportNotice() {
-    _exportMyData();
-  }
-
-  Future<void> _exportMyData() async {
-    if (_exporting) return;
-    setState(() => _exporting = true);
-    try {
-      final deviceId = await _deviceService.getDeviceId();
-      final deviceHash = await _deviceService.getDeviceHash();
-      final cachedReports = deviceId != null
-          ? await _cacheService.getCachedReports(deviceId)
-          : <Map<String, dynamic>>[];
-      final pendingItems = await _offlineQueue.getPendingItems();
-      final queuedReports = pendingItems.map((item) => {
-        'queue_id': item.queueId,
-        'status': item.status,
-        'report_id': item.reportId,
-        'attempts': item.attempts,
-        'evidence_count': item.evidenceCount,
-        'created_at': item.createdAt?.toIso8601String(),
-      }).toList();
-
-      final exportData = {
-        'exported_at': DateTime.now().toUtc().toIso8601String(),
-        'app_version': AppConstants.appVersion,
-        'device_id': deviceId,
-        'device_hash_prefix': deviceHash.length >= 8 ? '${deviceHash.substring(0, 8)}...' : deviceHash,
-        'cached_reports_count': cachedReports.length,
-        'queued_offline_reports_count': queuedReports.length,
-        'cached_reports': cachedReports,
-        'queued_offline_reports': queuedReports,
-      };
-
-      final dir = await getApplicationDocumentsDirectory();
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final file = File('${dir.path}/trustbond_export_$timestamp.json');
-      await file.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(exportData),
-      );
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Data exported to: ${file.path}',
-            style: const TextStyle(fontSize: 12),
-          ),
-          duration: const Duration(seconds: 6),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Export failed. Please try again.'),
-        ),
-      );
-    } finally {
-      if (mounted) setState(() => _exporting = false);
-    }
-  }
-
-  Future<void> _clearAllData() async {
-    if (_clearing) return;
-
-    setState(() => _clearing = true);
-    try {
-      await Future.wait([
-        _deviceService.clearLocalIdentity(),
-        _cacheService.clearAll(),
-        _offlineQueue.clearAll(),
-        _offlineDatabase.clearAllData(),
-      ]);
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Local TrustBond data was cleared from this device.'),
-        ),
-      );
-    } catch (_) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not clear all local data. Please try again.'),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _clearing = false);
-      }
-    }
   }
 }

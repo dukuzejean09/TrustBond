@@ -20,8 +20,6 @@ from app.models.system_config import SystemConfig
 ROOT = Path(__file__).resolve().parents[2] / "musanze"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 META_PATH = ROOT / "TrustBond.json"
-DEFAULT_MODEL_VERSION = "report_credibility_v1"
-DEFAULT_MODEL_FAMILY = "report_credibility"
 
 _MODEL = None
 _META: Optional[Dict[str, Any]] = None
@@ -139,47 +137,8 @@ def get_effective_trust_formula(db: Session) -> Dict[str, Any]:
     }
 
 
-def _infer_model_type(model: Any) -> Optional[str]:
-    """Resolve the trained estimator class name even when wrapped in a pipeline."""
-    try:
-        if hasattr(model, "named_steps") and isinstance(model.named_steps, dict):
-            estimator = model.named_steps.get("clf") or model.named_steps.get("model")
-            if estimator is not None:
-                return estimator.__class__.__name__
-        return model.__class__.__name__
-    except Exception:
-        return None
-
-
-def _infer_model_family(model_type: Optional[str]) -> str:
-    model_name = (model_type or "").strip().lower()
-    if not model_name:
-        return DEFAULT_MODEL_FAMILY
-    if "randomforest" in model_name or "random_forest" in model_name:
-        return "random_forest"
-    return model_name.replace("classifier", "").replace("model", "").strip("_ ") or DEFAULT_MODEL_FAMILY
-
-
-def _normalize_model_metadata(model: Any, meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    normalized = dict(meta or {})
-    inferred_model_type = _infer_model_type(model)
-    model_type = normalized.get("model_type") or inferred_model_type or "UnknownModel"
-
-    # Prefer the actual loaded estimator class over stale metadata artifacts.
-    if inferred_model_type and model_type != inferred_model_type:
-        model_type = inferred_model_type
-
-    normalized["model_type"] = model_type
-    normalized["model_family"] = normalized.get("model_family") or _infer_model_family(model_type)
-    normalized["model_version"] = normalized.get("model_version") or DEFAULT_MODEL_VERSION
-    normalized["feature_columns"] = list(normalized.get("feature_columns") or [])
-    normalized["numeric_columns"] = list(normalized.get("numeric_columns") or [])
-    normalized["categorical_columns"] = list(normalized.get("categorical_columns") or [])
-    return normalized
-
-
 def _load_model_and_meta():
-    """Lazy-load the trained report-credibility pipeline and metadata."""
+    """Lazy-load the trained XGBoost pipeline and metadata."""
     global _MODEL, _META
     if _MODEL is not None and _META is not None:
         return _MODEL, _META
@@ -188,8 +147,7 @@ def _load_model_and_meta():
         return None, None
 
     _MODEL = joblib.load(MODEL_PATH)
-    raw_meta = json.loads(META_PATH.read_text(encoding="utf-8"))
-    _META = _normalize_model_metadata(_MODEL, raw_meta)
+    _META = json.loads(META_PATH.read_text(encoding="utf-8"))
     return _MODEL, _META
 
 
@@ -430,8 +388,8 @@ def score_report_credibility(
     evidence_count: int,
 ) -> None:
     """
-    Run the trained report-credibility model for a single report and persist the
-    result into ml_predictions. Safe to call from API code; failures are
+    Run the trained XGBoost credibility model for a single report, and persist
+    the result into ml_predictions. Safe to call from API code; failures are
     swallowed so they don't break report submission.
     """
     try:
@@ -484,8 +442,8 @@ def score_report_credibility(
             report_id=report.report_id,
             trust_score=Decimal(f"{trust_score_pct:.2f}"),
             prediction_label=prediction_label,
-            model_version=str(meta.get("model_version") or DEFAULT_MODEL_VERSION),
-            model_type=str(meta.get("model_type") or "UnknownModel"),
+            model_version=meta.get("model_version", "report_credibility_xgb_v1"),
+            model_type="xgboost",
             confidence=Decimal(f"{prob_real:.3f}"),
             is_final=True,
             explanation=factors,  # Store the explainability breakdown here

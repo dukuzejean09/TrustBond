@@ -4,19 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'config/theme.dart';
 import 'screens/main_shell.dart';
 import 'screens/splash_screen.dart';
-import 'services/offline_integration_guide.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Initialize the offline reporting system
-  try {
-    await OfflineReportingIntegration().initialize();
-  } catch (e) {
-    print('Failed to initialize offline system: $e');
-    // Continue with app startup even if offline system fails
-  }
-  
+
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
       statusBarColor: Colors.transparent,
