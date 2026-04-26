@@ -24,49 +24,74 @@ from app.models.incident_type import IncidentType
 
 DEFAULT_INCIDENT_TYPES: list[dict] = [
     {
-        "type_name": "Theft",
-        "description": "Stealing of property (e.g., phone, money, livestock).",
+        "type_name": "Theft (Ubujura)",
+        "description": "Stealing of property such as a phone, money, livestock, or other personal belongings.",
         "severity_weight": Decimal("1.20"),
     },
     {
-        "type_name": "Assault",
-        "description": "Physical attack or violence against a person.",
+        "type_name": "Assault (Gukomeretsa)",
+        "description": "Physical attack or violence against a person causing bodily harm or injury.",
         "severity_weight": Decimal("1.60"),
     },
     {
-        "type_name": "Vandalism",
-        "description": "Damage or destruction of public/private property.",
+        "type_name": "Vandalism (Gusambura Umutungo)",
+        "description": "Deliberate damage or destruction of public or private property.",
         "severity_weight": Decimal("1.10"),
     },
     {
-        "type_name": "Suspicious Activity",
-        "description": "Unusual behavior or suspicious movement in the area.",
+        "type_name": "Suspicious Activity (Ibikorwa Biteye Inkeke)",
+        "description": "Unusual or suspicious behavior, movement, or presence that may indicate a threat.",
         "severity_weight": Decimal("1.00"),
     },
     {
-        "type_name": "Domestic Violence",
-        "description": "Threats or violence within a household/family.",
+        "type_name": "Domestic Violence (Ihohoterwa mu Muryango)",
+        "description": "Physical, emotional, or psychological abuse or threats occurring within a household or family.",
         "severity_weight": Decimal("1.70"),
     },
     {
-        "type_name": "Drug Activity",
-        "description": "Suspected selling/using of illegal drugs.",
+        "type_name": "Drug Activity (Ibiyobyabwenge)",
+        "description": "Suspected illegal selling, distribution, or use of narcotics or controlled substances.",
         "severity_weight": Decimal("1.40"),
     },
     {
-        "type_name": "Fraud/Scam",
-        "description": "Deception to gain money/property (mobile money scam, etc.).",
+        "type_name": "Fraud/Scam (Uburiganya)",
+        "description": "Deception or trickery to unlawfully obtain money or property, including mobile money scams.",
         "severity_weight": Decimal("1.30"),
     },
     {
-        "type_name": "Harassment",
-        "description": "Repeated threats, stalking, or intimidation.",
+        "type_name": "Harassment (Gutoteza)",
+        "description": "Repeated threats, intimidation, stalking, or unwanted aggressive behavior toward a person.",
         "severity_weight": Decimal("1.20"),
     },
     {
-        "type_name": "Traffic Incident",
-        "description": "Non-emergency road incident affecting safety.",
+        "type_name": "Traffic Incident (Impanuka y'Umuhanda)",
+        "description": "A road accident or traffic-related event that poses a safety risk to people or property.",
         "severity_weight": Decimal("1.00"),
+    },
+    {
+        "type_name": "Sexual Assault (Ihohoterwa Rishingiye Ku Gitsina)",
+        "description": "Any non-consensual sexual act or contact forced upon a person against their will.",
+        "severity_weight": Decimal("1.80"),
+    },
+    {
+        "type_name": "Robbery (Kunyaga)",
+        "description": "Taking property from a person by force, threat, or use of a weapon.",
+        "severity_weight": Decimal("1.70"),
+    },
+    {
+        "type_name": "Homicide (Kwica)",
+        "description": "The killing of a person or a life-threatening attack that results in death.",
+        "severity_weight": Decimal("2.00"),
+    },
+    {
+        "type_name": "Arson (Gutwika)",
+        "description": "Deliberately setting fire to property, buildings, or land causing damage or danger.",
+        "severity_weight": Decimal("1.60"),
+    },
+    {
+        "type_name": "Kidnapping (Gutwara Ku Ngufu)",
+        "description": "Unlawfully seizing or detaining a person against their will, often for ransom or coercion.",
+        "severity_weight": Decimal("1.90"),
     },
 ]
 
@@ -108,5 +133,4 @@ def seed_incident_types(rows: Iterable[dict] = DEFAULT_INCIDENT_TYPES) -> tuple[
 
 if __name__ == "__main__":
     inserted, skipped = seed_incident_types()
-    print(f"✅ Incident types seeded. Inserted={inserted}, Skipped(existing)={skipped}")
-
+    print(f"Incident types seeded. Inserted={inserted}, Skipped(existing)={skipped}")
