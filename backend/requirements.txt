@@ -19,5 +19,10 @@ joblib
 pandas
 websockets
 geopy
-celery
-redis
+opencv-python
+pytesseract
+numpy
+python-dotenv
+ultralytics
+sentence-transformers
+imagehash

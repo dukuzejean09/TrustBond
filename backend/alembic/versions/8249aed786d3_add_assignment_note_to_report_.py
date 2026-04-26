@@ -40,7 +40,6 @@ def upgrade() -> None:
     op.alter_column('audit_logs', 'actor_id',
                existing_type=sa.VARCHAR(length=36),
                type_=sa.Integer(),
-               postgresql_using="NULLIF(regexp_replace(actor_id, '[^0-9]', '', 'g'), '')::integer",
                existing_nullable=True)
     op.alter_column('audit_logs', 'entity_type',
                existing_type=sa.VARCHAR(length=50),

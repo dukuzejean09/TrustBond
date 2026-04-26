@@ -1,7 +1,7 @@
 from pydantic import BaseModel, model_validator
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from decimal import Decimal
 
 
@@ -34,6 +34,13 @@ class ReportCreate(BaseModel):
     app_version: Optional[str] = None
     network_type: Optional[str] = None
     battery_level: Optional[Decimal] = None
+    
+    # Mobile rule-based verification results
+    mobile_rule_status: Optional[str] = None  # "passed", "failed", "warning"
+    mobile_rule_details: Optional[Dict[str, Any]] = None  # Details of mobile rule checks
+    location_consistency_check: Optional[bool] = None  # Location consistency between report and evidence
+    evidence_source_valid: Optional[bool] = None  # Evidence not downloaded/screenshotted
+    evidence_tampering_detected: Optional[bool] = None  # Screenshot/screen recording detection
 
     @model_validator(mode="after")
     def require_device_identifier(self):
@@ -63,14 +70,17 @@ class ReportResponse(BaseModel):
     status: Optional[str] = None  # report_status: pending, verified, flagged, rejected
     verification_status: Optional[str] = None  # pending, under_review, verified, rejected
     village_location_id: Optional[int] = None
-    incident_group_id: Optional[UUID] = None
     village_name: Optional[str] = None  # from locations table (village containing the point)
+    cell_name: Optional[str] = None  # from locations hierarchy (cell containing the village)
+    sector_name: Optional[str] = None  # from locations hierarchy (sector containing the cell)
     incident_type_name: Optional[str] = None  # set when listing/loading with join
     evidence_count: int = 0
     evidence_preview: list["EvidencePreview"] = []
     trust_score: Optional[Decimal] = None  # from device or ML prediction
+    incident_verification: Optional[Dict[str, Any]] = None  # structured multimodal verdict payload
     trust_factors: Optional[Dict[str, Any]] = None  # explainable factor breakdown
     ml_prediction_label: Optional[str] = None  # likely_real, suspicious, fake, uncertain
+    ml_predictions: Optional[List[Dict[str, Any]]] = []  # array of ML predictions for frontend
     hotspot_id: Optional[int] = None
     hotspot_risk_level: Optional[str] = None  # low | medium | high
     hotspot_incident_count: Optional[int] = None
@@ -95,6 +105,9 @@ class ReportResponse(BaseModel):
     device_trust_score: Optional[float] = None
     total_reports: Optional[int] = None
     trusted_reports: Optional[int] = None
+    # Location hierarchy and station assignment data
+    assigned_station: Optional[Dict[str, Any]] = None  # station info from assigned officer
+    assigned_officers: Optional[List[Dict[str, Any]]] = None  # list of assigned officers with their stations
 
     class Config:
         from_attributes = True

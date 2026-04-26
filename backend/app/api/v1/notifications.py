@@ -2,7 +2,7 @@ from uuid import uuid4
 from typing import Annotated, List
 
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from app.core.websocket import manager
 from app.api.v1.ws import notification_manager
 import asyncio
@@ -37,6 +37,7 @@ def create_notification(
     notif_type: str = "assignment",
     related_entity_type: str | None = "report",
     related_entity_id: str | None = None,
+    send_email: bool = False,
 ) -> Notification:
     n = Notification(
         notification_id=uuid4(),
@@ -56,6 +57,10 @@ def create_notification(
         notification_manager.increment_notification_count(str(police_user_id))
     )
     
+    # Send email notification if requested
+    if send_email:
+        _send_email_notification(db, police_user_id, title, message, notif_type, related_entity_type, related_entity_id)
+    
     return n
 
 
@@ -70,6 +75,7 @@ def create_role_notifications(
     target_location_id: int | None = None,
     target_station_id: int | None = None,
     exclude_user_id: int | None = None,
+    send_email: bool = False,
 ) -> List[Notification]:
     """
     Create notifications for users based on roles, location, or station.
@@ -128,6 +134,10 @@ def create_role_notifications(
         _run_async_now_or_schedule(
             notification_manager.increment_notification_count(str(user.police_user_id))
         )
+    
+    # Send email notifications if requested
+    if send_email and users:
+        _send_role_email_notifications(db, users, title, message, notif_type, related_entity_type, related_entity_id)
     
     return notifications
 
@@ -303,3 +313,184 @@ def register_mobile_token(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+def _send_email_notification(
+    db: Session,
+    police_user_id: int,
+    title: str,
+    message: str | None,
+    notif_type: str,
+    related_entity_type: str | None,
+    related_entity_id: str | None,
+):
+    """Send email notification to a single police user."""
+    try:
+        from app.services.email_notification_service import email_service
+        from app.models.police_user import PoliceUser
+        
+        police_user = db.query(PoliceUser).filter(PoliceUser.police_user_id == police_user_id).first()
+        if not police_user or not police_user.email:
+            return
+        
+        # Send appropriate email based on notification type
+        if notif_type == "assignment" and related_entity_type == "case":
+            # Case assignment notification
+            from app.models.case import Case
+            case = db.query(Case).options(
+                joinedload(Case.location),
+                joinedload(Case.incident_type)
+            ).filter(Case.case_id == related_entity_id).first()
+            if case:
+                # Build location description with hierarchy
+                location_desc = ""
+                if case.location:
+                    location_parts = []
+                    if case.location.location_name:
+                        location_parts.append(case.location.location_name)
+                    
+                    # Get parent location hierarchy (village -> cell -> sector -> district)
+                    current_location = case.location
+                    hierarchy_parts = []
+                    while current_location and current_location.parent:
+                        current_location = current_location.parent
+                        if current_location and current_location.location_name:
+                            hierarchy_parts.append(current_location.location_name)
+                    
+                    # Add hierarchy in reverse order (sector -> cell -> village)
+                    if hierarchy_parts:
+                        location_parts.extend(reversed(hierarchy_parts))
+                    
+                    location_desc = ", ".join(location_parts)
+                elif case.latitude and case.longitude:
+                    location_desc = f"{float(case.latitude):.4f}, {float(case.longitude):.4f}"
+                else:
+                    location_desc = "Location not specified"
+                
+                email_service.send_case_assignment_notification(
+                    police_user,
+                    case.case_number,
+                    case.title,
+                    case.incident_type.type_name if case.incident_type else "Unknown",
+                    location_desc,
+                    case.report_count or 0,
+                    latitude=float(case.latitude) if case.latitude is not None else None,
+                    longitude=float(case.longitude) if case.longitude is not None else None,
+                )
+        elif notif_type == "assignment" and related_entity_type == "report":
+            # Report assignment notification
+            from app.models.report import Report
+            from app.services.email_notification_service import get_location_hierarchy_from_coordinates
+            report = db.query(Report).filter(Report.report_id == related_entity_id).first()
+            if report:
+                assignment_type = "boundary" if "out of boundary" in message.lower() else "flagged"
+                
+                # Convert coordinates to location hierarchy
+                location_display = f"{report.latitude}, {report.longitude}"
+                if report.latitude and report.longitude:
+                    try:
+                        location_display = get_location_hierarchy_from_coordinates(db, float(report.latitude), float(report.longitude))
+                    except Exception:
+                        pass  # Keep coordinates if conversion fails
+                
+                email_service.send_report_assignment_notification(
+                    police_user,
+                    str(report.report_id),
+                    report.incident_type.type_name if report.incident_type else "Unknown",
+                    location_display,
+                    report.flag_reason or "Requires review",
+                    assignment_type
+                )
+        
+    except Exception as e:
+        # Log error but don't fail the notification creation
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send email notification: {str(e)}")
+
+
+def _send_role_email_notifications(
+    db: Session,
+    users: List[PoliceUser],
+    title: str,
+    message: str | None,
+    notif_type: str,
+    related_entity_type: str | None,
+    related_entity_id: str | None,
+):
+    """Send email notifications to multiple police users by role."""
+    try:
+        from app.services.email_notification_service import email_service
+        from app.models.case import Case
+        from app.models.report import Report
+        from app.models.hotspot import Hotspot
+        
+        # Send appropriate email based on notification type
+        if notif_type == "system" and related_entity_type == "case":
+            # Auto-generated case notification
+            from app.services.email_notification_service import get_location_hierarchy_from_coordinates
+            case = db.query(Case).filter(Case.case_id == related_entity_id).first()
+            if case:
+                # Convert coordinates to location hierarchy
+                location_display = f"{case.latitude}, {case.longitude}"
+                if case.latitude and case.longitude:
+                    try:
+                        location_display = get_location_hierarchy_from_coordinates(db, float(case.latitude), float(case.longitude))
+                    except Exception:
+                        pass  # Keep coordinates if conversion fails
+                
+                email_service.send_auto_case_notification(
+                    users,
+                    case.case_number,
+                    case.title,
+                    case.incident_type.type_name if case.incident_type else "Unknown",
+                    location_display,
+                    case.report_count or 0,
+                    latitude=float(case.latitude) if case.latitude is not None else None,
+                    longitude=float(case.longitude) if case.longitude is not None else None,
+                )
+        elif notif_type == "system" and related_entity_type == "hotspot":
+            # Hotspot detection notification
+            if related_entity_id:
+                hotspot = db.query(Hotspot).filter(Hotspot.hotspot_id == related_entity_id).first()
+                if hotspot:
+                    hotspot_count = 1  # Single hotspot notification
+                    hotspot_location = f"Radius {hotspot.radius_meters}m"
+                    hotspot_coordinates = f"{hotspot.center_lat},{hotspot.center_long}"
+                    email_service.send_hotspot_notification(
+                        users,
+                        hotspot_count,
+                        hotspot_location,
+                        hotspot_coordinates
+                    )
+            else:
+                # Multiple hotspots notification
+                hotspot_count = int(message.split()[0]) if message and message.split()[0].isdigit() else 1
+                email_service.send_hotspot_notification(users, hotspot_count)
+        elif notif_type == "report" and related_entity_type == "report":
+            # Report verification notification
+            from app.services.email_notification_service import get_location_hierarchy_from_coordinates
+            report = db.query(Report).filter(Report.report_id == related_entity_id).first()
+            if report:
+                # Convert coordinates to location hierarchy
+                location_display = f"{report.latitude}, {report.longitude}"
+                if report.latitude and report.longitude:
+                    try:
+                        location_display = get_location_hierarchy_from_coordinates(db, float(report.latitude), float(report.longitude))
+                    except Exception:
+                        pass  # Keep coordinates if conversion fails
+                
+                email_service.send_report_verification_notification(
+                    users,
+                    str(report.report_id),
+                    report.incident_type.type_name if report.incident_type else "Unknown",
+                    location_display,
+                    report.verification_status or "pending",
+                    report.flag_reason
+                )
+        
+    except Exception as e:
+        # Log error but don't fail the notification creation
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Failed to send email notification: {str(e)}")

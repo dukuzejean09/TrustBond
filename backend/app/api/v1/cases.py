@@ -1,5 +1,6 @@
 from uuid import uuid4, UUID
 from typing import Annotated, Optional, List, Any
+import time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -7,14 +8,18 @@ from sqlalchemy import or_, func
 
 from app.database import get_db
 from app.core.websocket import manager
-from app.models.case import Case, CaseReport
+from app.models.case import Case, CaseReport, CaseHistory
 from app.models.report import Report
 from app.models.report_assignment import ReportAssignment
 from app.models.location import Location
+from app.models.station import Station
 from app.models.ml_prediction import MLPrediction
 from app.models.police_user import PoliceUser
 from app.api.v1.auth import get_current_admin_or_supervisor, get_current_user
-from app.schemas.case import CaseCreate, CaseUpdate, CaseResponse, CaseListResponse, CaseAddReports
+from app.schemas.case import (
+    CaseCreate, CaseUpdate, CaseResponse, CaseListResponse, CaseAddReports,
+    CaseHistoryEntry, CaseGeographicBreakdown, GeographicLocation,
+)
 from app.schemas.report import ReportResponse
 
 router = APIRouter(prefix="/cases", tags=["cases"])
@@ -54,28 +59,37 @@ def _supervisor_scope(current_user: PoliceUser, db: Session) -> tuple[int, set[i
     
     sector_location_ids = set()
     if supervisor_station_id is not None:
-        # Get station to find its sector location
+        # Get station to find its sector location(s)
         from app.models.station import Station
         station = db.query(Station).filter(Station.station_id == supervisor_station_id).first()
         
-        if station and station.location_id:
-            # Get sector location (station should be at sector level)
-            sector_location_id = station.location_id
+        if station:
+            # Handle both primary and secondary sectors
+            sector_location_ids_list = []
             
-            # Find all villages/cells in this sector - same logic as reports API
-            sector_locations_query = db.query(Location.location_id).filter(
-                or_(
-                    Location.location_id == sector_location_id,  # The sector itself
-                    Location.parent_location_id == sector_location_id,  # Direct children (cells)
-                    # Also get villages under cells in this sector
-                    Location.parent_location_id.in_(
-                        db.query(Location.location_id).filter(
-                            Location.parent_location_id == sector_location_id
+            # Primary sector
+            if station.location_id:
+                sector_location_ids_list.append(station.location_id)
+            
+            # Secondary sector (if exists)
+            if station.sector2_id:
+                sector_location_ids_list.append(station.sector2_id)
+            
+            # Find all villages/cells in all sectors
+            for sector_location_id in sector_location_ids_list:
+                sector_locations_query = db.query(Location.location_id).filter(
+                    or_(
+                        Location.location_id == sector_location_id,  # The sector itself
+                        Location.parent_location_id == sector_location_id,  # Direct children (cells)
+                        # Also get villages under cells in this sector
+                        Location.parent_location_id.in_(
+                            db.query(Location.location_id).filter(
+                                Location.parent_location_id == sector_location_id
+                            ).subquery()
                         )
                     )
                 )
-            )
-            sector_location_ids = {loc[0] for loc in sector_locations_query.all()}
+                sector_location_ids.update({loc[0] for loc in sector_locations_query.all()})
     else:
         # Fallback to assigned_location_id if station_id is None
         assigned_location_id = getattr(current_user, "assigned_location_id", None)
@@ -103,6 +117,81 @@ def _report_in_supervisor_scope(report: Report, station_id: int, location_ids: s
     if location_ids and report.village_location_id in location_ids:
         return True
     return False
+
+
+def _apply_case_access_filter(query, current_user: PoliceUser, db: Session):
+    """Apply role-based access control to a Case query.
+
+    - Admin    : no restriction.
+    - Supervisor: cases belonging to their station (station_id) or their
+                  geographic location scope.
+    - Officer  : all cases at their station (station_id), plus cases
+                 personally assigned to them (fallback when station_id is NULL).
+    """
+    if current_user.role == "admin":
+        return query
+
+    if current_user.role == "supervisor":
+        station_id, location_ids = _supervisor_scope(current_user, db)
+        query = query.filter(
+            or_(
+                Case.station_id == station_id,
+                Case.assigned_to.has(PoliceUser.station_id == station_id),
+                Case.location_id.in_(location_ids) if location_ids else False,
+            )
+        )
+        return query
+
+    # Officer
+    officer_station_id = getattr(current_user, "station_id", None)
+    if officer_station_id:
+        query = query.filter(
+            or_(
+                Case.station_id == officer_station_id,
+                Case.assigned_to_id == current_user.police_user_id,
+            )
+        )
+    else:
+        query = query.filter(Case.assigned_to_id == current_user.police_user_id)
+    return query
+
+
+def _log_case_history_entry(db: Session, case: Case, payload: CaseUpdate, performed_by: int):
+    """Record each changed field as a history entry in the same transaction."""
+    changes: dict = {}
+    if payload.status is not None:
+        changes["status"] = payload.status
+    if payload.priority is not None:
+        changes["priority"] = payload.priority
+    if payload.assigned_to_id is not None:
+        changes["assigned_to_id"] = payload.assigned_to_id
+    if payload.title is not None:
+        changes["title"] = payload.title
+    if payload.description is not None:
+        changes["description"] = "(updated)"
+    if payload.outcome is not None:
+        changes["outcome"] = payload.outcome
+
+    if not changes:
+        return
+
+    # Choose a single descriptive action label
+    if "status" in changes:
+        action = "status_changed"
+    elif "assigned_to_id" in changes:
+        action = "officer_assigned"
+    elif "priority" in changes:
+        action = "priority_changed"
+    else:
+        action = "note_added"
+
+    db.add(CaseHistory(
+        history_id=uuid4(),
+        case_id=case.case_id,
+        action=action,
+        details=changes,
+        performed_by=performed_by,
+    ))
 
 
 def _generate_case_number(db: Session) -> str:
@@ -149,6 +238,25 @@ def _case_to_response(c: Case) -> CaseResponse:
     if scores:
         avg_trust = sum(scores) / len(scores)
 
+    # Get location information
+    location_name = None
+    if c.location:
+        location_name = c.location.location_name
+    elif c.latitude and c.longitude:
+        # If case has coordinates but no location, create a descriptive name
+        location_name = f"Case Location ({float(c.latitude):.4f}, {float(c.longitude):.4f})"
+    else:
+        # Try to get location from the first report in the case
+        case_reports = getattr(c, "case_reports", [])
+        if case_reports:
+            first_report = getattr(case_reports[0], "report", None)
+            if first_report and first_report.village_location:
+                location_name = first_report.village_location.location_name
+            elif first_report and first_report.latitude and first_report.longitude:
+                location_name = f"Report Location ({float(first_report.latitude):.4f}, {float(first_report.longitude):.4f})"
+
+    station_name = c.station.station_name if getattr(c, "station", None) else None
+
     return CaseResponse(
         case_id=c.case_id,
         case_number=c.case_number,
@@ -156,11 +264,12 @@ def _case_to_response(c: Case) -> CaseResponse:
         priority=c.priority,
         title=c.title,
         description=c.description,
+        station_id=getattr(c, "station_id", None),
+        station_name=station_name,
         location_id=c.location_id,
-        location_name=c.location.location_name if c.location else None,
+        location_name=location_name,
         incident_type_id=c.incident_type_id,
         incident_type_name=c.incident_type.type_name if c.incident_type else None,
-        incident_group_id=getattr(c, "incident_group_id", None),
         assigned_to_id=c.assigned_to_id,
         assigned_to_name=f"{c.assigned_to.first_name} {c.assigned_to.last_name}".strip() if c.assigned_to else None,
         assigned_to_station_id=c.assigned_to.station_id if c.assigned_to else None,
@@ -226,31 +335,20 @@ def list_cases(
     """List cases with optional status filter.
 
     - Admin: all cases.
-    - Supervisor: cases in their assigned location (if set).
-    - Officer: cases assigned to them.
+    - Supervisor: all cases belonging to their station.
+    - Officer: all cases belonging to their station (not just personally assigned ones).
     """
     query = db.query(Case).options(
         joinedload(Case.location),
         joinedload(Case.incident_type),
         joinedload(Case.assigned_to),
+        joinedload(Case.station),
         selectinload(Case.case_reports)
         .selectinload(CaseReport.report)
         .selectinload(Report.ml_predictions),
     )
 
-    if current_user.role == "supervisor":
-        station_id, location_ids = _supervisor_scope(current_user, db)
-        if location_ids:
-            query = query.filter(
-                or_(
-                    Case.assigned_to.has(PoliceUser.station_id == station_id),
-                    Case.location_id.in_(location_ids),
-                )
-            )
-        else:
-            query = query.filter(Case.assigned_to.has(PoliceUser.station_id == station_id))
-    elif current_user.role == "officer":
-        query = query.filter(Case.assigned_to_id == current_user.police_user_id)
+    query = _apply_case_access_filter(query, current_user, db)
 
     if status:
         query = query.filter(Case.status == status)
@@ -417,6 +515,10 @@ def create_case(
                         detail="You can only create cases in your assigned location",
                     )
 
+    # Determine the station this case belongs to.
+    # Supervisors always create cases for their own station.
+    case_station_id = supervisor_station_id or getattr(current_user, "station_id", None)
+
     case_id = uuid4()
     case_number = _generate_case_number(db)
     case = Case(
@@ -428,6 +530,7 @@ def create_case(
         description=payload.description,
         location_id=payload.location_id,
         incident_type_id=payload.incident_type_id,
+        station_id=case_station_id,
         created_by=current_user.police_user_id,
     )
     db.add(case)
@@ -489,6 +592,7 @@ def create_case(
         joinedload(Case.location),
         joinedload(Case.incident_type),
         joinedload(Case.assigned_to),
+        joinedload(Case.station),
     ).filter(Case.case_id == case_id).first()
     return _case_to_response(case)
 
@@ -518,12 +622,37 @@ def get_case_stats(
         base_q = base_q.filter(Case.assigned_to_id == current_user.police_user_id)
 
     def _count(q_filter):
-        return base_q.filter(q_filter).with_entities(func.count(Case.case_id)).scalar() or 0
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                return base_q.filter(q_filter).with_entities(func.count(Case.case_id)).scalar() or 0
+            except Exception as e:
+                if attempt == max_retries - 1:
+                    print(f"Failed to count cases after {max_retries} attempts: {e}")
+                    return 0
+                print(f"Database error in count attempt {attempt + 1}, retrying...")
+                db.rollback()
+                time.sleep(0.5)
 
     open_c = _count(Case.status == "open")
     in_progress = _count(Case.status == "investigating")
     closed = _count(Case.status == "closed")
-    total_reports = base_q.with_entities(func.sum(Case.report_count)).scalar() or 0
+    
+    # Get total reports with retry
+    total_reports = 0
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            total_reports = base_q.with_entities(func.sum(Case.report_count)).scalar() or 0
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"Failed to get total reports after {max_retries} attempts: {e}")
+                total_reports = 0
+            else:
+                print(f"Database error in total reports attempt {attempt + 1}, retrying...")
+                db.rollback()
+                time.sleep(0.5)
     return {
         "open": open_c,
         "in_progress": in_progress,
@@ -552,21 +681,11 @@ def get_case(
         joinedload(Case.location),
         joinedload(Case.incident_type),
         joinedload(Case.assigned_to),
+        joinedload(Case.station),
+        joinedload(Case.case_reports).joinedload(CaseReport.report).joinedload(Report.village_location),
     ).filter(Case.case_id == cid)
 
-    if current_user.role == "supervisor":
-        station_id, location_ids = _supervisor_scope(current_user, db)
-        if location_ids:
-            query = query.filter(
-                or_(
-                    Case.assigned_to.has(PoliceUser.station_id == station_id),
-                    Case.location_id.in_(location_ids),
-                )
-            )
-        else:
-            query = query.filter(Case.assigned_to.has(PoliceUser.station_id == station_id))
-    elif current_user.role == "officer":
-        query = query.filter(Case.assigned_to_id == current_user.police_user_id)
+    query = _apply_case_access_filter(query, current_user, db)
 
     case = query.first()
     if not case:
@@ -586,23 +705,11 @@ def get_case_reports(
     except ValueError:
         raise HTTPException(404, "Case not found")
 
-    case_query = db.query(Case).filter(Case.case_id == cid)
-    if current_user.role == "supervisor":
-        station_id, location_ids = _supervisor_scope(current_user, db)
-        if location_ids:
-            case_query = case_query.filter(
-                or_(
-                    Case.assigned_to.has(PoliceUser.station_id == station_id),
-                    Case.location_id.in_(location_ids),
-                )
-            )
-        else:
-            case_query = case_query.filter(Case.assigned_to.has(PoliceUser.station_id == station_id))
-    elif current_user.role == "officer":
-        case_query = case_query.filter(Case.assigned_to_id == current_user.police_user_id)
+    case_query = _apply_case_access_filter(
+        db.query(Case).filter(Case.case_id == cid), current_user, db
+    )
 
-    case = case_query.first()
-    if not case:
+    if not case_query.first():
         raise HTTPException(404, "Case not found")
 
     reports = (
@@ -618,6 +725,150 @@ def get_case_reports(
         .all()
     )
     return [_report_to_response(r, linked_case_id=cid) for r in reports]
+
+
+@router.get("/{case_id}/history", response_model=List[CaseHistoryEntry])
+def get_case_history(
+    case_id: str,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Return the timeline/audit log for a case, newest first.
+
+    Officers can only view history for their assigned cases.
+    Supervisors see only cases in their station.
+    """
+    from app.models.case import CaseHistory
+
+    try:
+        cid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(404, "Case not found")
+
+    case_q = _apply_case_access_filter(
+        db.query(Case).filter(Case.case_id == cid), current_user, db
+    )
+    if not case_q.first():
+        raise HTTPException(404, "Case not found")
+
+    rows = (
+        db.query(CaseHistory)
+        .filter(CaseHistory.case_id == cid)
+        .order_by(CaseHistory.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+        .all()
+    )
+
+    result = []
+    for row in rows:
+        name = None
+        if row.performed_by_user:
+            name = f"{row.performed_by_user.first_name} {row.performed_by_user.last_name}".strip()
+        result.append(CaseHistoryEntry(
+            history_id=row.history_id,
+            case_id=row.case_id,
+            action=row.action,
+            details=row.details,
+            performed_by=row.performed_by,
+            performed_by_name=name or "System",
+            created_at=row.created_at,
+        ))
+    return result
+
+
+@router.get("/{case_id}/geographic-breakdown", response_model=CaseGeographicBreakdown)
+def get_case_geographic_breakdown(
+    case_id: str,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    db: Session = Depends(get_db),
+):
+    """Return the district/sector/cell/village breakdown of all reports in a case.
+
+    Each entry shows how many reports originated from that administrative unit.
+    Officers see only their assigned cases; supervisors see their station's cases.
+    """
+    try:
+        cid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(404, "Case not found")
+
+    case = _apply_case_access_filter(
+        db.query(Case).filter(Case.case_id == cid), current_user, db
+    ).first()
+    if not case:
+        raise HTTPException(404, "Case not found")
+
+    # Load all reports linked to this case, with their location hierarchy
+    linked_reports = (
+        db.query(Report)
+        .join(CaseReport, CaseReport.report_id == Report.report_id)
+        .filter(CaseReport.case_id == cid)
+        .options(
+            joinedload(Report.village_location),
+        )
+        .all()
+    )
+
+    # Aggregate counts per location at each level
+    village_counts: dict[int, int] = {}
+    cell_counts: dict[int, int] = {}
+    sector_counts: dict[int, int] = {}
+
+    def _get_ancestors(loc: Location) -> dict:
+        """Walk up the hierarchy to find cell and sector parents."""
+        cell = None
+        sector = None
+        current = loc
+        while current and current.parent_location_id:
+            parent = db.query(Location).get(current.parent_location_id)
+            if not parent:
+                break
+            if parent.location_type == "cell":
+                cell = parent
+            elif parent.location_type == "sector":
+                sector = parent
+            current = parent
+        return {"cell": cell, "sector": sector}
+
+    for report in linked_reports:
+        village_loc = getattr(report, "village_location", None)
+        if not village_loc and report.village_location_id:
+            village_loc = db.query(Location).get(report.village_location_id)
+
+        if village_loc:
+            village_counts[village_loc.location_id] = village_counts.get(village_loc.location_id, 0) + 1
+            ancestors = _get_ancestors(village_loc)
+            if ancestors["cell"]:
+                cid_cell = ancestors["cell"].location_id
+                cell_counts[cid_cell] = cell_counts.get(cid_cell, 0) + 1
+            if ancestors["sector"]:
+                cid_sector = ancestors["sector"].location_id
+                sector_counts[cid_sector] = sector_counts.get(cid_sector, 0) + 1
+
+    def _make_geo_list(id_count_map: dict[int, int]) -> list[GeographicLocation]:
+        result = []
+        for loc_id, count in sorted(id_count_map.items(), key=lambda x: -x[1]):
+            loc = db.query(Location).get(loc_id)
+            if loc:
+                result.append(GeographicLocation(
+                    location_id=loc_id,
+                    location_name=loc.location_name,
+                    location_type=loc.location_type,
+                    report_count=count,
+                ))
+        return result
+
+    return CaseGeographicBreakdown(
+        case_id=case.case_id,
+        case_number=case.case_number,
+        total_reports=len(linked_reports),
+        sectors=_make_geo_list(sector_counts),
+        cells=_make_geo_list(cell_counts),
+        villages=_make_geo_list(village_counts),
+    )
 
 
 @router.patch("/{case_id}", response_model=CaseResponse)
@@ -640,21 +891,9 @@ def update_case(
         cid = UUID(case_id)
     except ValueError:
         raise HTTPException(404, "Case not found")
-    query = db.query(Case).filter(Case.case_id == cid)
-    if current_user.role == "supervisor":
-        station_id, location_ids = _supervisor_scope(current_user, db)
-        if location_ids:
-            query = query.filter(
-                or_(
-                    Case.assigned_to.has(PoliceUser.station_id == station_id),
-                    Case.location_id.in_(location_ids),
-                )
-            )
-        else:
-            query = query.filter(Case.assigned_to.has(PoliceUser.station_id == station_id))
-    elif current_user.role == "officer":
-        query = query.filter(Case.assigned_to_id == current_user.police_user_id)
-    case = query.first()
+    case = _apply_case_access_filter(
+        db.query(Case).filter(Case.case_id == cid), current_user, db
+    ).first()
     if not case:
         raise HTTPException(404, "Case not found")
     # Role-specific update rules
@@ -707,15 +946,20 @@ def update_case(
         if payload.outcome is not None:
             case.outcome = payload.outcome
     db.add(case)
+
+    # Audit trail — record every meaningful change
+    _log_case_history_entry(db, case, payload, current_user.police_user_id)
+
     db.commit()
     db.refresh(case)
-    
+
     background_tasks.add_task(manager.broadcast, {"type": "refresh_data", "entity": "case", "action": "updated"})
-    
+
     case = db.query(Case).options(
         joinedload(Case.location),
         joinedload(Case.incident_type),
         joinedload(Case.assigned_to),
+        joinedload(Case.station),
     ).filter(Case.case_id == cid).first()
     return _case_to_response(case)
 
@@ -724,6 +968,7 @@ def update_case(
 def delete_case(
     case_id: str,
     current_user: Annotated[PoliceUser, Depends(get_current_admin_or_supervisor)],
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
     """Delete a case (and its links). Admin/supervisor only."""
@@ -743,7 +988,225 @@ def delete_case(
     db.query(CaseReport).filter(CaseReport.case_id == cid).delete(synchronize_session=False)
     db.delete(case)
     db.commit()
+
+    # Re-run auto-case grouping after deletions so eligible verified reports can
+    # immediately be regrouped into cases in real time.
+    try:
+        from app.api.v1.reports import run_auto_case_realtime
+        background_tasks.add_task(run_auto_case_realtime)
+    except Exception:
+        pass
+
+    background_tasks.add_task(
+        manager.broadcast,
+        {"type": "refresh_data", "entity": "case", "action": "deleted"},
+    )
     return {}
+
+
+@router.delete("/{case_id}/reports/{report_id}", response_model=CaseResponse)
+def remove_report_from_case(
+    case_id: str,
+    report_id: str,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Remove a report from a case (unlink but don't delete the report).
+
+    - Admin: any case.
+    - Supervisor: only cases in their location.
+    - Officer: only cases assigned to them.
+    """
+    from uuid import UUID
+
+    try:
+        cid = UUID(case_id)
+    except ValueError:
+        raise HTTPException(404, "Case not found")
+
+    try:
+        rid = UUID(report_id)
+    except ValueError:
+        raise HTTPException(404, "Report not found")
+
+    case = db.query(Case).options(
+        joinedload(Case.case_reports).joinedload(CaseReport.report),
+        joinedload(Case.assigned_to),
+        joinedload(Case.created_by_user),
+        joinedload(Case.location),
+        joinedload(Case.incident_type)
+    ).filter(Case.case_id == cid).first()
+
+    if not case:
+        raise HTTPException(404, "Case not found")
+
+    # Check permissions
+    role = getattr(current_user, "role", None)
+    if role == "admin":
+        pass  # Admin can access any case
+    elif role == "supervisor":
+        supervisor_location_ids = _all_location_ids_for_scope(db, getattr(current_user, "station_id", None))
+        if case.location_id and case.location_id not in supervisor_location_ids:
+            raise HTTPException(403, "Access denied: case outside your jurisdiction")
+    elif role == "officer":
+        if case.assigned_to_id != current_user.police_user_id:
+            raise HTTPException(403, "Access denied: case not assigned to you")
+    else:
+        raise HTTPException(403, "Access denied")
+
+    # Find and remove the case-report link
+    case_report = db.query(CaseReport).filter(
+        CaseReport.case_id == cid,
+        CaseReport.report_id == rid
+    ).first()
+
+    if not case_report:
+        raise HTTPException(404, "Report not found in this case")
+
+    db.delete(case_report)
+    
+    # Update case report count
+    case.report_count = max(0, case.report_count - 1)
+    
+    db.commit()
+
+    # Refresh case data
+    db.refresh(case)
+
+    # Broadcast updates
+    background_tasks.add_task(
+        manager.broadcast,
+        {"type": "refresh_data", "entity": "case", "action": "updated"},
+    )
+    background_tasks.add_task(
+        manager.broadcast,
+        {"type": "refresh_data", "entity": "report", "action": "updated"},
+    )
+
+    return _case_to_response(case)
+
+
+@router.post("/reports/{report_id}/move", response_model=CaseResponse)
+def move_report_to_case(
+    report_id: str,
+    target_case_id: str,
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Move a report from its current case to a different case.
+    
+    - Admin: any case.
+    - Supervisor: only cases in their location.
+    - Officer: only cases assigned to them.
+    """
+    from uuid import UUID
+
+    try:
+        rid = UUID(report_id)
+    except ValueError:
+        raise HTTPException(404, "Report not found")
+
+    try:
+        target_cid = UUID(target_case_id)
+    except ValueError:
+        raise HTTPException(404, "Target case not found")
+
+    # Find the report
+    report = db.query(Report).filter(Report.report_id == rid).first()
+    if not report:
+        raise HTTPException(404, "Report not found")
+
+    # Find current case (if any)
+    current_case_report = db.query(CaseReport).filter(CaseReport.report_id == rid).first()
+    current_case = None
+    if current_case_report:
+        current_case = db.query(Case).options(
+            joinedload(Case.case_reports).joinedload(CaseReport.report),
+            joinedload(Case.assigned_to),
+            joinedload(Case.created_by_user),
+            joinedload(Case.location),
+            joinedload(Case.incident_type)
+        ).filter(Case.case_id == current_case_report.case_id).first()
+
+    # Find target case
+    target_case = db.query(Case).options(
+        joinedload(Case.case_reports).joinedload(CaseReport.report),
+        joinedload(Case.assigned_to),
+        joinedload(Case.created_by_user),
+        joinedload(Case.location),
+        joinedload(Case.incident_type)
+    ).filter(Case.case_id == target_cid).first()
+
+    if not target_case:
+        raise HTTPException(404, "Target case not found")
+
+    # Check permissions for both current and target cases
+    role = getattr(current_user, "role", None)
+    
+    def check_case_access(case, case_name):
+        if role == "admin":
+            return  # Admin can access any case
+        elif role == "supervisor":
+            supervisor_location_ids = _all_location_ids_for_scope(db, getattr(current_user, "station_id", None))
+            if case.location_id and case.location_id not in supervisor_location_ids:
+                raise HTTPException(403, f"Access denied: {case_name} outside your jurisdiction")
+        elif role == "officer":
+            if case.assigned_to_id != current_user.police_user_id:
+                raise HTTPException(403, f"Access denied: {case_name} not assigned to you")
+        else:
+            raise HTTPException(403, "Access denied")
+
+    # Check access to current case (if exists)
+    if current_case:
+        check_case_access(current_case, "current case")
+    
+    # Check access to target case
+    check_case_access(target_case, "target case")
+
+    # Validate incident type matching
+    if report.incident_type_id != target_case.incident_type_id:
+        raise HTTPException(
+            400, 
+            f"Cannot link report to case: incident type mismatch. "
+            f"Report incident type ID: {report.incident_type_id}, "
+            f"Case incident type ID: {target_case.incident_type_id}"
+        )
+
+    # If report is already in target case, do nothing
+    if current_case_report and current_case_report.case_id == target_cid:
+        return _case_to_response(target_case)
+
+    # Remove from current case (if exists)
+    if current_case_report:
+        db.delete(current_case_report)
+        if current_case:
+            current_case.report_count = max(0, current_case.report_count - 1)
+
+    # Add to target case
+    new_case_report = CaseReport(case_id=target_cid, report_id=rid)
+    db.add(new_case_report)
+    target_case.report_count += 1
+
+    db.commit()
+
+    # Refresh target case data
+    db.refresh(target_case)
+
+    # Broadcast updates
+    background_tasks.add_task(
+        manager.broadcast,
+        {"type": "refresh_data", "entity": "case", "action": "updated"},
+    )
+    background_tasks.add_task(
+        manager.broadcast,
+        {"type": "refresh_data", "entity": "report", "action": "updated"},
+    )
+
+    return _case_to_response(target_case)
 
 
 @router.post("/{case_id}/reports", response_model=CaseResponse)
@@ -801,6 +1264,24 @@ def add_reports_to_case(
             report = db.query(Report).filter(Report.report_id == rid).first()
             if not report:
                 continue
+            
+            # Validate incident type matching
+            if report.incident_type_id != case.incident_type_id:
+                raise HTTPException(
+                    400, 
+                    f"Cannot link report to case: incident type mismatch. "
+                    f"Report incident type ID: {report.incident_type_id}, "
+                    f"Case incident type ID: {case.incident_type_id}"
+                )
+            
+            # Check if report is already assigned to a different case
+            existing_case_report = db.query(CaseReport).filter(CaseReport.report_id == rid).first()
+            if existing_case_report:
+                raise HTTPException(
+                    400,
+                    f"Report is already linked to another case. Use the move functionality instead."
+                )
+            
             if current_user.role == "supervisor":
                 station_id, location_ids = _supervisor_scope(current_user, db)
                 if not _report_in_supervisor_scope(report, station_id, location_ids, db):

@@ -16,7 +16,6 @@ from app.models import (
     PoliceUser,
     PoliceReview,
     Hotspot,
-    IncidentGroup,
     ReportAssignment,
     Notification,
     AuditLog,
@@ -32,7 +31,6 @@ from app.api.v1 import (
     notifications,
     audit,
     locations,
-    incident_groups,
     cases,
     stations,
     system_config,
@@ -54,9 +52,6 @@ async def lifespan(app: FastAPI):
     # Process existing pending reports through AI on startup
     import asyncio
     import logging
-    import os
-    from app.api.v1.reports import _create_auto_cases
-    from app.core.incident_grouping import sync_incident_groups
     from app.utils.ml_evaluator import ml_evaluator
     from app.database import SessionLocal
     from app.models.report import Report
@@ -65,9 +60,6 @@ async def lifespan(app: FastAPI):
     
     logger = logging.getLogger(__name__)
     
-    # Check if Celery/Redis is available
-    CELERY_AVAILABLE = os.getenv("CELERY_ENABLED", "false").lower() == "true"
-    
     async def process_existing_reports():
         """Process existing reports that haven't been AI-evaluated"""
         try:
@@ -75,31 +67,7 @@ async def lifespan(app: FastAPI):
             
             db = SessionLocal()
             try:
-                # Check for pending reports
-                pending_count = db.query(Report).filter(
-                    or_(
-                        Report.ai_ready.is_(None),
-                        Report.ai_ready == False
-                    ),
-                    Report.verification_status.in_(['pending', 'under_review'])
-                ).count()
-                
-                logger.info(f"Found {pending_count} pending reports to process through AI")
-                
-                if pending_count == 0:
-                    return
-                
-                # Use Celery if available, otherwise fall back to direct processing
-                if CELERY_AVAILABLE:
-                    try:
-                        from app.core.tasks.report_processor import process_pending_reports
-                        result = process_pending_reports.delay()
-                        logger.info(f"Dispatched Celery task: {result.id}")
-                        return
-                    except Exception as cel_err:
-                        logger.warning(f"Celery not available, falling back to inline: {cel_err}")
-                
-                # Fallback: Process directly (batch of 50 per run, let next startup handle more)
+                # Get reports that haven't been processed by AI
                 pending_reports = db.query(Report).filter(
                     or_(
                         Report.ai_ready.is_(None),
@@ -108,7 +76,7 @@ async def lifespan(app: FastAPI):
                     Report.verification_status.in_(['pending', 'under_review'])
                 ).limit(50).all()
                 
-                logger.info(f"Processing {len(pending_reports)} reports through AI (inline)")
+                logger.info(f"Found {len(pending_reports)} reports to process through AI")
                 
                 for report in pending_reports:
                     # Run ML evaluation
@@ -141,19 +109,16 @@ async def lifespan(app: FastAPI):
                         report.rule_status = 'pending'
                 
                 db.commit()
-
-                group_stats = sync_incident_groups(db)
-                logger.info(
-                    "Materialized %s incident groups (%s created, %s updated, %s deleted)",
-                    group_stats.get("cluster_count", 0),
-                    group_stats.get("created", 0),
-                    group_stats.get("updated", 0),
-                    group_stats.get("deleted", 0),
-                )
                 
-                # Create auto cases from newly verified reports
-                case_stats = _create_auto_cases(db)
-                logger.info(f"Created {case_stats['cases_created']} new cases automatically")
+                # Auto-case/hotspot creation runs on live report/review events.
+                # Startup stays focused on AI backlog hydration for older pending rows.
+                # Safety catch-up: process already-verified unlinked reports once per startup.
+                try:
+                    from app.api.v1.reports import run_auto_case_realtime
+                    run_auto_case_realtime()
+                    logger.info("Startup auto-case catch-up completed")
+                except Exception as catchup_err:
+                    logger.warning(f"Startup auto-case catch-up failed: {catchup_err}")
                 
             finally:
                 db.close()
@@ -195,7 +160,6 @@ app.include_router(hotspots.router, prefix="/api/v1")
 app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(audit.router, prefix="/api/v1")
 app.include_router(locations.router, prefix="/api/v1")
-app.include_router(incident_groups.router, prefix="/api/v1")
 app.include_router(cases.router, prefix="/api/v1")
 app.include_router(stations.router, prefix="/api/v1")
 app.include_router(system_config.router, prefix="/api/v1")
