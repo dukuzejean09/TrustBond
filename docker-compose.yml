@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    container_name: trustbond-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: trustbond
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d trustbond"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  db-restore:
+    image: postgis/postgis:16-3.4
+    container_name: trustbond-db-restore
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: trustbond
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      DB_DUMP_FILE: /backup/trustbond.sql
+    volumes:
+      - ./trustbond.sql:/backup/trustbond.sql:ro
+      - ./docker/restore-db.sh:/restore-db.sh:ro
+    command: ["sh", "/restore-db.sh"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: trustbond-backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      db-restore:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db:5432/trustbond
+      DB_HOST: db
+      DB_PORT: 5432
+      OLLAMA_URL: http://host.docker.internal:11434
+    ports:
+      - "8000:8000"
+    volumes:
+      - backend_uploads:/app/uploads
+
+volumes:
+  postgres_data:
+  backend_uploads:
