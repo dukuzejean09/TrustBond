@@ -19,12 +19,17 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Create hotspot_reports association table for many-to-many relationship
-    op.create_table(
-        "hotspot_reports",
-        sa.Column("hotspot_id", sa.Integer, sa.ForeignKey("hotspots.hotspot_id"), primary_key=True),
-        sa.Column("report_id", sa.UUID(as_uuid=True), sa.ForeignKey("reports.report_id"), primary_key=True),
-    )
+    # Table may already exist if created by migration 001 — skip if so
+    conn = op.get_bind()
+    exists = conn.execute(
+        sa.text("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='hotspot_reports'")
+    ).fetchone()
+    if not exists:
+        op.create_table(
+            "hotspot_reports",
+            sa.Column("hotspot_id", sa.Integer, sa.ForeignKey("hotspots.hotspot_id"), primary_key=True),
+            sa.Column("report_id", sa.UUID(as_uuid=True), sa.ForeignKey("reports.report_id"), primary_key=True),
+        )
 
 
 def downgrade() -> None:
