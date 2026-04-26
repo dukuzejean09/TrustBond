@@ -10,14 +10,26 @@ services:
     autoDeploy: true
     envVars:
       - key: DATABASE_URL
-        sync: false # Set manually to your Neon.tech PostgreSQL connection string (no wrapping quotes)
+        sync: false # Set in Render dashboard: postgresql://neondb_owner:...@...neon.tech/neondb?sslmode=require&channel_binding=require
       - key: SECRET_KEY
         generateValue: true
       - key: CORS_ORIGINS
-        value: "*"
+        value: "https://trustbond-mobile-app.vercel.app,https://trustbond-backend.onrender.com"
+      - key: FRONTEND_URL
+        value: "https://trustbond-mobile-app.vercel.app"
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
       - key: CLOUDINARY_API_KEY
         sync: false
       - key: CLOUDINARY_API_SECRET
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
         sync: false
