@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ':*)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_TYSOxwo1lLM6@ep-weathered-snow-ago27130-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require\" ../.venv/Scripts/python -m alembic upgrade head)",
+      "Bash(DATABASE_URL=\"postgresql://neondb_owner:npg_TYSOxwo1lLM6@ep-weathered-snow-ago27130-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require\" ../.venv/Scripts/python -m alembic stamp head)"
+    ]
+  }
+}
