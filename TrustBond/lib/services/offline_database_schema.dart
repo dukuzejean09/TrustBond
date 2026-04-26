@@ -1,13 +1,14 @@
+import 'package:sqflite/sqflite.dart';
+
 /// SQLite schema for offline reporting queue
 /// Critical data stored locally when offline, synced when online
 
 class OfflineDatabaseSchema {
-  
   /// Main offline reports queue - COMPLETE PostgreSQL reports table
   static const String createReportsQueueTable = '''
     CREATE TABLE IF NOT EXISTS reports_queue (
       queue_id TEXT PRIMARY KEY,
-      status TEXT DEFAULT 'queued' CHECK (status IN ('queued', 'syncing', 'completed', 'failed')),
+      sync_status TEXT DEFAULT 'queued' CHECK (sync_status IN ('queued', 'syncing', 'completed', 'error')),
       attempts INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -29,7 +30,7 @@ class OfflineDatabaseSchema {
       location_id INTEGER,
       handling_station_id INTEGER,
       reported_at TEXT NOT NULL,
-      status TEXT DEFAULT 'pending',
+      report_status TEXT DEFAULT 'pending',
       is_flagged INTEGER DEFAULT 0, -- Boolean as integer
       flag_reason TEXT,
       verification_status TEXT DEFAULT 'pending',
@@ -54,7 +55,7 @@ class OfflineDatabaseSchema {
     CREATE TABLE IF NOT EXISTS evidence_queue (
       evidence_id TEXT PRIMARY KEY,
       queue_id TEXT NOT NULL,
-      status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'uploading', 'completed', 'failed')),
+      sync_status TEXT DEFAULT 'pending' CHECK (sync_status IN ('pending', 'uploading', 'completed', 'error')),
       attempts INTEGER DEFAULT 0,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
@@ -143,7 +144,9 @@ class OfflineDatabaseSchema {
       total_synced_reports INTEGER DEFAULT 0,
       total_synced_evidence INTEGER DEFAULT 0,
       sync_enabled INTEGER DEFAULT 1, -- Boolean as integer
-      network_status TEXT DEFAULT 'unknown'
+      network_status TEXT DEFAULT 'unknown',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   ''';
 
@@ -158,11 +161,11 @@ class OfflineDatabaseSchema {
 
   /// Indexes for performance
   static const List<String> indexes = [
-    'CREATE INDEX IF NOT EXISTS idx_reports_queue_status ON reports_queue(status);',
+    'CREATE INDEX IF NOT EXISTS idx_reports_queue_sync_status ON reports_queue(sync_status);',
     'CREATE INDEX IF NOT EXISTS idx_reports_queue_created_at ON reports_queue(created_at);',
     'CREATE INDEX IF NOT EXISTS idx_reports_queue_sync_priority ON reports_queue(sync_priority DESC, created_at ASC);',
     'CREATE INDEX IF NOT EXISTS idx_evidence_queue_queue_id ON evidence_queue(queue_id);',
-    'CREATE INDEX IF NOT EXISTS idx_evidence_queue_status ON evidence_queue(status);',
+    'CREATE INDEX IF NOT EXISTS idx_evidence_queue_sync_status ON evidence_queue(sync_status);',
     'CREATE INDEX IF NOT EXISTS idx_device_cache_hash ON device_cache(device_hash);',
     'CREATE INDEX IF NOT EXISTS idx_incident_types_cache_expires ON incident_types_cache(expires_at);',
   ];
@@ -175,20 +178,13 @@ class OfflineDatabaseSchema {
     for (final index in indexes) {
       await db.execute(index);
     }
-    
+
     // Initialize sync status
-    await db.insert(
-      'sync_status',
-      {
-        'id': 1,
-        'last_sync_at': DateTime.now().toIso8601String(),
-        'created_at': DateTime.now().toIso8601String(),
-        'updated_at': DateTime.now().toIso8601String(),
-      },
-      conflictAlgorithm: ConflictAlgorithm.ignore,
-    );
+    await db.insert('sync_status', {
+      'id': 1,
+      'last_sync_at': DateTime.now().toIso8601String(),
+      'created_at': DateTime.now().toIso8601String(),
+      'updated_at': DateTime.now().toIso8601String(),
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
   }
 }
-
-/// Import needed for database operations
-import 'package:sqflite/sqflite.dart';

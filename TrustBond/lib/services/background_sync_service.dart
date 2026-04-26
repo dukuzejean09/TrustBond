@@ -8,7 +8,8 @@ import 'enhanced_offline_queue.dart';
 import 'offline_database_service.dart';
 
 class BackgroundSyncService {
-  static final BackgroundSyncService _instance = BackgroundSyncService._internal();
+  static final BackgroundSyncService _instance =
+      BackgroundSyncService._internal();
   factory BackgroundSyncService() => _instance;
   BackgroundSyncService._internal();
 
@@ -17,7 +18,7 @@ class BackgroundSyncService {
 
   Timer? _periodicSyncTimer;
   Timer? _cleanupTimer;
-  StreamSubscription<ConnectivityResult>? _networkSubscription;
+  StreamSubscription<List<ConnectivityResult>>? _networkSubscription;
   bool _isRunning = false;
   bool _isSyncing = false;
 
@@ -26,19 +27,19 @@ class BackgroundSyncService {
     if (_isRunning) return;
 
     _isRunning = true;
-    
+
     // Start network listener
     _startNetworkListener();
-    
+
     // Start periodic sync (every 30 seconds)
     _startPeriodicSync();
-    
+
     // Start cleanup timer (every 6 hours)
     _startCleanupTimer();
-    
+
     // Initial sync attempt
     await _queue.syncIfNeeded();
-    
+
     debugPrint('BackgroundSyncService started');
   }
 
@@ -47,21 +48,23 @@ class BackgroundSyncService {
     if (!_isRunning) return;
 
     _isRunning = false;
-    
+
     await _networkSubscription?.cancel();
     _networkSubscription = null;
-    
+
     _periodicSyncTimer?.cancel();
     _periodicSyncTimer = null;
-    
+
     _cleanupTimer?.cancel();
     _cleanupTimer = null;
-    
+
     debugPrint('BackgroundSyncService stopped');
   }
 
   void _startNetworkListener() {
-    _networkSubscription = Connectivity().onConnectivityChanged.listen((result) {
+    _networkSubscription = Connectivity().onConnectivityChanged.listen((
+      result,
+    ) {
       if (!result.contains(ConnectivityResult.none)) {
         // Network is available, trigger sync
         debugPrint('Network available, triggering sync');
@@ -100,10 +103,10 @@ class BackgroundSyncService {
 
   Future<void> _performSync() async {
     if (_isSyncing) return;
-    
+
     _isSyncing = true;
     _updateNetworkStatus('syncing');
-    
+
     try {
       debugPrint('Starting background sync');
       await _queue.syncIfNeeded();
@@ -146,11 +149,7 @@ class BackgroundSyncService {
   /// Get current sync status
   Future<Map<String, dynamic>?> getSyncStatus() async {
     final status = await _db.getSyncStatus();
-    return {
-      ...?status,
-      'is_syncing': _isSyncing,
-      'is_running': _isRunning,
-    };
+    return {...?status, 'is_syncing': _isSyncing, 'is_running': _isRunning};
   }
 
   /// Get queue statistics

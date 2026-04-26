@@ -1,8 +1,9 @@
 /// Integration Guide for Enhanced Offline Reporting System
-/// 
+///
 /// This file shows how to integrate the new SQLite-based offline queue
 /// with your existing TrustBond reporting functionality.
 
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
@@ -12,7 +13,8 @@ import 'background_sync_service.dart';
 import 'offline_database_service.dart';
 
 class OfflineReportingIntegration {
-  static final OfflineReportingIntegration _instance = OfflineReportingIntegration._internal();
+  static final OfflineReportingIntegration _instance =
+      OfflineReportingIntegration._internal();
   factory OfflineReportingIntegration() => _instance;
   OfflineReportingIntegration._internal();
 
@@ -25,10 +27,10 @@ class OfflineReportingIntegration {
     try {
       // Initialize database
       await OfflineDatabaseService().database;
-      
+
       // Start background sync service
       await _sync.start();
-      
+
       print('Offline reporting system initialized');
     } catch (e) {
       print('Failed to initialize offline reporting: $e');
@@ -85,7 +87,9 @@ class OfflineReportingIntegration {
     final evidenceData = evidenceFiles.map((file) {
       return {
         'local_file_path': file.path,
-        'file_type': file.path.toLowerCase().endsWith('.mp4') ? 'video' : 'photo',
+        'file_type': file.path.toLowerCase().endsWith('.mp4')
+            ? 'video'
+            : 'photo',
         'file_size': file.lengthSync(),
         'captured_at': DateTime.now().toIso8601String(),
         'is_live_capture': false, // Set based on your capture logic
@@ -109,7 +113,7 @@ class OfflineReportingIntegration {
   Future<OfflineQueueStatus> getQueueStatus() async {
     final stats = await _queue.getQueueStats();
     final syncStatus = await _sync.getSyncStatus();
-    
+
     return OfflineQueueStatus(
       pendingReports: stats['queued_reports'] ?? 0,
       failedReports: stats['failed_reports'] ?? 0,
@@ -180,7 +184,10 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
   void initState() {
     super.initState();
     _refreshStatus();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (_) => _refreshStatus());
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => _refreshStatus(),
+    );
   }
 
   @override
@@ -313,11 +320,11 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
 }
 
 /// Migration from old SharedPreferences system:
-/// 
+///
 /// 1. Replace OfflineReportQueue() with EnhancedOfflineQueue()
 /// 2. Replace SharedPreferences calls with OfflineDatabaseService()
 /// 3. Initialize the system in main.dart:
-/// 
+///
 /// ```dart
 /// void main() async {
 ///   WidgetsFlutterBinding.ensureInitialized();
@@ -325,10 +332,10 @@ class _SyncStatusWidgetState extends State<SyncStatusWidget> {
 ///   runApp(MyApp());
 /// }
 /// ```
-/// 
+///
 /// 4. Update your report submission to use submitReportOffline()
 /// 5. Add SyncStatusWidget to your UI for user feedback
-/// 
+///
 /// The new system automatically handles:
 /// - SQLite storage instead of SharedPreferences
 /// - Background sync when network is available

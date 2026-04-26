@@ -19,12 +19,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Table may already exist if created by migration 001 — skip if so
+    # Table may already exist if created by migration 001 — skip if so.
     conn = op.get_bind()
-    exists = conn.execute(
-        sa.text("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='hotspot_reports'")
-    ).fetchone()
-    if not exists:
+    inspector = sa.inspect(conn)
+    if not inspector.has_table("hotspot_reports"):
         op.create_table(
             "hotspot_reports",
             sa.Column("hotspot_id", sa.Integer, sa.ForeignKey("hotspots.hotspot_id"), primary_key=True),
@@ -33,4 +31,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("hotspot_reports")
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    if inspector.has_table("hotspot_reports"):
+        op.drop_table("hotspot_reports")

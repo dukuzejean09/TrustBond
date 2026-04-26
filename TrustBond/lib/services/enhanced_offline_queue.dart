@@ -9,7 +9,8 @@ import '../services/api_service.dart';
 import '../services/offline_database_service.dart';
 
 class EnhancedOfflineQueue {
-  static final EnhancedOfflineQueue _instance = EnhancedOfflineQueue._internal();
+  static final EnhancedOfflineQueue _instance =
+      EnhancedOfflineQueue._internal();
   factory EnhancedOfflineQueue() => _instance;
   EnhancedOfflineQueue._internal();
 
@@ -29,12 +30,12 @@ class EnhancedOfflineQueue {
     // Prepare report data for SQLite
     final reportQueueData = {
       'queue_id': queueId,
-      'status': 'queued',
+      'sync_status': 'queued',
       'attempts': 0,
       'created_at': now,
       'updated_at': now,
       'sync_priority': syncPriority,
-      
+
       // Core report data
       'device_hash': reportData['device_hash'] ?? '',
       'incident_type_id': reportData['incident_type_id'],
@@ -47,7 +48,7 @@ class EnhancedOfflineQueue {
       'location_id': reportData['location_id'],
       'handling_station_id': reportData['handling_station_id'],
       'reported_at': reportData['reported_at'] ?? now,
-      'status': reportData['status'] ?? 'pending',
+      'report_status': reportData['status'] ?? 'pending',
       'is_flagged': reportData['is_flagged'] == true ? 1 : 0,
       'flag_reason': reportData['flag_reason'],
       'verification_status': reportData['verification_status'] ?? 'pending',
@@ -70,11 +71,11 @@ class EnhancedOfflineQueue {
       final evidenceQueueData = {
         'evidence_id': _uuid.v4(),
         'queue_id': queueId,
-        'status': 'pending',
+        'sync_status': 'pending',
         'attempts': 0,
         'created_at': now,
         'updated_at': now,
-        
+
         // File data
         'file_type': evidence['file_type'] ?? 'photo',
         'file_size': evidence['file_size'],
@@ -85,7 +86,7 @@ class EnhancedOfflineQueue {
         'is_live_capture': evidence['is_live_capture'] == true ? 1 : 0,
         'cloudinary_public_id': evidence['cloudinary_public_id'],
         'cloudinary_url': evidence['cloudinary_url'],
-        
+
         // Local file path
         'local_file_path': evidence['local_file_path'],
       };
@@ -95,7 +96,7 @@ class EnhancedOfflineQueue {
 
     // Update sync status
     await _updateSyncStats();
-    
+
     return queueId;
   }
 
@@ -108,11 +109,11 @@ class EnhancedOfflineQueue {
 
     try {
       final pendingReports = await _db.getPendingReports(limit: 10);
-      
+
       for (final report in pendingReports) {
         await _syncReport(report);
       }
-      
+
       await _updateSyncStats();
     } catch (e) {
       print('Sync error: $e');
@@ -122,7 +123,7 @@ class EnhancedOfflineQueue {
   Future<void> _syncReport(Map<String, dynamic> report) async {
     final queueId = report['queue_id'] as String;
     final attempts = report['attempts'] as int? ?? 0;
-    
+
     // Check if we should retry (exponential backoff)
     if (!_shouldAttempt(report)) {
       return;
@@ -135,23 +136,25 @@ class EnhancedOfflineQueue {
       // Step 1: Ensure device is registered
       String? deviceId = report['device_id'] as String?;
       final deviceHash = report['device_hash'] as String;
-      
+
       if (deviceId == null || deviceId.isEmpty) {
         final cachedDevice = await _db.getCachedDevice(deviceHash);
         if (cachedDevice != null && cachedDevice['is_registered'] == 1) {
           deviceId = cachedDevice['device_id'] as String?;
         }
-        
+
         if (deviceId == null || deviceId.isEmpty) {
           final deviceReg = await _api.registerDevice(deviceHash);
           deviceId = deviceReg['device_id']?.toString();
-          
+
           if (deviceId != null) {
             await _db.cacheDeviceData(deviceHash, {
               'device_id': deviceId,
               ...deviceReg,
             });
-            await _db.updateReportWithServerData(queueId, {'device_id': deviceId});
+            await _db.updateReportWithServerData(queueId, {
+              'device_id': deviceId,
+            });
           }
         }
       }
@@ -166,7 +169,7 @@ class EnhancedOfflineQueue {
         final reportData = _prepareReportDataForSubmission(report, deviceId);
         final result = await _api.submitReport(reportData);
         serverReportId = result['report_id']?.toString();
-        
+
         if (serverReportId != null) {
           await _db.updateReportWithServerData(queueId, {
             'report_id': serverReportId,
@@ -184,37 +187,39 @@ class EnhancedOfflineQueue {
 
       // Step 4: Mark as completed
       await _db.updateReportStatus(queueId, 'completed');
-      
     } catch (e) {
       await _handleSyncError(queueId, e, attempts);
     }
   }
 
-  Future<void> _syncEvidenceFiles(String queueId, String reportId, String deviceId) async {
+  Future<void> _syncEvidenceFiles(
+    String queueId,
+    String reportId,
+    String deviceId,
+  ) async {
     final evidenceFiles = await _db.getPendingEvidence(queueId);
-    
+
     for (final evidence in evidenceFiles) {
       final evidenceId = evidence['evidence_id'] as String;
       final attempts = evidence['attempts'] as int? ?? 0;
       final localPath = evidence['local_file_path'] as String;
-      
+
       try {
         await _db.updateEvidenceStatus(evidenceId, 'uploading');
-        
+
         await _api.uploadEvidence(
           reportId,
           deviceId,
           localPath,
           mediaLatitude: evidence['media_latitude']?.toDouble(),
           mediaLongitude: evidence['media_longitude']?.toDouble(),
-          capturedAt: evidence['captured_at'] != null 
+          capturedAt: evidence['captured_at'] != null
               ? DateTime.tryParse(evidence['captured_at'])
               : null,
           isLiveCapture: evidence['is_live_capture'] == 1,
         );
-        
+
         await _db.updateEvidenceStatus(evidenceId, 'completed');
-        
       } catch (e) {
         await _handleEvidenceError(evidenceId, e, attempts);
         if (!_isNetworkError(e)) {
@@ -225,8 +230,8 @@ class EnhancedOfflineQueue {
   }
 
   Map<String, dynamic> _prepareReportDataForSubmission(
-    Map<String, dynamic> report, 
-    String deviceId
+    Map<String, dynamic> report,
+    String deviceId,
   ) {
     return {
       'device_id': deviceId,
@@ -250,12 +255,16 @@ class EnhancedOfflineQueue {
     };
   }
 
-  Future<void> _handleSyncError(String queueId, Object error, int attempts) async {
+  Future<void> _handleSyncError(
+    String queueId,
+    Object error,
+    int attempts,
+  ) async {
     if (_isNetworkError(error)) {
       // Network error - retry with exponential backoff
       final backoff = Duration(seconds: 5 * (attempts * attempts).clamp(1, 72));
       final nextAttempt = DateTime.now().add(backoff).toIso8601String();
-      
+
       await _db.updateReportStatus(queueId, 'error', error: error.toString());
       await _db.updateReportWithServerData(queueId, {
         'attempts': attempts + 1,
@@ -267,41 +276,53 @@ class EnhancedOfflineQueue {
     }
   }
 
-  Future<void> _handleEvidenceError(String evidenceId, Object error, int attempts) async {
+  Future<void> _handleEvidenceError(
+    String evidenceId,
+    Object error,
+    int attempts,
+  ) async {
     if (_isNetworkError(error)) {
       final backoff = Duration(seconds: 10 + attempts * 5);
       final nextAttempt = DateTime.now().add(backoff).toIso8601String();
-      
-      await _db.updateEvidenceStatus(evidenceId, 'error', error: error.toString());
+
+      await _db.updateEvidenceStatus(
+        evidenceId,
+        'error',
+        error: error.toString(),
+      );
       await _db.updateEvidenceWithServerData(evidenceId, {
         'attempts': attempts + 1,
         'next_attempt_at': nextAttempt,
       });
     } else {
-      await _db.updateEvidenceStatus(evidenceId, 'error', error: error.toString());
+      await _db.updateEvidenceStatus(
+        evidenceId,
+        'error',
+        error: error.toString(),
+      );
     }
   }
 
   bool _shouldAttempt(Map<String, dynamic> item) {
     final nextAttempt = item['next_attempt_at'] as String?;
     if (nextAttempt == null) return true;
-    
+
     final parsed = DateTime.tryParse(nextAttempt);
     if (parsed == null) return true;
-    
+
     return DateTime.now().isAfter(parsed);
   }
 
   bool _isNetworkError(Object error) {
-    return error is SocketException || 
-           error is TimeoutException ||
-           error.toString().contains('Network') ||
-           error.toString().contains('Connection');
+    return error is SocketException ||
+        error is TimeoutException ||
+        error.toString().contains('Network') ||
+        error.toString().contains('Connection');
   }
 
   Future<void> _updateSyncStats() async {
     final stats = await _db.getQueueStats();
-    
+
     await _db.updateSyncStatus({
       'last_sync_at': DateTime.now().toIso8601String(),
       'pending_reports': stats['queued_reports'] ?? 0,
@@ -333,9 +354,9 @@ class EnhancedOfflineQueue {
 
   Future<void> retryAllFailed() async {
     final pendingReports = await _db.getPendingReports();
-    
+
     for (final report in pendingReports) {
-      if (report['status'] == 'error') {
+      if (report['sync_status'] == 'error') {
         await retryFailedReport(report['queue_id'] as String);
       }
     }
