@@ -31,24 +31,16 @@ class PrivacySecurityScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             _buildSection(
-              'Pseudonymous Reporting',
-              'Reports are tied to a local device identity so TrustBond can score reliability without asking for your name or public profile. Your identity is pseudonymous: it is not shared publicly, but the device token is stored to prevent spam and enable trust scoring.',
+              'Anonymity First',
+              'Reports are submitted anonymously. We generate a unique device ID to track your trust score without storing your personal identity.',
             ),
             _buildSection(
               'Data Encryption',
-              'Reports and evidence are protected during transfer using HTTPS and stored on secured backend services. Access is limited to authorised TrustBond and police workflows.',
+              'All evidence and reports are encrypted in transit and at rest. Only authorized personnel can view the details of verified reports.',
             ),
             _buildSection(
               'Location Privacy',
-              'Your location is captured when you submit a report so it can be routed, clustered, and investigated correctly. TrustBond does not continuously track your live movement.',
-            ),
-            _buildSection(
-              'AI-Assisted Verification',
-              'Submitted reports are scored by a machine-learning credibility model and rules engine. High-confidence reports may be verified automatically; others are queued for police review. The AI assists, but human officers retain final authority.',
-            ),
-            _buildSection(
-              'Your Rights',
-              'You can clear all locally stored data at any time from Settings → Clear All Data. You can also export your locally stored report history as a JSON file from Settings → Export My Data.',
+              'We use your location solely to route the report to the correct authorities in the Musanze district. Your real-time location is never tracked continuously.',
             ),
           ],
         ),

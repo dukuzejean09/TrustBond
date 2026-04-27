@@ -135,52 +135,15 @@ class StatusBadge extends StatelessWidget {
 
 enum BadgeType { ok, warn, err, info, mute }
 
-String _normalizeStatus(String? status) {
-  return (status ?? '').trim().toLowerCase();
-}
+enum DeliveryUiState { pending, syncing, sent, failed }
 
-String resolveReportLifecycleStatus({
-  String? verificationStatus,
-  String? status,
-  String? ruleStatus,
-}) {
-  final resolvedVerification = _normalizeStatus(verificationStatus);
-  if (resolvedVerification.isNotEmpty) return resolvedVerification;
-
-  final resolvedStatus = _normalizeStatus(status);
-  if (resolvedStatus.isNotEmpty) return resolvedStatus;
-
-  return _normalizeStatus(ruleStatus);
-}
-
-bool isVerifiedStatus(String status) {
-  final normalized = _normalizeStatus(status);
-  return normalized == 'confirmed' ||
-      normalized == 'verified' ||
-      normalized == 'trusted' ||
-      normalized == 'passed' ||
-      normalized == 'ai_verified';
-}
-
-bool isQueuedStatus(String status) {
-  final normalized = _normalizeStatus(status);
-  return normalized == 'pending' || normalized == 'processing';
-}
-
-bool isExceptionStatus(String status) {
-  final normalized = _normalizeStatus(status);
-  return normalized == 'under_review' ||
-      normalized == 'investigating' ||
-      normalized == 'flagged';
-}
-
-/// Converts a lifecycle status string to a BadgeType.
+/// Converts a rule_status string to a BadgeType.
 BadgeType badgeTypeFromStatus(String status) {
-  final normalized = _normalizeStatus(status);
-  return switch (normalized) {
-    'confirmed' || 'verified' || 'trusted' || 'passed' || 'ai_verified' => BadgeType.ok,
-    'pending' || 'processing' || 'investigating' || 'under_review' || 'flagged' => BadgeType.warn,
+  return switch (status.toLowerCase()) {
+    'confirmed' || 'verified' || 'trusted' => BadgeType.ok,
+    'investigating' || 'under_review' || 'flagged' => BadgeType.warn,
     'rejected' || 'false_report' => BadgeType.err,
+    'ai_verified' => BadgeType.info,
     _ => BadgeType.mute,
   };
 }
@@ -197,6 +160,10 @@ class ReportItemCard extends StatelessWidget {
   final VoidCallback? onTap;
   final String? reportNumber;
   final double? trustScore;
+  final DeliveryUiState? deliveryState;
+  final bool showDeliveryIndicator;
+  final VoidCallback? onRetryTap;
+  final bool showRetryLink;
 
   const ReportItemCard({
     super.key,
@@ -210,6 +177,10 @@ class ReportItemCard extends StatelessWidget {
     this.onTap,
     this.reportNumber,
     this.trustScore,
+    this.deliveryState,
+    this.showDeliveryIndicator = false,
+    this.onRetryTap,
+    this.showRetryLink = false,
   });
 
   @override
@@ -255,7 +226,7 @@ class ReportItemCard extends StatelessWidget {
                       [
                         if (reportNumber != null) reportNumber,
                         if (trustScore != null) '${(trustScore ?? 0).round()}/100',
-                      ].join(' - '),
+                      ].join(' · '),
                       style: const TextStyle(
                         fontSize: 10,
                         color: AppColors.muted,
@@ -458,21 +429,6 @@ Color colorForIncidentType(String typeName) {
 
 /// Formats a snake_case rule status into Title Case.
 String formatStatus(String status) {
-  final normalized = status.toLowerCase();
-  switch (normalized) {
-    case 'passed':
-    case 'trusted':
-    case 'ai_verified':
-      return 'AI Verified';
-    case 'pending':
-    case 'processing':
-      return 'AI Triage';
-    case 'under_review':
-      return 'Exception Review';
-    case 'flagged':
-      return 'Exception Queue';
-  }
-
   return status
       .replaceAll('_', ' ')
       .split(' ')
@@ -484,4 +440,3 @@ String formatStatus(String status) {
 String timeAgo(DateTime dt) {
   return formatTimeAgo(dt);
 }
-

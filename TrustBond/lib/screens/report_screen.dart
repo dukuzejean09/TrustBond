@@ -1,12 +1,15 @@
-import 'dart:io';
+// ignore_for_file: use_build_context_synchronously, deprecated_member_use
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 
-import 'package:flutter/foundation.dart' show defaultTargetPlatform, TargetPlatform, kIsWeb;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, TargetPlatform, kIsWeb, kDebugMode, debugPrint;
 
 import 'package:geolocator/geolocator.dart';
 
 import 'package:image_picker/image_picker.dart';
+import 'package:exif/exif.dart';
 
 import '../services/api_service.dart';
 
@@ -18,7 +21,7 @@ import '../models/report_model.dart';
 
 import '../models/evidence_attachment.dart';
 
-
+import 'package:trustbond/services/mobile_verification_service.dart';
 
 /// Camera works only on Android/iOS. On Windows/Web use gallery.
 
@@ -75,6 +78,96 @@ class _ReportScreenState extends State<ReportScreen> {
   bool _isSubmitting = false;
 
   final List<EvidenceAttachment> _attachments = [];
+
+  double? _exifToDouble(dynamic value) {
+    // exif package may return Ratio / IfdRatios / num / String.
+    try {
+      if (value == null) return null;
+      if (value is num) return value.toDouble();
+      final s = value.toString();
+      // Ratio typically renders as "123/100" or "12"
+      if (s.contains('/')) {
+        final parts = s.split('/');
+        if (parts.length == 2) {
+          final a = double.tryParse(parts[0].trim());
+          final b = double.tryParse(parts[1].trim());
+          if (a != null && b != null && b != 0) return a / b;
+        }
+      }
+      return double.tryParse(s.trim());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  double? _exifGpsToDecimal(dynamic gpsValues, String? ref) {
+    try {
+      if (gpsValues == null) return null;
+      final list = gpsValues is List ? gpsValues : null;
+      if (list == null || list.length < 3) return null;
+      final deg = _exifToDouble(list[0]);
+      final min = _exifToDouble(list[1]);
+      final sec = _exifToDouble(list[2]);
+      if (deg == null || min == null || sec == null) return null;
+      var dec = deg + (min / 60.0) + (sec / 3600.0);
+      final r = (ref ?? '').toUpperCase().trim();
+      if (r == 'S' || r == 'W') dec = -dec;
+      return dec;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  DateTime? _parseExifDateTime(dynamic value) {
+    try {
+      if (value == null) return null;
+      final s = value.toString().trim();
+      // EXIF often uses "YYYY:MM:DD HH:MM:SS"
+      if (s.length >= 19 && s[4] == ':' && s[7] == ':' && s[10] == ' ') {
+        final yyyy = int.parse(s.substring(0, 4));
+        final mm = int.parse(s.substring(5, 7));
+        final dd = int.parse(s.substring(8, 10));
+        final hh = int.parse(s.substring(11, 13));
+        final mi = int.parse(s.substring(14, 16));
+        final ss = int.parse(s.substring(17, 19));
+        return DateTime(yyyy, mm, dd, hh, mi, ss);
+      }
+      // fallback to DateTime.parse if it happens to be ISO-like
+      return DateTime.tryParse(s);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  Future<({DateTime? capturedAt, double? lat, double? lon, bool hasExif, String? error})>
+      _readImageExifForAttachment(String filePath) async {
+    try {
+      final bytes = await File(filePath).readAsBytes();
+      final Map<String, IfdTag> exifData = await readExifFromBytes(bytes);
+      if (exifData.isEmpty) {
+        return (capturedAt: null, lat: null, lon: null, hasExif: false, error: null);
+      }
+
+      // Keys vary; try common ones.
+      final dt =
+          _parseExifDateTime(exifData['EXIF DateTimeOriginal']?.printable) ??
+          _parseExifDateTime(exifData['Image DateTime']?.printable) ??
+          _parseExifDateTime(exifData['EXIF DateTimeDigitized']?.printable);
+
+      final lat = _exifGpsToDecimal(
+        exifData['GPS GPSLatitude']?.values,
+        exifData['GPS GPSLatitudeRef']?.printable,
+      );
+      final lon = _exifGpsToDecimal(
+        exifData['GPS GPSLongitude']?.values,
+        exifData['GPS GPSLongitudeRef']?.printable,
+      );
+
+      return (capturedAt: dt, lat: lat, lon: lon, hasExif: true, error: null);
+    } catch (e) {
+      return (capturedAt: null, lat: null, lon: null, hasExif: false, error: e.toString());
+    }
+  }
 
 
 
@@ -328,24 +421,41 @@ class _ReportScreenState extends State<ReportScreen> {
 
         setState(() {
 
+          // Gallery selection: try to extract EXIF capture time and GPS when available.
+          // If EXIF missing (common after edits / some share flows), we keep nulls and backend will treat as warning.
           _attachments.add(EvidenceAttachment(
 
             path: image.path,
 
             isVideo: false,
 
-            // Gallery selection: we may not know true capture location/time
-
             capturedAt: null,
-
             mediaLatitude: null,
-
             mediaLongitude: null,
-
             isLiveCapture: false,
 
           ));
 
+        });
+
+        // Populate EXIF asynchronously (avoid blocking UI thread).
+        final exif = await _readImageExifForAttachment(image.path);
+        if (!mounted) return;
+        setState(() {
+          final idx = _attachments.lastIndexWhere((a) => a.path == image.path);
+          if (idx >= 0) {
+            final existing = _attachments[idx];
+            _attachments[idx] = EvidenceAttachment(
+              path: existing.path,
+              isVideo: existing.isVideo,
+              capturedAt: exif.capturedAt ?? existing.capturedAt,
+              mediaLatitude: exif.lat ?? existing.mediaLatitude,
+              mediaLongitude: exif.lon ?? existing.mediaLongitude,
+              isLiveCapture: existing.isLiveCapture,
+              hasExif: exif.hasExif,
+              exifParseError: exif.error,
+            );
+          }
         });
 
       }
@@ -384,17 +494,37 @@ class _ReportScreenState extends State<ReportScreen> {
 
             isVideo: true,
 
+            // Gallery video: EXIF is not reliable; use filesystem modified time as a best-effort timestamp.
             capturedAt: null,
-
             mediaLatitude: null,
-
             mediaLongitude: null,
-
             isLiveCapture: false,
 
           ));
 
         });
+
+        // Best-effort timestamp for videos
+        try {
+          final ts = await File(video.path).lastModified();
+          if (!mounted) return;
+          setState(() {
+            final idx = _attachments.lastIndexWhere((a) => a.path == video.path);
+            if (idx >= 0) {
+              final existing = _attachments[idx];
+              _attachments[idx] = EvidenceAttachment(
+                path: existing.path,
+                isVideo: existing.isVideo,
+                capturedAt: existing.capturedAt ?? ts,
+                mediaLatitude: existing.mediaLatitude,
+                mediaLongitude: existing.mediaLongitude,
+                isLiveCapture: existing.isLiveCapture,
+                hasExif: false,
+                exifParseError: null,
+              );
+            }
+          });
+        } catch (_) {}
 
       }
 
@@ -690,7 +820,64 @@ class _ReportScreenState extends State<ReportScreen> {
 
       MotionSample motion = await collectMotionSample(durationSeconds: 1.2);
 
+      // Perform mobile rule-based verification
+      final verificationService = MobileVerificationService();
+      final evidenceFiles = _attachments.map((att) => File(att.path)).toList();
+      final evidenceMetadata = _attachments.map((att) => {
+        'mediaLatitude': att.mediaLatitude,
+        'mediaLongitude': att.mediaLongitude,
+        'capturedAt': att.capturedAt?.toIso8601String(),
+        'isLiveCapture': att.isLiveCapture,
+      }).toList();
 
+      final mobileVerification = await verificationService.verifyReport(
+        reportLocation: _currentPosition!,
+        evidenceFiles: evidenceFiles,
+        evidenceMetadata: evidenceMetadata,
+      );
+
+      if (kDebugMode) {
+        debugPrint('Mobile verification result: ${mobileVerification.status}');
+        debugPrint('Location consistency: ${mobileVerification.locationConsistencyCheck}');
+        debugPrint('Evidence source valid: ${mobileVerification.evidenceSourceValid}');
+        debugPrint('Tampering detected: ${mobileVerification.evidenceTamperingDetected}');
+      }
+
+      // Block submission if verification fails due to non-original evidence
+      if (mobileVerification.status == "failed") {
+        String errorMessage = "Cannot submit report: ";
+        
+        if (!mobileVerification.evidenceSourceValid) {
+          errorMessage += "Evidence appears to be downloaded or not original. Please use original photos/videos taken at the scene.";
+        } else if (mobileVerification.evidenceTamperingDetected) {
+          errorMessage += "Evidence appears to be a screenshot or screen recording. Please use original photos/videos taken at the scene.";
+        } else if (!mobileVerification.locationConsistencyCheck) {
+          errorMessage += "Evidence location does not match report location. Please ensure evidence was taken at the reported location.";
+        } else {
+          errorMessage += "Evidence verification failed. Please use original photos/videos taken at the scene.";
+        }
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errorMessage),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+        setState(() => _isSubmitting = false);
+        return;
+      }
+
+      // Show warning if verification has warnings but allow submission
+      if (mobileVerification.status == "warning") {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Warning: Some evidence may not be original. Report will be submitted but may be flagged for review."),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
 
       final report = ReportModel(
 
@@ -718,9 +905,11 @@ class _ReportScreenState extends State<ReportScreen> {
 
       );
 
+      // Add mobile verification results to report data
+      final reportData = report.toJson();
+      reportData.addAll(mobileVerification.toJson());
 
-
-      final result = await _apiService.submitReport(report.toJson());
+      final result = await _apiService.submitReport(reportData);
 
       final reportId = result['report_id'] as String?;
 

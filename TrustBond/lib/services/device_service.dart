@@ -53,12 +53,6 @@ class DeviceService {
     await prefs.setString(_deviceIdKey, deviceId);
   }
 
-  Future<void> clearLocalIdentity() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove(_deviceHashKey);
-    await prefs.remove(_deviceIdKey);
-  }
-
   /// Ensure a backend device_id exists and is cached locally.
   /// Returns null if registration could not be completed.
   Future<String?> ensureDeviceId({ApiService? apiService}) async {

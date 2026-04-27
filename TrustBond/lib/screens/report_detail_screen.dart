@@ -114,11 +114,6 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildAppBar(ReportDetailItem r) {
-    final lifecycleStatus = resolveReportLifecycleStatus(
-      verificationStatus: r.verificationStatus,
-      status: r.status,
-      ruleStatus: r.ruleStatus,
-    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 20, 12),
       child: Row(
@@ -145,8 +140,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             ),
           ),
           StatusBadge(
-            label: formatStatus(lifecycleStatus),
-            type: badgeTypeFromStatus(lifecycleStatus),
+            label: formatStatus(r.workflowStatus),
+            type: badgeTypeFromStatus(r.workflowStatus),
           ),
         ],
       ),
@@ -154,12 +149,8 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildStatusCard(ReportDetailItem r) {
-    final lifecycleStatus = resolveReportLifecycleStatus(
-      verificationStatus: r.verificationStatus,
-      status: r.status,
-      ruleStatus: r.ruleStatus,
-    );
-    final color = _statusColor(lifecycleStatus);
+    final status = r.workflowStatus;
+    final color = _statusColor(status);
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -176,7 +167,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               shape: BoxShape.circle,
               color: color.withValues(alpha: 0.15),
             ),
-            child: Icon(_statusIcon(lifecycleStatus), color: color, size: 20),
+            child: Icon(_statusIcon(status), color: color, size: 20),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -184,14 +175,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  formatStatus(lifecycleStatus),
+                  formatStatus(status),
                   style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w700,
                       color: color),
                 ),
                 Text(
-                  _statusDescription(lifecycleStatus),
+                  _statusDescription(status),
                   style:
                       const TextStyle(fontSize: 11, color: AppColors.muted),
                 ),
@@ -209,7 +200,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       _infoRow('Submitted', _formatDate(r.reportedAt)),
       _infoRow('Report', r.reportNumber ?? r.reportId.substring(0, r.reportId.length.clamp(0, 12))),
     ];
-    if (r.trustScore != null) {
+    if (r.workflowStatus == 'verified' && r.trustScore != null) {
       rows.add(_infoRow('Trust score', '${r.trustScore!.round()} / 100'));
     }
     if (r.contextTags.isNotEmpty) {
@@ -312,12 +303,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           itemCount: r.evidenceFiles.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          separatorBuilder: (context, index) => const SizedBox(width: 8),
           itemBuilder: (context, i) {
             final ev = r.evidenceFiles[i];
             final url = ApiConfig.evidenceFileUrl(ev.fileUrl);
             final isPhoto = ev.fileType.toLowerCase() == 'photo';
-            final quality = ev.qualityLabel;
+            final quality = ev.aiQualityLabel;
             return GestureDetector(
               onTap: () {
                 if (isPhoto) {
@@ -342,7 +333,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
                             width: 80,
                             height: 80,
                             fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
+                            errorBuilder: (context, error, stackTrace) => Container(
                               width: 80,
                               height: 80,
                               color: AppColors.surface3,
@@ -392,9 +383,11 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   bool _hasEvidenceQualityOrML(ReportDetailItem r) {
     if (r.trustScore != null) return true;
     for (final ev in r.evidenceFiles) {
-      if (ev.qualityLabel != null ||
+      if (ev.aiQualityLabel != null ||
           ev.blurScore != null ||
-          ev.tamperScore != null) return true;
+          ev.tamperScore != null) {
+        return true;
+      }
     }
     return false;
   }
@@ -412,7 +405,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
       const SizedBox(height: 10),
     ];
 
-    if (r.trustScore != null) {
+    if (r.workflowStatus == 'verified' && r.trustScore != null) {
       final score = (r.trustScore ?? 0).round();
       rows.add(Padding(
         padding: const EdgeInsets.only(bottom: 8),
@@ -433,14 +426,14 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
     for (var i = 0; i < r.evidenceFiles.length; i++) {
       final ev = r.evidenceFiles[i];
-      final hasQuality = ev.qualityLabel != null ||
+      final hasQuality = ev.aiQualityLabel != null ||
           ev.blurScore != null ||
           ev.tamperScore != null;
       if (!hasQuality) continue;
 
       final parts = <String>[
         ev.fileType == 'video' ? 'Video ${i + 1}' : 'Photo ${i + 1}',
-        if (ev.qualityLabel != null) 'Quality: ${ev.qualityLabel}',
+        if (ev.aiQualityLabel != null) 'Quality: ${ev.aiQualityLabel}',
         if (ev.blurScore != null) 'Blur: ${(ev.blurScore ?? 0).toStringAsFixed(2)}',
         if (ev.tamperScore != null) 'Tamper: ${(ev.tamperScore ?? 0).toStringAsFixed(2)}',
       ];
@@ -453,7 +446,7 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                parts.join(' - '),
+                parts.join(' · '),
                 style: const TextStyle(fontSize: 11, color: AppColors.muted),
               ),
             ),
@@ -466,53 +459,23 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
   }
 
   Widget _buildTimeline(ReportDetailItem r) {
-    final normalized = resolveReportLifecycleStatus(
-      verificationStatus: r.verificationStatus,
-      status: r.status,
-      ruleStatus: r.ruleStatus,
-    );
-    final validated = normalized != 'pending' && normalized != 'processing';
-    final autoVerified = isVerifiedStatus(normalized);
-    final exceptionQueued = isExceptionStatus(normalized);
-    final rejected = normalized == 'rejected' || normalized == 'false_report';
-    final aiDecisionMade = autoVerified || exceptionQueued || rejected;
+    final validated = r.ruleStatus != 'pending';
+    // Backend uses rule_status values like "passed" for auto-verified reports.
+    // Treat "passed" as verified in the mobile timeline.
+    final verified = r.ruleStatus == 'passed' ||
+        r.ruleStatus == 'confirmed' ||
+        r.ruleStatus == 'verified' ||
+        r.ruleStatus == 'trusted';
 
     final steps = [
       _Step('Submitted', _formatDate(r.reportedAt), true, true),
-      _Step(
-        'Rule Validation',
-        validated ? 'Complete' : 'Processing...',
-        validated,
-        !validated,
-      ),
-      _Step(
-        'AI Decision',
-        autoVerified
-            ? 'Accepted by automated checks'
-            : exceptionQueued
-                ? 'Sent to exception handling'
-                : rejected
-                    ? 'Rejected by verification pipeline'
-                    : 'Pending',
-        aiDecisionMade,
-        !aiDecisionMade && validated,
-      ),
-      _Step(
-        exceptionQueued ? 'Exception Handling' : 'Case & Hotspot Routing',
-        autoVerified
-            ? 'Eligible for grouping, hotspots, and case routing'
-            : exceptionQueued
-                ? 'Officer override is only used when AI needs help'
-                : rejected
-                    ? 'Not routed to case grouping'
-                    : 'Waiting for AI decision',
-        autoVerified || rejected,
-        exceptionQueued,
-      ),
+      _Step('Rule Validation', validated ? 'Complete' : 'Processing...', validated, !validated),
+      _Step('AI Verification', verified ? 'Verified' : 'Pending', verified, !verified && validated),
+      _Step('Police Review', 'Waiting', false, false),
     ];
 
     return _card([
-      const Text('Verification Timeline',
+      const Text('Processing Timeline',
           style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600)),
       const SizedBox(height: 14),
       ...List.generate(steps.length, (i) {
@@ -616,51 +579,37 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
 
   Color _statusColor(String status) {
     final s = status.toLowerCase();
-    if (s == 'confirmed' ||
-        s == 'verified' ||
-        s == 'trusted' ||
-        s == 'passed' ||
-        s == 'ai_verified') {
+    if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed') {
       return AppColors.ok;
     }
-    if (s == 'pending' || s == 'processing' || s == 'under_review' || s == 'investigating' || s == 'flagged') {
-      return AppColors.warn;
-    }
+    if (s == 'flagged') return AppColors.warn;
     if (s == 'rejected') return AppColors.danger;
     return AppColors.accent2;
   }
 
   IconData _statusIcon(String status) {
     final s = status.toLowerCase();
-    if (s == 'confirmed' ||
-        s == 'verified' ||
-        s == 'trusted' ||
-        s == 'passed' ||
-        s == 'ai_verified') {
+    if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed') {
       return Icons.check_circle;
     }
-    if (s == 'pending' || s == 'processing' || s == 'under_review' || s == 'investigating' || s == 'flagged') {
-      return Icons.hourglass_top;
-    }
+    if (s == 'flagged') return Icons.warning_rounded;
     if (s == 'rejected') return Icons.cancel;
     return Icons.hourglass_bottom;
   }
 
   String _statusDescription(String status) {
     final s = status.toLowerCase();
-    if (s == 'confirmed' || s == 'verified' || s == 'trusted' || s == 'passed' || s == 'ai_verified') {
-      return 'This report cleared automated verification and can feed case grouping and hotspot analysis.';
+    if (s == 'confirmed' || s == 'verified') {
+      return 'This report has been verified and accepted.';
     }
-    if (s == 'pending' || s == 'processing') {
-      return 'This report is still in AI triage before it can be routed.';
+    if (s == 'passed' || s == 'trusted') {
+      return 'This report passed automated checks and is awaiting police review.';
     }
-    if (s == 'under_review' || s == 'investigating' || s == 'flagged') {
-      return 'This report is in exception handling and may need a manual override.';
+    if (s == 'flagged') {
+      return 'This report has been flagged for review.';
     }
-    if (s == 'rejected') {
-      return 'This report was rejected by the verification pipeline.';
-    }
-    return 'This report is moving through automated checks.';
+    if (s == 'rejected') return 'This report did not pass validation.';
+    return 'This report is being processed by our system.';
   }
 
   String _formatDate(DateTime dt) {
@@ -807,15 +756,12 @@ class _ReportDetailScreenState extends State<ReportDetailScreen> {
         longitude: r.longitude,
         reportedAt: r.reportedAt,
         ruleStatus: r.ruleStatus,
-        status: r.status,
-        verificationStatus: r.verificationStatus,
         evidenceFiles: r.evidenceFiles,
         trustScore: r.trustScore,
         reportNumber: r.reportNumber,
         contextTags: r.contextTags,
         isFlagged: r.isFlagged,
         flagReason: r.flagReason,
-        verifiedAt: r.verifiedAt,
         communityVotes: currentVotes,
         userVote: vote,
       );
@@ -845,4 +791,3 @@ class _Step {
 
   _Step(this.label, this.sub, this.done, this.active);
 }
-
