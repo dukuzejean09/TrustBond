@@ -97,14 +97,6 @@ def apply_ai_enhanced_rules(
     if stale_reason:
         return "flagged", True, stale_reason
 
-    evidence_reason = _evidence_quality_reason(report, db)
-    if evidence_reason:
-        if evidence_reason == "evidence_tamper_or_poor_quality":
-            return "rejected", True, evidence_reason
-        if base_status == "rejected":
-            return base_status, base_flagged, base_reason
-        return "flagged", True, evidence_reason
-
     # 2) Incident type vs description mismatch (semantic first, keyword fallback).
     gibberish = _gibberish_description(report)
     if gibberish:
@@ -206,39 +198,10 @@ def _stale_evidence_reason(report: Report, db: Optional[Session]) -> Optional[st
     return None
 
 
-def _evidence_quality_reason(report: Report, db: Optional[Session]) -> Optional[str]:
-    """Read stored evidence AI metrics and turn them into lifecycle signals."""
-    if db is None or not report or not report.report_id:
-        return None
-
-    evidence_rows = (
-        db.query(EvidenceFile.tamper_score, EvidenceFile.blur_score, EvidenceFile.quality_label)
-        .filter(EvidenceFile.report_id == report.report_id)
-        .all()
-    )
-    if not evidence_rows:
-        return None
-
-    for tamper_score, blur_score, quality_label in evidence_rows:
-        tamper = float(tamper_score) if tamper_score is not None else None
-        blur = float(blur_score) if blur_score is not None else None
-        quality = str(getattr(quality_label, "value", quality_label) or "").strip().lower()
-
-        if tamper is not None and tamper >= 0.75:
-            return "evidence_tamper_or_poor_quality"
-        if quality == "poor":
-            return "evidence_tamper_or_poor_quality"
-        if tamper is not None and tamper >= 0.4:
-            return "evidence_quality_review"
-        if quality == "fair":
-            return "evidence_quality_review"
-        if blur is not None and blur < 10.0:
-            return "evidence_quality_review"
-    return None
-
-
 def _incident_description_mismatch(report: Report, db: Optional[Session]) -> bool:
     """Heuristic mismatch check between selected incident type and free-text description."""
+    import re
+
     if db is None:
         return False
     description = (getattr(report, "description", None) or "").strip().lower()
@@ -256,36 +219,93 @@ def _incident_description_mismatch(report: Report, db: Optional[Session]) -> boo
     if not it or not getattr(it, "type_name", None):
         return False
 
-    type_name = str(it.type_name).strip().lower()
-    keywords = {
-        "theft": {"steal", "stolen", "rob", "robbed", "snatch", "burglary", "thief"},
-        "vandalism": {"damage", "destroy", "broken", "graffiti", "deface"},
-        "suspicious activity": {"suspicious", "strange", "unknown", "lurking", "watching"},
-        "domestic violence": {"husband", "wife", "family", "home", "domestic", "partner", "beating"},
-        "drug activity": {"drug", "weed", "cocaine", "heroin", "dealer", "selling", "pills"},
-        "fraud/scam": {"scam", "fraud", "fake", "con", "money transfer", "phishing"},
-        "harassment": {"harass", "threat", "stalk", "intimidat", "abuse"},
-        "traffic incident": {"accident", "crash", "collision", "vehicle", "road", "car"},
-        "assault": {"assault", "attack", "fight", "hit", "beaten", "injur", "violence"},
+    type_name = str(it.type_name).strip()
+
+    # Canonical profiles + aliases so DB names like "Theft/Robbery" still map.
+    keyword_profiles = {
+        "theft": {
+            "aliases": {"theft", "robbery", "stealing", "burglary", "snatching"},
+            "keywords": {"steal", "stolen", "rob", "robbed", "snatch", "burglary", "thief", "phone grabbed", "pickpocket"},
+        },
+        "assault": {
+            "aliases": {"assault", "physical assault", "violence", "attack"},
+            "keywords": {"assault", "attack", "fight", "hit", "beaten", "injur", "violent", "punched", "stab", "cut", "kicked"},
+        },
+        "vandalism": {
+            "aliases": {"vandalism", "property damage", "destruction"},
+            "keywords": {"damage", "destroy", "broken", "graffiti", "deface", "smashed", "window broken", "burned property"},
+        },
+        "suspicious activity": {
+            "aliases": {"suspicious activity", "suspicious", "unusual activity"},
+            "keywords": {"suspicious", "strange", "unknown", "lurking", "watching", "loiter", "following", "unusual"},
+        },
+        "domestic violence": {
+            "aliases": {"domestic violence", "domestic abuse", "family violence", "partner violence"},
+            "keywords": {"husband", "wife", "family", "home", "domestic", "partner", "beating", "spouse", "child abuse", "household fight"},
+        },
+        "drug activity": {
+            "aliases": {"drug activity", "drug abuse", "drug dealing", "narcotics"},
+            "keywords": {"drug", "weed", "cocaine", "heroin", "dealer", "selling", "pills", "narcotic", "meth", "marijuana"},
+        },
+        "fraud/scam": {
+            "aliases": {"fraud", "scam", "fraud/scam", "financial fraud", "con"},
+            "keywords": {"scam", "fraud", "fake", "con", "money transfer", "phishing", "swindle", "mobile money scam", "impersonation"},
+        },
+        "harassment": {
+            "aliases": {"harassment", "threat", "intimidation", "stalking"},
+            "keywords": {"harass", "threat", "stalk", "intimidat", "abuse", "insult", "bully", "sexual harassment", "verbal abuse"},
+        },
+        "traffic incident": {
+            "aliases": {"traffic incident", "road accident", "traffic accident", "collision"},
+            "keywords": {"accident", "crash", "collision", "vehicle", "road", "car", "motorcycle", "knocked", "hit by car"},
+        },
+        "homicide": {
+            "aliases": {"homicide", "murder", "killing", "death"},
+            "keywords": {"killed", "kill", "murder", "dead", "homicide", "stabbed to death", "shot dead"},
+        },
     }
-    own = keywords.get(type_name)
-    if not own:
+
+    normalized_type = re.sub(r"\s+", " ", type_name.lower()).strip()
+
+    selected_profile: Optional[str] = None
+    for profile, cfg in keyword_profiles.items():
+        aliases = cfg["aliases"]
+        if normalized_type == profile or normalized_type in aliases:
+            selected_profile = profile
+            break
+        if any(alias in normalized_type for alias in aliases):
+            selected_profile = profile
+            break
+
+    if selected_profile is None:
         return False
 
-    own_hits = any(k in description for k in own)
-    # If user chose a known type but the description contains no related signal,
-    # require review (prevents "assault" + random text from passing).
-    if not own_hits:
-        return True
-    other_hits = 0
-    for t, ks in keywords.items():
-        if t == type_name:
-            continue
-        if any(k in description for k in ks):
-            other_hits += 1
+    def _score_keywords(text: str, terms: set[str]) -> int:
+        score = 0
+        for term in terms:
+            if " " in term:
+                if term in text:
+                    score += 2
+            elif term in text:
+                score += 1
+        return score
 
-    # If description strongly matches other types too, keep mismatch as well.
-    return other_hits >= 1
+    selected_terms = keyword_profiles[selected_profile]["keywords"]
+    selected_score = _score_keywords(description, selected_terms)
+
+    # If selected type has no meaningful signal in description, flag for review.
+    if selected_score == 0:
+        return True
+
+    best_other_score = 0
+    for profile, cfg in keyword_profiles.items():
+        if profile == selected_profile:
+            continue
+        best_other_score = max(best_other_score, _score_keywords(description, cfg["keywords"]))
+
+    # Mismatch when description is clearly more consistent with another incident class.
+    # Use a margin to avoid flagging mixed but plausible narratives.
+    return best_other_score >= max(2, selected_score + 2)
 
 
 def _gibberish_description(report: Report) -> bool:

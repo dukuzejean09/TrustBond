@@ -1,24 +1,34 @@
+import os
 from pathlib import Path
-from typing import Optional, List
-from urllib.parse import urlparse
-from pydantic import field_validator
-from pydantic_settings import BaseSettings
+from typing import List, Optional
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
-# Resolve .env regardless of working directory (Alembic, Render, local dev).
-# Priority: backend/.env relative to this file → .env in cwd as last resort.
-_HERE = Path(__file__).resolve().parent          # backend/app/
-_BACKEND_ENV = _HERE.parent / ".env"             # backend/.env
-_ENV_FILE = str(_BACKEND_ENV) if _BACKEND_ENV.exists() else ".env"
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+BACKEND_ROOT = Path(__file__).resolve().parents[1]
+ENV_FILES = (
+    str(BACKEND_ROOT / ".env"),
+    ".env",
+)
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=ENV_FILES,
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
     app_name: str = "TrustBond API"
     debug: bool = False
-    database_url: str = "postgresql://neondb_owner:npg_TYSOxwo1lLM6@ep-weathered-snow-ago27130-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+    database_url: str = "postgresql://postgres:postgres@localhost:5432/trustbond"
     secret_key: str = "change-me-in-production"
 
     # CORS: comma-separated origins, e.g. "https://dashboard.trustbond.rw". Empty = allow all ("*").
-    cors_origins: str = "https://trustbond-dashboard.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"
+    cors_origins: str = ""
     # Optional regex for dynamic origins (e.g. ngrok): r"https://.*\\.ngrok-free\\.dev"
     cors_origin_regex: Optional[str] = None
 
@@ -35,14 +45,13 @@ class Settings(BaseSettings):
     smtp_from: Optional[str] = None
     smtp_timeout_seconds: int = 12
     # Base URL of the police dashboard (for login link in email)
-    frontend_url: str = "https://trustbond-dashboard.vercel.app"
+    frontend_url: str = "http://localhost:5173"
 
     # How many hours after submitting a report the user (device) can still add evidence (mobile).
     evidence_add_window_hours: int = 72
-    # Max raw upload size per evidence file (MB).
-    evidence_max_upload_mb: int = 25
-    # Optional semantic description matcher (disabled by default to avoid model downloads/runtime overhead).
-    enable_semantic_match: bool = False
+    # Semantic description matcher is enabled by default so the production
+    # verification pipeline uses embedding-based incident alignment.
+    enable_semantic_match: bool = True
 
     # Device anti-abuse guardrails for report creation.
     duplicate_report_time_window_seconds: int = 120
@@ -52,20 +61,56 @@ class Settings(BaseSettings):
     impossible_travel_min_distance_km: float = 20.0
     max_plausible_speed_kmh: float = 250.0
 
-    # Lightweight API throttles (per-client-IP, fixed-window, per minute).
-    rate_limit_report_create_per_minute: int = 20
-    rate_limit_evidence_upload_per_minute: int = 30
-    rate_limit_report_confirm_per_minute: int = 40
-
-    @field_validator("debug", mode="before")
+    @field_validator("database_url", mode="before")
     @classmethod
-    def normalize_debug_value(cls, value):
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"release", "prod", "production"}:
-                return False
-            if normalized in {"debug", "dev", "development"}:
-                return True
+    def normalize_database_url(cls, value: str) -> str:
+        raw = (value or "").strip()
+        if not raw:
+            return "postgresql://postgres:postgres@localhost:5432/trustbond"
+
+        # Hosted Postgres providers such as Render typically require SSL.
+        # Add sslmode=require automatically when the URL targets a remote host
+        # and no explicit sslmode has been provided.
+        try:
+            parts = urlsplit(raw)
+            host = (parts.hostname or "").lower()
+            is_local_host = host in {"", "localhost", "127.0.0.1", "::1", "db"}
+            query = dict(parse_qsl(parts.query, keep_blank_values=True))
+            if host and not is_local_host and "sslmode" not in query:
+                query["sslmode"] = "require"
+                raw = urlunsplit(
+                    (
+                        parts.scheme,
+                        parts.netloc,
+                        parts.path,
+                        urlencode(query),
+                        parts.fragment,
+                    )
+                )
+        except Exception:
+            # If parsing fails, keep the original value and let SQLAlchemy
+            # raise a more specific DSN error later.
+            pass
+
+        return raw
+
+    @field_validator("database_url")
+    @classmethod
+    def reject_localhost_in_render(cls, value: str) -> str:
+        hosted_render = any(
+            os.getenv(name)
+            for name in ("RENDER", "RENDER_SERVICE_ID", "RENDER_INSTANCE_ID")
+        )
+        if not hosted_render:
+            return value
+
+        parts = urlsplit(value)
+        host = (parts.hostname or "").lower()
+        if host in {"", "localhost", "127.0.0.1", "::1"}:
+            raise ValueError(
+                "DATABASE_URL resolved to a localhost fallback in a Render deployment. "
+                "Set the real Postgres connection string in the service environment variables."
+            )
         return value
 
     def get_cors_origins_list(self) -> List[str]:
@@ -76,55 +121,32 @@ class Settings(BaseSettings):
             "http://127.0.0.1:3000",
         ]
 
+        # Auto-detect frontend URL from frontend_url setting
+        auto_detected_origins = []
+        if self.frontend_url and self.frontend_url.strip():
+            frontend_url = self.frontend_url.strip()
+            # Add both http and https variants for the frontend URL
+            if frontend_url.startswith("http://"):
+                auto_detected_origins.append(frontend_url)
+                auto_detected_origins.append(frontend_url.replace("http://", "https://"))
+            elif frontend_url.startswith("https://"):
+                auto_detected_origins.append(frontend_url)
+                auto_detected_origins.append(frontend_url.replace("https://", "http://"))
+
         if not self.cors_origins or not self.cors_origins.strip():
-            return ["*"]
+            # If no explicit CORS origins, use auto-detected + defaults
+            all_origins = auto_detected_origins + default_local_origins
+            return list(set(all_origins)) if all_origins else ["*"]
 
         configured = [o.strip() for o in self.cors_origins.split(",") if o.strip()]
         if "*" in configured:
             return ["*"]
 
+        # Merge configured origins with auto-detected and defaults
         merged: List[str] = []
-        frontend_origin = self.get_frontend_origin()
-        origins = configured + ([frontend_origin] if frontend_origin else []) + default_local_origins
-        for origin in origins:
+        for origin in configured + auto_detected_origins + default_local_origins:
             if origin not in merged:
                 merged.append(origin)
         return merged
-
-    def get_frontend_origin(self) -> Optional[str]:
-        raw = (self.frontend_url or "").strip()
-        if not raw:
-            return None
-
-        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
-        if not parsed.scheme or not parsed.netloc:
-            return None
-        return f"{parsed.scheme}://{parsed.netloc}"
-
-    def get_cors_origin_regex(self) -> Optional[str]:
-        configured = (self.cors_origin_regex or "").strip()
-        if configured:
-            return configured
-
-        frontend_origin = self.get_frontend_origin()
-        if not frontend_origin:
-            return None
-
-        parsed = urlparse(frontend_origin)
-        hostname = (parsed.hostname or "").lower()
-        if not hostname.endswith(".vercel.app"):
-            return None
-
-        project_slug = hostname.removesuffix(".vercel.app")
-        if not project_slug:
-            return None
-
-        # Allow the main Vercel production URL plus preview URLs derived from the same project slug.
-        return rf"^https://{project_slug}(?:-[a-z0-9-]+)?\.vercel\.app$"
-
-    class Config:
-        env_file = _ENV_FILE
-        env_file_encoding = "utf-8"
-
 
 settings = Settings()

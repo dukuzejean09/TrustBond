@@ -5,7 +5,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.websocket import manager
 import asyncio
@@ -33,12 +32,7 @@ oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", aut
 
 
 def _authenticate_user(db: Session, email: str, password: str) -> PoliceUser | None:
-    normalized_email = email.strip().lower()
-    user = (
-        db.query(PoliceUser)
-        .filter(func.lower(PoliceUser.email) == normalized_email)
-        .first()
-    )
+    user = db.query(PoliceUser).filter(PoliceUser.email == email).first()
     if not user:
         return None
     if not user.is_active:
@@ -126,6 +120,17 @@ async def get_current_admin_or_supervisor(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Admin or supervisor access required",
+        )
+    return current_user
+
+
+async def get_current_admin_supervisor_or_officer(
+    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+) -> PoliceUser:
+    if current_user.role not in ("admin", "supervisor", "officer"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin, supervisor, or officer access required",
         )
     return current_user
 

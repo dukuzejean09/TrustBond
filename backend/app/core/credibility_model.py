@@ -20,8 +20,6 @@ from app.models.system_config import SystemConfig
 ROOT = Path(__file__).resolve().parents[2] / "musanze"
 MODEL_PATH = ROOT / "TrustBond.joblib"
 META_PATH = ROOT / "TrustBond.json"
-DEFAULT_MODEL_VERSION = "report_credibility_v1"
-DEFAULT_MODEL_FAMILY = "report_credibility"
 
 _MODEL = None
 _META: Optional[Dict[str, Any]] = None
@@ -139,47 +137,8 @@ def get_effective_trust_formula(db: Session) -> Dict[str, Any]:
     }
 
 
-def _infer_model_type(model: Any) -> Optional[str]:
-    """Resolve the trained estimator class name even when wrapped in a pipeline."""
-    try:
-        if hasattr(model, "named_steps") and isinstance(model.named_steps, dict):
-            estimator = model.named_steps.get("clf") or model.named_steps.get("model")
-            if estimator is not None:
-                return estimator.__class__.__name__
-        return model.__class__.__name__
-    except Exception:
-        return None
-
-
-def _infer_model_family(model_type: Optional[str]) -> str:
-    model_name = (model_type or "").strip().lower()
-    if not model_name:
-        return DEFAULT_MODEL_FAMILY
-    if "randomforest" in model_name or "random_forest" in model_name:
-        return "random_forest"
-    return model_name.replace("classifier", "").replace("model", "").strip("_ ") or DEFAULT_MODEL_FAMILY
-
-
-def _normalize_model_metadata(model: Any, meta: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    normalized = dict(meta or {})
-    inferred_model_type = _infer_model_type(model)
-    model_type = normalized.get("model_type") or inferred_model_type or "UnknownModel"
-
-    # Prefer the actual loaded estimator class over stale metadata artifacts.
-    if inferred_model_type and model_type != inferred_model_type:
-        model_type = inferred_model_type
-
-    normalized["model_type"] = model_type
-    normalized["model_family"] = normalized.get("model_family") or _infer_model_family(model_type)
-    normalized["model_version"] = normalized.get("model_version") or DEFAULT_MODEL_VERSION
-    normalized["feature_columns"] = list(normalized.get("feature_columns") or [])
-    normalized["numeric_columns"] = list(normalized.get("numeric_columns") or [])
-    normalized["categorical_columns"] = list(normalized.get("categorical_columns") or [])
-    return normalized
-
-
 def _load_model_and_meta():
-    """Lazy-load the trained report-credibility pipeline and metadata."""
+    """Lazy-load the trained XGBoost pipeline and metadata."""
     global _MODEL, _META
     if _MODEL is not None and _META is not None:
         return _MODEL, _META
@@ -188,8 +147,7 @@ def _load_model_and_meta():
         return None, None
 
     _MODEL = joblib.load(MODEL_PATH)
-    raw_meta = json.loads(META_PATH.read_text(encoding="utf-8"))
-    _META = _normalize_model_metadata(_MODEL, raw_meta)
+    _META = json.loads(META_PATH.read_text(encoding="utf-8"))
     return _MODEL, _META
 
 
@@ -204,6 +162,65 @@ def _bucket_time_of_day(dt: Optional[datetime]) -> Optional[str]:
     if 12 <= hour < 18:
         return "day"
     return "evening"
+
+
+def _flatten_dict(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
+    flat: Dict[str, Any] = {}
+    for key, value in (data or {}).items():
+        key_str = f"{prefix}_{key}" if prefix else str(key)
+        if isinstance(value, dict):
+            flat.update(_flatten_dict(value, key_str))
+        elif isinstance(value, list):
+            flat[key_str] = len(value)
+        else:
+            flat[key_str] = value
+    return flat
+
+
+def _extract_incident_verification(report: Report) -> Dict[str, Any]:
+    feature_vector = getattr(report, "feature_vector", None)
+    if isinstance(feature_vector, dict):
+        payload = feature_vector.get("incident_verification", {})
+        if isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _compute_incident_verification_real_score(payload: Dict[str, Any]) -> Optional[float]:
+    if not isinstance(payload, dict) or not payload:
+        return None
+
+    try:
+        decision = str(payload.get("decision") or "").upper()
+        trust_score = float(payload.get("trust_score", 0.0) or 0.0)
+        xgboost_score = float(payload.get("xgboost_score", trust_score) or trust_score)
+        semantic_score = float(payload.get("semantic_match_score", 0.5) or 0.5)
+        rule_score = float(payload.get("rule_based_score", 0.5) or 0.5)
+        yolo_score = float(payload.get("yolo_feature_score", 0.5) or 0.5)
+        llava_score = float(payload.get("llava_feature_score", 0.5) or 0.5)
+        anomaly_score = float(payload.get("anomaly_score", 0.0) or 0.0)
+        evidence_quality = float(payload.get("evidence_quality_score", 0.0) or 0.0)
+    except Exception:
+        return None
+
+    enriched = (
+        xgboost_score * 0.30 +
+        semantic_score * 0.18 +
+        rule_score * 0.18 +
+        yolo_score * 0.10 +
+        llava_score * 0.10 +
+        evidence_quality * 0.14
+    ) - (anomaly_score * 0.18)
+    enriched = max(0.0, min(1.0, enriched))
+
+    if decision == "REJECTED":
+        enriched = min(enriched, 0.25)
+    elif decision == "SUSPICIOUS":
+        enriched = min(enriched, 0.60)
+    elif decision == "REAL":
+        enriched = max(enriched, trust_score * 0.8)
+
+    return round(enriched, 3)
 
 
 def _build_feature_row(
@@ -267,6 +284,31 @@ def _build_feature_row(
     # Rule-engine status already computed on the report
     rule_status = getattr(report, "rule_status", None)
     is_flagged = getattr(report, "is_flagged", None)
+    incident_verification = _extract_incident_verification(report)
+    flat_verification = _flatten_dict(incident_verification)
+    feature_summary = incident_verification.get("feature_summary", {}) if isinstance(incident_verification, dict) else {}
+    yolo_presence = feature_summary.get("yolo_presence_flags", {}) if isinstance(feature_summary, dict) else {}
+    yolo_counts = feature_summary.get("yolo_object_counts", {}) if isinstance(feature_summary, dict) else {}
+    verification_aliases: Dict[str, Any] = {
+        "semantic_match_score": incident_verification.get("semantic_match_score"),
+        "rule_based_score": incident_verification.get("rule_based_score"),
+        "rule_based_validation_score": incident_verification.get("rule_based_score"),
+        "evidence_quality_score": incident_verification.get("evidence_quality_score"),
+        "anomaly_score": incident_verification.get("anomaly_score"),
+        "anomaly_risk_score": incident_verification.get("anomaly_score"),
+        "yolo_feature_score": incident_verification.get("yolo_feature_score"),
+        "llava_feature_score": incident_verification.get("llava_feature_score"),
+        "xgboost_score": incident_verification.get("xgboost_score"),
+        "incident_verification_decision": incident_verification.get("decision"),
+        "final_verdict_reason": incident_verification.get("final_verdict_reason"),
+        "yolo_person_present": yolo_presence.get("person"),
+        "yolo_vehicle_present": yolo_presence.get("vehicle"),
+        "yolo_weapon_present": yolo_presence.get("weapon"),
+        "yolo_total_objects": sum(yolo_counts.values()) if isinstance(yolo_counts, dict) else None,
+        "llava_scene_label": feature_summary.get("llava_scene"),
+        "llava_environment_label": feature_summary.get("environment_label"),
+        "llava_interaction_complexity": feature_summary.get("interaction_complexity_score"),
+    }
 
     # Build a complete feature row covering all expected columns (fill unknowns with None/defaults)
     row: Dict[str, Any] = {}
@@ -335,8 +377,13 @@ def _build_feature_row(
         elif col == "future_timestamp_flag":
             row[col] = future_timestamp_flag
         else:
-            # Unknown column – leave as None so the pipeline can handle it if needed
-            row[col] = None
+            alias_value = verification_aliases.get(col)
+            if alias_value is not None:
+                row[col] = alias_value
+            elif col in flat_verification:
+                row[col] = flat_verification[col]
+            else:
+                row[col] = None
 
     return row
 
@@ -430,32 +477,53 @@ def score_report_credibility(
     evidence_count: int,
 ) -> None:
     """
-    Run the trained report-credibility model for a single report and persist the
-    result into ml_predictions. Safe to call from API code; failures are
+    Run the trained XGBoost credibility model for a single report, and persist
+    the result into ml_predictions. Safe to call from API code; failures are
     swallowed so they don't break report submission.
     """
     try:
         model, meta = _load_model_and_meta()
-        if model is None or meta is None:
+        feature_columns = meta.get("feature_columns", []) if isinstance(meta, dict) else []
+        base_prob_real: Optional[float] = None
+        best_threshold = float(meta.get("best_threshold", 0.5)) if isinstance(meta, dict) else 0.5
+
+        if model is not None and meta is not None and feature_columns:
+            row = _build_feature_row(report, device, evidence_count, feature_columns)
+            X = pd.DataFrame([row], columns=feature_columns)
+            proba = model.predict_proba(X)[0]
+            base_prob_real = float(proba[1])
+
+        incident_verification = _extract_incident_verification(report)
+        enriched_prob_real = _compute_incident_verification_real_score(incident_verification)
+
+        if base_prob_real is None and enriched_prob_real is None:
             return
 
-        feature_columns = meta.get("feature_columns", [])
-        if not feature_columns:
-            return
-
-        row = _build_feature_row(report, device, evidence_count, feature_columns)
-        X = pd.DataFrame([row], columns=feature_columns)
-
-        # predict_proba returns [[p_fake, p_real]]
-        proba = model.predict_proba(X)[0]
-        prob_real = float(proba[1])
-
-        best_threshold = float(meta.get("best_threshold", 0.5))
+        if base_prob_real is None:
+            prob_real = float(enriched_prob_real or 0.0)
+            model_type = "incident_verification_enriched_fusion"
+        elif enriched_prob_real is None:
+            prob_real = base_prob_real
+            model_type = "xgboost"
+        else:
+            prob_real = round((base_prob_real * 0.35) + (enriched_prob_real * 0.65), 6)
+            model_type = "xgboost_enriched_fusion"
 
         trust_score_pct = prob_real * 100.0
         
         # Apply anti-spam / coordination penalty before community votes
         factors = _compute_trust_factors(db, report, device, evidence_count, prob_real)
+        if enriched_prob_real is not None:
+            factors["incident_verification"] = _json_safe(incident_verification)
+            factors["semantic_match_score"] = incident_verification.get("semantic_match_score")
+            factors["rule_based_score"] = incident_verification.get("rule_based_score")
+            factors["yolo_feature_score"] = incident_verification.get("yolo_feature_score")
+            factors["llava_feature_score"] = incident_verification.get("llava_feature_score")
+            factors["anomaly_score"] = incident_verification.get("anomaly_score")
+            factors["enriched_prob_real"] = enriched_prob_real
+        if base_prob_real is not None:
+            factors["base_model_prob_real"] = round(base_prob_real, 3)
+
         coord_penalty = float(factors.get("coordination_penalty", 0.0) or 0.0)
         if coord_penalty > 0:
             # coord_penalty is already 0-100; temper it so ML still has signal.
@@ -469,9 +537,9 @@ def score_report_credibility(
             trust_score_pct = max(0.0, trust_score_pct + (community_net * 10.0))
 
         # Re-evaluate labels based on final trust_score_pct
-        if trust_score_pct >= 85.0:
+        if trust_score_pct >= 70.0:  # Changed from 85.0 to 70.0 for optimal threshold
             prediction_label = "likely_real"
-        elif trust_score_pct >= 60.0:
+        elif trust_score_pct >= 45.0:  # Changed from 60.0 to 45.0 for pending review
             prediction_label = "suspicious"
         elif trust_score_pct >= 30.0:
             prediction_label = "uncertain"
@@ -484,8 +552,8 @@ def score_report_credibility(
             report_id=report.report_id,
             trust_score=Decimal(f"{trust_score_pct:.2f}"),
             prediction_label=prediction_label,
-            model_version=str(meta.get("model_version") or DEFAULT_MODEL_VERSION),
-            model_type=str(meta.get("model_type") or "UnknownModel"),
+            model_version=(meta or {}).get("model_version", "report_credibility_xgb_v1"),
+            model_type=model_type,
             confidence=Decimal(f"{prob_real:.3f}"),
             is_final=True,
             explanation=factors,  # Store the explainability breakdown here
@@ -494,7 +562,11 @@ def score_report_credibility(
         db.add(prediction)
         # Mark when features were extracted for this report
         report.features_extracted_at = datetime.now(timezone.utc)
-    except Exception:
+    except Exception as e:
+        # Log the actual error for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"XGBoost scoring failed for report {report.report_id}: {e}", exc_info=True)
         # Fail silently; this is an enhancement, not critical path
         return
 
@@ -651,10 +723,18 @@ def update_device_ml_aggregates(
 # API Functions for ML endpoints
 def get_report_prediction(db: Session, report_id: str, device_id: str):
     """Get ML prediction for a specific report"""
+    # Convert strings to UUID if needed
+    from uuid import UUID
+    try:
+        report_uuid = UUID(report_id)
+        device_uuid = UUID(device_id)
+    except ValueError:
+        return None
+    
     # Verify the report belongs to the device
     report = db.query(Report).filter(
-        Report.report_id == report_id,
-        Report.device_id == device_id
+        Report.report_id == report_uuid,
+        Report.device_id == device_uuid
     ).first()
     
     if not report:
@@ -662,7 +742,7 @@ def get_report_prediction(db: Session, report_id: str, device_id: str):
     
     # Get latest ML prediction
     prediction = db.query(MLPrediction).filter(
-        MLPrediction.report_id == report_id
+        MLPrediction.report_id == report_uuid
     ).order_by(MLPrediction.evaluated_at.desc()).first()
     
     return prediction
@@ -726,16 +806,62 @@ def get_device_ml_stats(db: Session, device_id: str):
             .all()
         )
 
-    # Calculate distribution - FIXED: Include uncertain
+    # Calculate prediction distribution
     distribution = {"likely_real": 0, "suspicious": 0, "uncertain": 0, "fake": 0}
+    trust_scores = []
+    confidences = []
+    model_versions = set()
+    
     for pred in predictions:
         label = (pred.prediction_label or "").lower()
         if label in distribution:
             distribution[label] += 1
-
+        
+        # Collect trust scores and confidences
+        if pred.trust_score is not None:
+            trust_scores.append(float(pred.trust_score))
+        if pred.confidence is not None:
+            confidences.append(float(pred.confidence))
+        if pred.model_version:
+            model_versions.add(pred.model_version)
+    
+    # Calculate ML statistics
+    total_predictions = len(predictions)
+    fake_rate = (distribution["fake"] / total_predictions * 100) if total_predictions > 0 else 0.0
+    suspicious_rate = (distribution["suspicious"] / total_predictions * 100) if total_predictions > 0 else 0.0
+    avg_trust_score = sum(trust_scores) / len(trust_scores) if trust_scores else None
+    avg_confidence = sum(confidences) / len(confidences) if confidences else None
+    
+    # Get device metadata
     meta = getattr(device, "metadata_json", None)
-    ml_meta = meta.get("ml") if isinstance(meta, dict) else None
     behavior_meta = meta.get("behavior") if isinstance(meta, dict) else None
+    
+    # Build ML section with actual calculated data
+    ml_stats = {
+        "window": 30,  # 30-day window
+        "fake_rate": round(fake_rate, 2),
+        "suspicious_rate": round(suspicious_rate, 2),
+        "distribution": distribution.copy(),
+        "avg_trust_score": round(avg_trust_score, 2) if avg_trust_score is not None else None,
+        "avg_confidence": round(avg_confidence, 3) if avg_confidence is not None else None,
+        "last_confidence": round(float(confidences[0]), 3) if confidences else None,
+        "model_versions": list(model_versions),
+        "last_prediction_at": (
+            predictions[0].evaluated_at.isoformat()
+            if predictions and getattr(predictions[0], "evaluated_at", None)
+            else None
+        )
+    }
+    
+    # Calculate behavior stats
+    confirmed_reports = sum(1 for r in reports if getattr(r, 'status', None) == 'verified')
+    confirmation_rate = (confirmed_reports / len(reports) * 100) if reports else 0.0
+    
+    behavior_stats = {
+        "spam_signal": 0,  # Could be calculated from spam flags
+        "behavior_score": 0.0,  # Could be calculated from various factors
+        "confirmation_rate": round(confirmation_rate, 2)
+    }
 
     return {
         "device_id": str(device_id),
@@ -745,9 +871,9 @@ def get_device_ml_stats(db: Session, device_id: str):
         "last_prediction_at": (
             predictions[0].evaluated_at.isoformat()
             if predictions and getattr(predictions[0], "evaluated_at", None)
-            else (ml_meta.get("last_prediction_at") if isinstance(ml_meta, dict) else None)
+            else None
         ),
-        "ml": ml_meta if isinstance(ml_meta, dict) else None,
-        "behavior": behavior_meta if isinstance(behavior_meta, dict) else None,
+        "ml": ml_stats,
+        "behavior": behavior_stats,
     }
 
