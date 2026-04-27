@@ -1,3 +1,5 @@
+import { API_BASE_URL } from "../utils/apiBaseUrl";
+
 /**
  * TrustBond API client – uses fetch with base URL and optional Bearer token.
  *
@@ -8,9 +10,7 @@
  * Note: API still uses Authorization: Bearer (not HttpOnly cookies). Cookie is only for reload fallback
  * on the same origin when localStorage is cleared by extensions; primary store remains localStorage.
  */
-const BASE =
-  (typeof import.meta !== "undefined" && import.meta.env?.VITE_API_BASE_URL) ||
-  "https://trustbond-backend.onrender.com";
+const BASE = API_BASE_URL;
 
 const TOKEN_KEY = "tb_token";
 /** Cookie name must match Path=/ for SPA */

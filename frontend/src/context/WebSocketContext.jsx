@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { useAuth } from "./AuthContext";
+import { API_BASE_URL } from "../utils/apiBaseUrl";
 
 const WebSocketContext = createContext({ lastMessage: null, refreshKey: 0 });
 
@@ -26,9 +27,7 @@ export const WebSocketProvider = ({ children }) => {
       if (!isComponentMounted) return;
 
       // Use the same API base URL as the REST API
-      const apiBaseUrl =
-        import.meta.env.VITE_API_BASE_URL ||
-        "https://trustbond-backend.onrender.com";
+      const apiBaseUrl = API_BASE_URL;
       const protocol = apiBaseUrl.startsWith("https") ? "wss:" : "ws:";
       const wsUrl = apiBaseUrl.replace(/^https?:/, protocol) + "/api/v1/ws";
 
