@@ -28,7 +28,7 @@ export const WebSocketProvider = ({ children }) => {
       // Use the same API base URL as the REST API
       const apiBaseUrl =
         import.meta.env.VITE_API_BASE_URL ||
-        "https://trustbondmobileapp.onrender.com";
+        "https://trustbond-backend.onrender.com";
       const protocol = apiBaseUrl.startsWith("https") ? "wss:" : "ws:";
       const wsUrl = apiBaseUrl.replace(/^https?:/, protocol) + "/api/v1/ws";
 
