@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
 
     # CORS: comma-separated origins, e.g. "https://dashboard.trustbond.rw". Empty = allow all ("*").
-    cors_origins: str = "http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
+    cors_origins: str = "https://trustbond-dashboard.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173,http://127.0.0.1:3000"
     # Optional regex for dynamic origins (e.g. ngrok): r"https://.*\\.ngrok-free\\.dev"
     cors_origin_regex: Optional[str] = None
 
@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     smtp_from: Optional[str] = None
     smtp_timeout_seconds: int = 12
     # Base URL of the police dashboard (for login link in email)
-    frontend_url: str = "http://localhost:5173"
+    frontend_url: str = "https://trustbond-dashboard.vercel.app"
 
     # How many hours after submitting a report the user (device) can still add evidence (mobile).
     evidence_add_window_hours: int = 72
