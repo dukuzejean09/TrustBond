@@ -1,7 +1,6 @@
-import os
 from pathlib import Path
 from typing import Optional, List
-from pydantic import field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 # Resolve .env regardless of working directory (Alembic, Render, local dev).
@@ -88,18 +87,6 @@ class Settings(BaseSettings):
             if origin not in merged:
                 merged.append(origin)
         return merged
-
-    @model_validator(mode="after")
-    def _guard_production_defaults(self) -> "Settings":
-        is_local = "localhost" in self.database_url or "127.0.0.1" in self.database_url
-        # Only block localhost DB when DEBUG is explicitly off (i.e. production)
-        if not self.debug and is_local:
-            raise RuntimeError(
-                "DATABASE_URL is still pointing to localhost but DEBUG=False. "
-                "Set DATABASE_URL to your Neon (or other remote) database in the "
-                "environment variables before starting in production."
-            )
-        return self
 
     class Config:
         env_file = _ENV_FILE
