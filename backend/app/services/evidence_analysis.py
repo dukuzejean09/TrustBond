@@ -2522,6 +2522,121 @@ class EvidenceAnalysisService:
             return 0.0
         return round(max(0.0, min(1.0, score / max_score)), 3)
 
+    def _get_incident_rules(self, incident_type_id: Optional[int]) -> Dict[str, Any]:
+        return self.enhanced_rules.get(incident_type_id or -1, {}) or {}
+
+    def _get_incident_name(self, incident_type_id: Optional[int]) -> str:
+        rules = self._get_incident_rules(incident_type_id)
+        return str(rules.get("incident_name") or f"incident_{incident_type_id or 'unknown'}")
+
+    def _compute_evidence_match_score(
+        self,
+        incident_type_id: Optional[int],
+        text_features: Dict[str, Any],
+        analysis: "EvidenceAnalysis",
+    ) -> Dict[str, Any]:
+        rules = self._get_incident_rules(incident_type_id)
+        expected_objects = [obj.lower() for obj in rules.get("expected_objects", [])]
+        detected_objects = {obj.lower() for obj in (analysis.detected_objects or [])}
+        object_match_ratio = 0.0
+        if expected_objects:
+            object_match_ratio = sum(1 for obj in expected_objects if obj in detected_objects) / len(expected_objects)
+
+        scene_match = 0.0
+        llava_features = self._extract_llava_ml_features(analysis)
+        try:
+            scene_match = float(llava_features.get("llava_scene_match", 0.0) or 0.0)
+        except Exception:
+            scene_match = 0.0
+
+        semantic_similarity = float(text_features.get("desc_vs_llava", 0.5) or 0.5)
+        caption_incident_fit = float(text_features.get("llava_vs_type", 0.5) or 0.5)
+        yolo_support = float(max(analysis.yolo_obj_match_rate, object_match_ratio, analysis.yolo_feature_score))
+        llava_support = float(max(scene_match, analysis.llava_feature_score))
+        model_consistency = float(analysis.yolo_llava_consistency or 0.0)
+
+        evidence_match_score = (
+            semantic_similarity * 0.30 +
+            yolo_support * 0.25 +
+            llava_support * 0.20 +
+            caption_incident_fit * 0.15 +
+            model_consistency * 0.10
+        )
+
+        if semantic_similarity < 0.30:
+            evidence_match_score *= 0.55
+
+        contradiction = False
+        contradiction_reasons: List[str] = []
+        if text_features.get("mismatch_detected") and semantic_similarity < 0.30:
+            contradiction = True
+            contradiction_reasons.append("description_conflicts_with_caption")
+        if expected_objects and yolo_support <= 0.0 and llava_support < 0.30:
+            contradiction = True
+            contradiction_reasons.append("required_objects_missing")
+        if model_consistency < 0.20 and semantic_similarity < 0.30:
+            contradiction = True
+            contradiction_reasons.append("yolo_llava_and_text_disagree")
+
+        if contradiction:
+            evidence_match_score = 0.0
+
+        reasoning_bits = [
+            f"YOLO support={yolo_support:.2f}",
+            f"LLaVA support={llava_support:.2f}",
+            f"text-caption similarity={semantic_similarity:.2f}",
+            f"scene fit={caption_incident_fit:.2f}",
+        ]
+        if contradiction_reasons:
+            reasoning_bits.append("contradictions=" + ",".join(contradiction_reasons))
+
+        return {
+            "evidence_match_score": round(max(0.0, min(1.0, evidence_match_score)), 3),
+            "similarity_score": round(max(0.0, min(1.0, semantic_similarity)), 3),
+            "contradiction": contradiction,
+            "reasoning": "; ".join(reasoning_bits),
+            "required_objects_present": object_match_ratio > 0.0 if expected_objects else bool(detected_objects),
+            "high_confidence_evidence_present": bool(detected_objects or analysis.llava_scene_description),
+            "object_match_ratio": round(object_match_ratio, 3),
+        }
+
+    def _compute_rule_gate(
+        self,
+        incident_type_id: Optional[int],
+        analysis: "EvidenceAnalysis",
+        evidence_result: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        rules = self._get_incident_rules(incident_type_id)
+        expected_objects = [obj.lower() for obj in rules.get("expected_objects", [])]
+        failures: List[str] = []
+
+        if not evidence_result.get("high_confidence_evidence_present"):
+            failures.append("no_evidence_present")
+
+        if evidence_result.get("contradiction"):
+            failures.append("evidence_contradiction_detected")
+
+        if expected_objects and not evidence_result.get("required_objects_present"):
+            failures.append("required_objects_missing")
+
+        # The current pipeline already discards YOLO detections below 0.5 confidence.
+        # If nothing survived detection and visual-language support is also weak,
+        # treat that as failing the confidence gate.
+        weak_detector_signal = (
+            not analysis.detected_objects and
+            analysis.yolo_feature_score < 0.40 and
+            analysis.llava_feature_score < 0.30
+        )
+        if weak_detector_signal:
+            failures.append("weak_detection_confidence")
+
+        passed = not failures
+        return {
+            "rule_score": 1 if passed else 0,
+            "passed": passed,
+            "failures": failures,
+        }
+
     # ── Phase 2: Feature vector + XGBoost fusion ────────────────────────────
 
     def _extract_fusion_features(
@@ -2793,6 +2908,7 @@ class EvidenceAnalysisService:
           • trust_score < 0.35           → REJECTED
         """
         result = {
+            "decision": "REJECTED",
             "label": "REJECTED",
             "trust_score": 0.0,
             "xgboost_score": 0.0,
@@ -2804,11 +2920,19 @@ class EvidenceAnalysisService:
             "text_features": {},
             "semantic_match_score": 0.0,
             "rule_based_score": 0.0,
+            "consistency_score": 0.0,
+            "similarity_score": 0.0,
+            "evidence_match_score": 0.0,
+            "contradiction": False,
+            "ai_score": 0.0,
+            "rule_score": 0.0,
+            "final_score": 0.0,
             "yolo_feature_score": 0.0,
             "llava_feature_score": 0.0,
             "anomaly_score": 0.0,
             "evidence_quality_score": 0.0,
             "feature_summary": {},
+            "details": {},
             "final_verdict_reason": "",
         }
         try:
@@ -2858,8 +2982,10 @@ class EvidenceAnalysisService:
             analysis.semantic_match_score = text_features.get("semantic_match_score", 0.5)
             analysis.desc_vs_llava_similarity = text_features.get("desc_vs_llava", 0.5)
             analysis.llava_vs_type_similarity = text_features.get("llava_vs_type", 0.5)
+            consistency_score = float(text_features.get("desc_vs_type", 0.5) or 0.5)
+            result["consistency_score"] = round(consistency_score, 3)
             reasoning_parts.append(
-                f"[Semantic] score={analysis.semantic_match_score:.2f}"
+                f"[Semantic] consistency={consistency_score:.2f}"
                 + (" ⚠ TYPE MISMATCH" if text_features["mismatch_detected"] else "")
             )
 
@@ -2876,6 +3002,35 @@ class EvidenceAnalysisService:
             )
             result["semantic_match_score"] = analysis.semantic_match_score
             result["rule_based_score"] = analysis.rule_based_score
+
+            evidence_result = self._compute_evidence_match_score(
+                incident_type_id,
+                text_features,
+                analysis,
+            )
+            result["similarity_score"] = evidence_result["similarity_score"]
+            result["evidence_match_score"] = evidence_result["evidence_match_score"]
+            result["contradiction"] = evidence_result["contradiction"]
+            reasoning_parts.append(
+                f"[Evidence] match={evidence_result['evidence_match_score']:.2f}; "
+                f"similarity={evidence_result['similarity_score']:.2f}"
+                + (" ⚠ CONTRADICTION" if evidence_result["contradiction"] else "")
+            )
+
+            rule_gate = self._compute_rule_gate(
+                incident_type_id,
+                analysis,
+                evidence_result,
+            )
+            ai_score = ((consistency_score * 0.5) + (evidence_result["evidence_match_score"] * 0.5)) * 60.0
+            if evidence_result["similarity_score"] < 0.30:
+                ai_score *= 0.60
+            rule_score_final = float(rule_gate["rule_score"] * 40)
+            final_score = max(0.0, min(100.0, ai_score + rule_score_final))
+
+            result["ai_score"] = round(ai_score, 3)
+            result["rule_score"] = round(rule_score_final, 3)
+            result["final_score"] = round(final_score, 3)
 
             features, feature_names = self._extract_fusion_features(
                 analysis, text_features, historical_trust, community_votes
@@ -2924,6 +3079,14 @@ class EvidenceAnalysisService:
             xgb_result["breakdown"].update({
                 "semantic_match_score": round(analysis.semantic_match_score, 3),
                 "rule_based_score": round(analysis.rule_based_score, 3),
+                "consistency_score": round(consistency_score, 3),
+                "similarity_score": round(evidence_result["similarity_score"], 3),
+                "evidence_match_score": round(evidence_result["evidence_match_score"], 3),
+                "contradiction": bool(evidence_result["contradiction"]),
+                "rule_gate_score": rule_gate["rule_score"],
+                "ai_score": round(ai_score, 3),
+                "rule_score_final": round(rule_score_final, 3),
+                "final_score": round(final_score, 3),
                 "yolo_feature_score": round(analysis.yolo_feature_score, 3),
                 "llava_feature_score": round(analysis.llava_feature_score, 3),
                 "anomaly_score": round(analysis.anomaly_risk_score, 3),
@@ -2934,31 +3097,80 @@ class EvidenceAnalysisService:
             # PHASE 3 — Gate overrides → final label
             # ══════════════════════════════════════════════════════════════
 
-            label      = xgb_result["label"]
+            legacy_label = xgb_result["label"]
             trust_score = xgb_result["trust_score"]
+            workflow_decision = "REJECTED"
+            hard_reject_reason = ""
 
             # Hard gate overrides (deterministic — not negotiable)
             if not loc_gate["passed"]:
-                label      = "REJECTED"
+                legacy_label = "REJECTED"
                 trust_score = 0.0
+                workflow_decision = "REJECTED"
+                hard_reject_reason = "location outside Musanze district"
                 reasoning_parts.append(
                     "HARD REJECT: location outside Musanze district — report invalid"
                 )
+            elif (
+                evidence_result["evidence_match_score"] <= 0.0 or
+                evidence_result["contradiction"] or
+                rule_gate["rule_score"] == 0
+            ):
+                legacy_label = "REJECTED"
+                workflow_decision = "REJECTED"
+                trust_score = min(trust_score, final_score / 100.0)
+                if evidence_result["contradiction"]:
+                    hard_reject_reason = "evidence contradicts the description"
+                elif rule_gate["rule_score"] == 0:
+                    hard_reject_reason = "rule-based validation failed"
+                else:
+                    hard_reject_reason = "evidence match score is zero"
+                reasoning_parts.append(f"HARD REJECT: {hard_reject_reason}")
             elif not orig_gate["passed"]:
-                label      = "SUSPICIOUS"
+                legacy_label = "SUSPICIOUS"
+                workflow_decision = "REVIEW"
                 trust_score = min(trust_score, 0.40)
                 reasoning_parts.append(
                     "HARD FLAG: duplicate/screenshot evidence — downgraded to SUSPICIOUS"
                 )
             elif analysis.tamper_detected:
-                label      = min(label, "SUSPICIOUS") if label == "REAL" else label
-                label      = "SUSPICIOUS" if label == "REAL" else label
+                legacy_label = "SUSPICIOUS" if legacy_label == "REAL" else legacy_label
                 trust_score = min(trust_score, 0.60)
+                workflow_decision = "REVIEW"
                 reasoning_parts.append(
                     "TAMPER CAP: tamper detected — REAL verdict blocked"
                 )
+            else:
+                if final_score >= 70:
+                    workflow_decision = "ACCEPTED"
+                    legacy_label = "REAL"
+                elif final_score >= 50:
+                    workflow_decision = "REVIEW"
+                    legacy_label = "SUSPICIOUS"
+                else:
+                    workflow_decision = "REJECTED"
+                    legacy_label = "REJECTED"
 
-            result["label"]       = label
+            if hard_reject_reason:
+                final_reason = f"REJECTED because {hard_reject_reason}."
+            elif workflow_decision == "ACCEPTED":
+                final_reason = (
+                    f"ACCEPTED because the incident type and description are consistent "
+                    f"({consistency_score:.2f}) and the evidence strongly matches ({evidence_result['evidence_match_score']:.2f})."
+                )
+            elif workflow_decision == "REVIEW":
+                final_reason = (
+                    f"REVIEW because the evidence partially matches the incident "
+                    f"(score {evidence_result['evidence_match_score']:.2f}) but is not strong enough for acceptance."
+                )
+            else:
+                final_reason = (
+                    f"REJECTED because the multimodal signals did not meet the strict validation threshold "
+                    f"(final score {final_score:.1f})."
+                )
+
+            result["decision"] = workflow_decision
+            result["label"] = legacy_label
             result["trust_score"] = round(trust_score, 3)
             result["xgboost_score"] = round(xgb_result.get("trust_score", 0.0), 3)
             result["proba"] = xgb_result.get("proba", {})
@@ -2978,13 +3190,14 @@ class EvidenceAnalysisService:
                 "environment_label": analysis.llava_environment_label or analysis.llava_environment,
                 "interaction_complexity_score": round(analysis.llava_interaction_complexity, 3),
             }
-            result["final_verdict_reason"] = (
-                f"{label} because semantic={analysis.semantic_match_score:.2f}, "
-                f"rule={analysis.rule_based_score:.2f}, "
-                f"YOLO={analysis.yolo_feature_score:.2f}, "
-                f"LLaVA={analysis.llava_feature_score:.2f}, "
-                f"anomaly={analysis.anomaly_risk_score:.2f}."
-            )
+            result["details"] = {
+                "consistency_score": round(consistency_score, 3),
+                "similarity_score": round(evidence_result["similarity_score"], 3),
+                "evidence_match_score": round(evidence_result["evidence_match_score"], 3),
+                "contradiction": bool(evidence_result["contradiction"]),
+            }
+            result["breakdown"]["workflow_decision"] = workflow_decision
+            result["final_verdict_reason"] = final_reason
             result["reasoning"]   = " | ".join(reasoning_parts)
 
             analysis.xgboost_score = result["xgboost_score"]
@@ -3625,6 +3838,8 @@ class EvidenceAnalysisService:
         decision_label = getattr(analysis, "decision_label", "") or "REJECTED"
         decision_trust = getattr(analysis, "decision_trust_score", final_score)
         decision_breakdown = getattr(analysis, "decision_breakdown", {})
+        workflow_decision = str(decision_breakdown.get("workflow_decision") or "REJECTED")
+        is_valid = workflow_decision == "ACCEPTED"
         feature_summary = {
             'yolo_objects': analysis.detected_objects,
             'yolo_object_counts': analysis.yolo_object_counts,
@@ -3638,10 +3853,18 @@ class EvidenceAnalysisService:
         }
         decision_details = {
             'label': decision_label,
+            'decision': workflow_decision,
             'trust_score': decision_trust,
             'xgboost_score': getattr(analysis, 'xgboost_score', decision_trust),
             'semantic_match_score': getattr(analysis, 'semantic_match_score', 0.0),
             'rule_based_score': getattr(analysis, 'rule_based_score', final_score),
+            'consistency_score': decision_breakdown.get('consistency_score', getattr(analysis, 'semantic_match_score', 0.0)),
+            'similarity_score': decision_breakdown.get('similarity_score', getattr(analysis, 'desc_vs_llava_similarity', 0.0)),
+            'evidence_match_score': decision_breakdown.get('evidence_match_score', 0.0),
+            'contradiction': bool(decision_breakdown.get('contradiction', False)),
+            'ai_score': decision_breakdown.get('ai_score', 0.0),
+            'rule_score': decision_breakdown.get('rule_score_final', 0.0),
+            'final_score': decision_breakdown.get('final_score', decision_trust * 100),
             'yolo_feature_score': getattr(analysis, 'yolo_feature_score', 0.0),
             'llava_feature_score': getattr(analysis, 'llava_feature_score', 0.0),
             'anomaly_score': getattr(analysis, 'anomaly_risk_score', 0.0),
@@ -3654,7 +3877,11 @@ class EvidenceAnalysisService:
         }
 
         return {
-            'decision': decision_label,
+            'decision': workflow_decision,
+            'legacy_decision': decision_label,
+            'final_score': decision_details['final_score'],
+            'ai_score': decision_details['ai_score'],
+            'rule_score': decision_details['rule_score'],
             'trust_score': decision_trust,
             'xgboost_score': decision_details['xgboost_score'],
             'semantic_match_score': decision_details['semantic_match_score'],
@@ -3663,8 +3890,15 @@ class EvidenceAnalysisService:
             'llava_feature_score': decision_details['llava_feature_score'],
             'anomaly_score': decision_details['anomaly_score'],
             'evidence_quality_score': decision_details['evidence_quality_score'],
+            'details': {
+                'consistency_score': decision_details['consistency_score'],
+                'similarity_score': decision_details['similarity_score'],
+                'evidence_match_score': decision_details['evidence_match_score'],
+                'contradiction': decision_details['contradiction'],
+            },
             'feature_summary': feature_summary,
             'final_verdict_reason': decision_details['final_verdict_reason'],
+            'reason': decision_details['final_verdict_reason'],
             'valid': is_valid,
             'confidence': final_score,
             'threshold_used': threshold,

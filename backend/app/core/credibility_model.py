@@ -215,9 +215,9 @@ def _compute_incident_verification_real_score(payload: Dict[str, Any]) -> Option
 
     if decision == "REJECTED":
         enriched = min(enriched, 0.25)
-    elif decision == "SUSPICIOUS":
+    elif decision in {"SUSPICIOUS", "REVIEW"}:
         enriched = min(enriched, 0.60)
-    elif decision == "REAL":
+    elif decision in {"REAL", "ACCEPTED"}:
         enriched = max(enriched, trust_score * 0.8)
 
     return round(enriched, 3)

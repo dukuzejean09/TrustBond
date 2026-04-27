@@ -3,6 +3,73 @@ import api from '../../api/client';
 
 // Cache bust: v20260405-1518 - Fixed sectorId -> stationId
 
+const summarizeCaseAiSuggestion = (reports, selectedIds) => {
+  const chosen = (reports || []).filter((r) => selectedIds.has(String(r.report_id)));
+  if (!chosen.length) return null;
+
+  const verifications = chosen
+    .map((r) => ({ report: r, iv: r.incident_verification }))
+    .filter((item) => item.iv && typeof item.iv === 'object');
+
+  if (!verifications.length) {
+    return {
+      title: 'No AI case suggestion yet',
+      verdict: 'INSUFFICIENT',
+      reason: 'The selected reports do not yet have enough AI incident-verification detail to summarize the case.',
+      metrics: [],
+    };
+  }
+
+  const counts = { ACCEPTED: 0, REVIEW: 0, REJECTED: 0 };
+  let totalScore = 0;
+  let strongestReason = '';
+  let strongestScore = -1;
+  const themes = new Map();
+
+  verifications.forEach(({ report, iv }) => {
+    const decision = String(iv.decision || iv.label || 'REVIEW').toUpperCase();
+    if (decision in counts) counts[decision] += 1;
+    const score = Number(iv.final_score ?? (Number(iv.trust_score) <= 1 ? Number(iv.trust_score) * 100 : iv.trust_score) ?? 0);
+    if (Number.isFinite(score)) totalScore += score;
+    const reason = String(iv.reason || iv.final_verdict_reason || iv.reasoning || '').trim();
+    if (reason && score > strongestScore) {
+      strongestScore = score;
+      strongestReason = reason;
+    }
+    const typeName = String(report.incident_type_name || 'Incident').trim();
+    themes.set(typeName, (themes.get(typeName) || 0) + 1);
+  });
+
+  const primaryTheme = [...themes.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || 'incident activity';
+  const averageScore = Math.round(totalScore / verifications.length);
+  const verdict =
+    counts.ACCEPTED >= Math.max(counts.REVIEW, counts.REJECTED)
+      ? 'ACCEPTED'
+      : counts.REJECTED > counts.ACCEPTED
+        ? 'REJECTED'
+        : 'REVIEW';
+
+  const verdictText =
+    verdict === 'ACCEPTED'
+      ? `The selected reports likely describe a connected ${primaryTheme.toLowerCase()} pattern.`
+      : verdict === 'REJECTED'
+        ? `The selected reports do not yet form a reliable ${primaryTheme.toLowerCase()} case pattern.`
+        : `The selected reports suggest a possible ${primaryTheme.toLowerCase()} pattern, but the evidence is mixed.`;
+
+  return {
+    title: 'AI Case Suggestion',
+    verdict,
+    reason: strongestReason || verdictText,
+    summary: verdictText,
+    metrics: [
+      { label: 'Accepted', value: counts.ACCEPTED },
+      { label: 'Review', value: counts.REVIEW },
+      { label: 'Rejected', value: counts.REJECTED },
+      { label: 'Avg score', value: `${averageScore}%` },
+    ],
+  };
+};
+
 const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
   const [title, setTitle] = useState('');
   const [incidentTypes, setIncidentTypes] = useState([]);
@@ -78,6 +145,8 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
   }, [isOpen]);
 
   if (!isOpen) return null;
+
+  const aiSuggestion = summarizeCaseAiSuggestion(availableReports, selectedReportIds);
 
   const submit = async () => {
     if (!title.trim()) {
@@ -348,6 +417,55 @@ const NewCaseModal = ({ isOpen, onClose, onCreated, initialReportId }) => {
             </div>
           )}
         </div>
+
+        {aiSuggestion && (
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '12px',
+              borderRadius: '8px',
+              background:
+                aiSuggestion.verdict === 'ACCEPTED'
+                  ? 'rgba(76, 175, 80, 0.12)'
+                  : aiSuggestion.verdict === 'REJECTED'
+                    ? 'rgba(244, 67, 54, 0.12)'
+                    : 'rgba(255, 152, 0, 0.12)',
+              border:
+                aiSuggestion.verdict === 'ACCEPTED'
+                  ? '1px solid rgba(76, 175, 80, 0.35)'
+                  : aiSuggestion.verdict === 'REJECTED'
+                    ? '1px solid rgba(244, 67, 54, 0.35)'
+                    : '1px solid rgba(255, 152, 0, 0.35)',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
+              {aiSuggestion.title}
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text)', lineHeight: 1.5, marginBottom: '8px' }}>
+              {aiSuggestion.summary || aiSuggestion.reason}
+            </div>
+            {aiSuggestion.reason && (
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '8px' }}>
+                {aiSuggestion.reason}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {aiSuggestion.metrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.45)',
+                    fontSize: '11px',
+                  }}
+                >
+                  <strong>{metric.value}</strong> {metric.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         
         <div className="input-group">
           <div className="input-label">Notes</div>

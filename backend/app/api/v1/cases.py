@@ -289,6 +289,12 @@ def _report_to_response(r: Report, linked_case_id: Optional[UUID] = None) -> Rep
         cr_links = list(getattr(r, "case_reports", None) or [])
         if cr_links:
             case_id = cr_links[0].case_id
+    incident_verification = None
+    feature_vector = getattr(r, "feature_vector", None)
+    if isinstance(feature_vector, dict):
+        payload = feature_vector.get("incident_verification")
+        if isinstance(payload, dict):
+            incident_verification = payload
     return ReportResponse(
         report_id=r.report_id,
         report_number=getattr(r, "report_number", None),
@@ -310,6 +316,7 @@ def _report_to_response(r: Report, linked_case_id: Optional[UUID] = None) -> Rep
         evidence_count=len(r.evidence_files) if r.evidence_files else 0,
         evidence_preview=[],
         trust_score=None,
+        incident_verification=incident_verification,
         hotspot_id=None,
         hotspot_risk_level=None,
         hotspot_incident_count=None,

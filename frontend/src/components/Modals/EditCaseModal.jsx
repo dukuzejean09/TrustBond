@@ -2,6 +2,68 @@ import React, { useEffect, useState } from 'react';
 import api from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 
+const summarizeCaseAiSuggestion = (reports) => {
+  const linked = (reports || []).filter(Boolean);
+  if (!linked.length) return null;
+
+  const verifications = linked
+    .map((r) => ({ report: r, iv: r.incident_verification }))
+    .filter((item) => item.iv && typeof item.iv === 'object');
+
+  if (!verifications.length) {
+    return {
+      verdict: 'INSUFFICIENT',
+      summary: 'Linked reports do not yet have enough AI reasoning to summarize this case.',
+      reason: '',
+      metrics: [],
+    };
+  }
+
+  const counts = { ACCEPTED: 0, REVIEW: 0, REJECTED: 0 };
+  let totalScore = 0;
+  let bestReason = '';
+  let bestScore = -1;
+
+  verifications.forEach(({ iv }) => {
+    const decision = String(iv.decision || iv.label || 'REVIEW').toUpperCase();
+    if (decision in counts) counts[decision] += 1;
+    const score = Number(iv.final_score ?? (Number(iv.trust_score) <= 1 ? Number(iv.trust_score) * 100 : iv.trust_score) ?? 0);
+    if (Number.isFinite(score)) totalScore += score;
+    const reason = String(iv.reason || iv.final_verdict_reason || iv.reasoning || '').trim();
+    if (reason && score > bestScore) {
+      bestReason = reason;
+      bestScore = score;
+    }
+  });
+
+  const averageScore = Math.round(totalScore / verifications.length);
+  const verdict =
+    counts.ACCEPTED >= Math.max(counts.REVIEW, counts.REJECTED)
+      ? 'ACCEPTED'
+      : counts.REJECTED > counts.ACCEPTED
+        ? 'REJECTED'
+        : 'REVIEW';
+
+  const summary =
+    verdict === 'ACCEPTED'
+      ? 'AI suggests the linked reports describe a credible shared incident pattern.'
+      : verdict === 'REJECTED'
+        ? 'AI suggests the linked reports do not yet form a credible case pattern.'
+        : 'AI suggests the linked reports may be related, but the pattern still needs officer review.';
+
+  return {
+    verdict,
+    summary,
+    reason: bestReason,
+    metrics: [
+      { label: 'Accepted', value: counts.ACCEPTED },
+      { label: 'Review', value: counts.REVIEW },
+      { label: 'Rejected', value: counts.REJECTED },
+      { label: 'Avg score', value: `${averageScore}%` },
+    ],
+  };
+};
+
 const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
   const { user: me } = useAuth();
   const role = me?.role || 'officer';
@@ -13,6 +75,7 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
   const [outcome, setOutcome] = useState(caseItem?.outcome || '');
   const [assignedToId, setAssignedToId] = useState(caseItem?.assigned_to_id || '');
   const [officers, setOfficers] = useState([]);
+  const [linkedReports, setLinkedReports] = useState([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -23,9 +86,28 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
     setDescription(caseItem.description || '');
     setOutcome(caseItem.outcome || '');
     setAssignedToId(caseItem.assigned_to_id || '');
+    setLinkedReports([]);
     setError('');
     setSaving(false);
   }, [isOpen, caseItem]);
+
+  useEffect(() => {
+    if (!isOpen || !caseItem?.case_id) return;
+    let cancelled = false;
+    api
+      .get(`/api/v1/cases/${caseItem.case_id}/reports`)
+      .then((res) => {
+        if (cancelled) return;
+        setLinkedReports(res || []);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLinkedReports([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, caseItem?.case_id]);
 
   // Load officer options for assignment when admin/supervisor.
   useEffect(() => {
@@ -87,6 +169,8 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
   }, [isOpen, isAdminOrSupervisor, caseItem?.assigned_to_id, caseItem?.location_id]);
 
   if (!isOpen || !caseItem) return null;
+
+  const aiSuggestion = summarizeCaseAiSuggestion(linkedReports);
 
   const submit = async () => {
     setSaving(true);
@@ -179,6 +263,55 @@ const EditCaseModal = ({ isOpen, onClose, caseItem, onSaved }) => {
             placeholder="Update investigation details..."
           ></textarea>
         </div>
+
+        {aiSuggestion && (
+          <div
+            style={{
+              marginBottom: '12px',
+              padding: '12px',
+              borderRadius: '8px',
+              background:
+                aiSuggestion.verdict === 'ACCEPTED'
+                  ? 'rgba(76, 175, 80, 0.12)'
+                  : aiSuggestion.verdict === 'REJECTED'
+                    ? 'rgba(244, 67, 54, 0.12)'
+                    : 'rgba(255, 152, 0, 0.12)',
+              border:
+                aiSuggestion.verdict === 'ACCEPTED'
+                  ? '1px solid rgba(76, 175, 80, 0.35)'
+                  : aiSuggestion.verdict === 'REJECTED'
+                    ? '1px solid rgba(244, 67, 54, 0.35)'
+                    : '1px solid rgba(255, 152, 0, 0.35)',
+            }}
+          >
+            <div style={{ fontSize: '12px', fontWeight: 700, marginBottom: '6px' }}>
+              AI Suggestion For This Case
+            </div>
+            <div style={{ fontSize: '11px', color: 'var(--text)', lineHeight: 1.5, marginBottom: '8px' }}>
+              {aiSuggestion.summary}
+            </div>
+            {aiSuggestion.reason && (
+              <div style={{ fontSize: '11px', color: 'var(--muted)', marginBottom: '8px' }}>
+                {aiSuggestion.reason}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              {aiSuggestion.metrics.map((metric) => (
+                <div
+                  key={metric.label}
+                  style={{
+                    padding: '6px 8px',
+                    borderRadius: '6px',
+                    background: 'rgba(255,255,255,0.45)',
+                    fontSize: '11px',
+                  }}
+                >
+                  <strong>{metric.value}</strong> {metric.label}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="input-group">
           <div className="input-label">Outcome</div>

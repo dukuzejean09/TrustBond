@@ -75,7 +75,9 @@ router = APIRouter(prefix="/reports", tags=["reports"])
 logger = logging.getLogger(__name__)
 
 _INCIDENT_VERIFICATION_DECISION_PRIORITY = {
+    "ACCEPTED": 2,
     "REAL": 2,
+    "REVIEW": 1,
     "SUSPICIOUS": 1,
     "REJECTED": 0,
 }

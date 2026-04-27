@@ -58,6 +58,49 @@ const friendlyPredictionLabel = (label) => {
   return map[key] || key.replace(/_/g, " ");
 };
 
+const friendlyIncidentDecision = (decision) => {
+  const key = String(decision || "").trim().toUpperCase();
+  if (!key) return "Unknown";
+  const map = {
+    ACCEPTED: "Accepted",
+    REVIEW: "Needs review",
+    REJECTED: "Rejected",
+    REAL: "Accepted",
+    SUSPICIOUS: "Needs review",
+  };
+  return map[key] || key.replace(/_/g, " ");
+};
+
+const incidentDecisionTone = (decision) => {
+  const key = String(decision || "").trim().toUpperCase();
+  if (key === "ACCEPTED" || key === "REAL") {
+    return {
+      bg: "rgba(76, 175, 80, 0.12)",
+      border: "1px solid rgba(76, 175, 80, 0.35)",
+      text: "var(--success)",
+    };
+  }
+  if (key === "REVIEW" || key === "SUSPICIOUS") {
+    return {
+      bg: "rgba(255, 152, 0, 0.12)",
+      border: "1px solid rgba(255, 152, 0, 0.35)",
+      text: "#ff9800",
+    };
+  }
+  return {
+    bg: "rgba(244, 67, 54, 0.12)",
+    border: "1px solid rgba(244, 67, 54, 0.35)",
+    text: "var(--danger)",
+  };
+};
+
+const scoreDisplay = (value, suffix = "%") => {
+  if (value == null) return "—";
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "—";
+  return `${Math.round(n)}${suffix}`;
+};
+
 const relativeTime = (isoLike) => {
   if (!isoLike) return null;
   const t = new Date(isoLike);
@@ -510,6 +553,16 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
   useEffect(() => {
     loadLocationHistory();
   }, [report?.report_id]);
+
+  const incidentVerification = report?.incident_verification || null;
+  const incidentDecision =
+    incidentVerification?.decision || incidentVerification?.label || "";
+  const incidentTone = incidentDecisionTone(incidentDecision);
+  const incidentReason =
+    incidentVerification?.reason ||
+    incidentVerification?.final_verdict_reason ||
+    incidentVerification?.reasoning ||
+    "";
 
   // Load related reports
   useEffect(() => {
@@ -2143,6 +2196,96 @@ const ReportDetail = ({ goToScreen, openModal, reportId, wsRefreshKey }) => {
                   {getVerificationStatus(report, mlPrediction)}
                 </div>
               </div>
+
+              {incidentVerification && (
+                <div
+                  style={{
+                    marginTop: 12,
+                    padding: "12px",
+                    borderRadius: 8,
+                    background: incidentTone.bg,
+                    border: incidentTone.border,
+                  }}
+                >
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 8,
+                    }}
+                  >
+                    <div style={{ fontSize: "12px", fontWeight: 700 }}>
+                      AI Decision
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        color: incidentTone.text,
+                      }}
+                    >
+                      {friendlyIncidentDecision(incidentDecision)}
+                    </div>
+                  </div>
+
+                  {incidentReason && (
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        lineHeight: 1.5,
+                        color: "var(--text)",
+                        marginBottom: 10,
+                      }}
+                    >
+                      {incidentReason}
+                    </div>
+                  )}
+
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ padding: "8px", borderRadius: 6, background: "rgba(255,255,255,0.45)" }}>
+                      <div style={{ fontSize: "10px", color: "var(--muted)", marginBottom: 2 }}>Final score</div>
+                      <div style={{ fontSize: "12px", fontWeight: 800 }}>{scoreDisplay(incidentVerification.final_score)}</div>
+                    </div>
+                    <div style={{ padding: "8px", borderRadius: 6, background: "rgba(255,255,255,0.45)" }}>
+                      <div style={{ fontSize: "10px", color: "var(--muted)", marginBottom: 2 }}>Trust score</div>
+                      <div style={{ fontSize: "12px", fontWeight: 800 }}>{scoreDisplay(normalizePercent(incidentVerification.trust_score))}</div>
+                    </div>
+                    <div style={{ padding: "8px", borderRadius: 6, background: "rgba(255,255,255,0.45)" }}>
+                      <div style={{ fontSize: "10px", color: "var(--muted)", marginBottom: 2 }}>Text consistency</div>
+                      <div style={{ fontSize: "12px", fontWeight: 800 }}>
+                        {scoreDisplay(normalizePercent(
+                          incidentVerification?.details?.consistency_score ??
+                          incidentVerification?.consistency_score
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ padding: "8px", borderRadius: 6, background: "rgba(255,255,255,0.45)" }}>
+                      <div style={{ fontSize: "10px", color: "var(--muted)", marginBottom: 2 }}>Evidence match</div>
+                      <div style={{ fontSize: "12px", fontWeight: 800 }}>
+                        {scoreDisplay(normalizePercent(
+                          incidentVerification?.details?.evidence_match_score ??
+                          incidentVerification?.evidence_match_score
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {incidentVerification?.details && (
+                    <div style={{ marginTop: 10, fontSize: "10px", color: "var(--muted)" }}>
+                      Similarity: {scoreDisplay(normalizePercent(incidentVerification.details.similarity_score))} ·
+                      {" "}Contradiction: {incidentVerification.details.contradiction ? "Yes" : "No"}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {report.flag_reason && (
                 <div style={{ marginTop: 10, padding: "10px", borderRadius: 8, background: "rgba(255, 152, 0, 0.12)", border: "1px solid rgba(255, 152, 0, 0.35)" }}>
