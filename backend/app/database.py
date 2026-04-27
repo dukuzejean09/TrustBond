@@ -13,7 +13,6 @@ engine = create_engine(
     connect_args={
         "connect_timeout": 60,
         "application_name": "trustbond_backend",
-        "options": "-c statement_timeout=30000"  # 30 second query timeout
     },
     echo=False  # Set to True for SQL debugging if needed
 )
