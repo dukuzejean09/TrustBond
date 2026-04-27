@@ -1,12 +1,20 @@
+import os
+from pathlib import Path
 from typing import Optional, List
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings
+
+# Resolve .env regardless of working directory (Alembic, Render, local dev).
+# Priority: backend/.env relative to this file → .env in cwd as last resort.
+_HERE = Path(__file__).resolve().parent          # backend/app/
+_BACKEND_ENV = _HERE.parent / ".env"             # backend/.env
+_ENV_FILE = str(_BACKEND_ENV) if _BACKEND_ENV.exists() else ".env"
 
 
 class Settings(BaseSettings):
     app_name: str = "TrustBond API"
     debug: bool = False
-    database_url: str = "postgresql://postgres:postgres@localhost:5432/trustbond"
+    database_url: str = "postgresql://neondb_owner:npg_TYSOxwo1lLM6@ep-weathered-snow-ago27130-pooler.c-2.eu-central-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
     secret_key: str = "change-me-in-production"
 
     # CORS: comma-separated origins, e.g. "https://dashboard.trustbond.rw". Empty = allow all ("*").
@@ -81,8 +89,20 @@ class Settings(BaseSettings):
                 merged.append(origin)
         return merged
 
+    @model_validator(mode="after")
+    def _guard_production_defaults(self) -> "Settings":
+        is_local = "localhost" in self.database_url or "127.0.0.1" in self.database_url
+        # Only block localhost DB when DEBUG is explicitly off (i.e. production)
+        if not self.debug and is_local:
+            raise RuntimeError(
+                "DATABASE_URL is still pointing to localhost but DEBUG=False. "
+                "Set DATABASE_URL to your Neon (or other remote) database in the "
+                "environment variables before starting in production."
+            )
+        return self
+
     class Config:
-        env_file = ".env"
+        env_file = _ENV_FILE
         env_file_encoding = "utf-8"
 
 

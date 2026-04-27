@@ -37,13 +37,15 @@ jobs:
         env:
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ secrets.RENDER_SERVICE_ID }}
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
           curl -s -X PUT "https://api.render.com/v1/services/$RENDER_SERVICE_ID/env-vars" \
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Content-Type: application/json" \
             -d '[
               {"key": "FRONTEND_URL", "value": "https://trustbond-dashboard.vercel.app"},
-              {"key": "CORS_ORIGINS", "value": "https://trustbond-dashboard.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"}
+              {"key": "CORS_ORIGINS", "value": "https://trustbond-dashboard.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"},
+              {"key": "DATABASE_URL", "value": "'"$DATABASE_URL"'"}
             ]'
 
       - name: Trigger Render Deploy
