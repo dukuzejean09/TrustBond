@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from app.core.websocket import manager
 import asyncio
@@ -32,7 +33,12 @@ oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", aut
 
 
 def _authenticate_user(db: Session, email: str, password: str) -> PoliceUser | None:
-    user = db.query(PoliceUser).filter(PoliceUser.email == email).first()
+    normalized_email = email.strip().lower()
+    user = (
+        db.query(PoliceUser)
+        .filter(func.lower(PoliceUser.email) == normalized_email)
+        .first()
+    )
     if not user:
         return None
     if not user.is_active:

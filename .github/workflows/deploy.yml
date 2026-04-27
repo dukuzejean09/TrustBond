@@ -45,6 +45,7 @@ jobs:
             -d '[
               {"key": "FRONTEND_URL", "value": "https://trustbond-dashboard.vercel.app"},
               {"key": "CORS_ORIGINS", "value": "https://trustbond-dashboard.vercel.app,http://localhost:5173,http://localhost:3000,http://127.0.0.1:5173"},
+              {"key": "CORS_ORIGIN_REGEX", "value": "^https://trustbond-dashboard(?:-[a-z0-9-]+)?\\.vercel\\.app$"},
               {"key": "DATABASE_URL", "value": "'"$DATABASE_URL"'"}
             ]'
 
@@ -57,4 +58,3 @@ jobs:
             -H "Authorization: Bearer $RENDER_API_KEY" \
             -H "Content-Type: application/json" \
             -d '{"clearCache":"do_not_clear"}'
-

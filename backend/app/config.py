@@ -1,5 +1,6 @@
 from pathlib import Path
 from typing import Optional, List
+from urllib.parse import urlparse
 from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
@@ -83,10 +84,43 @@ class Settings(BaseSettings):
             return ["*"]
 
         merged: List[str] = []
-        for origin in configured + default_local_origins:
+        frontend_origin = self.get_frontend_origin()
+        origins = configured + ([frontend_origin] if frontend_origin else []) + default_local_origins
+        for origin in origins:
             if origin not in merged:
                 merged.append(origin)
         return merged
+
+    def get_frontend_origin(self) -> Optional[str]:
+        raw = (self.frontend_url or "").strip()
+        if not raw:
+            return None
+
+        parsed = urlparse(raw if "://" in raw else f"https://{raw}")
+        if not parsed.scheme or not parsed.netloc:
+            return None
+        return f"{parsed.scheme}://{parsed.netloc}"
+
+    def get_cors_origin_regex(self) -> Optional[str]:
+        configured = (self.cors_origin_regex or "").strip()
+        if configured:
+            return configured
+
+        frontend_origin = self.get_frontend_origin()
+        if not frontend_origin:
+            return None
+
+        parsed = urlparse(frontend_origin)
+        hostname = (parsed.hostname or "").lower()
+        if not hostname.endswith(".vercel.app"):
+            return None
+
+        project_slug = hostname.removesuffix(".vercel.app")
+        if not project_slug:
+            return None
+
+        # Allow the main Vercel production URL plus preview URLs derived from the same project slug.
+        return rf"^https://{project_slug}(?:-[a-z0-9-]+)?\.vercel\.app$"
 
     class Config:
         env_file = _ENV_FILE
