@@ -41,6 +41,7 @@ class Report(Base):
     network_type = Column(String(20))  # from mobile at submit
     battery_level = Column(Numeric(5, 2))  # from mobile at submit (optional)
     context_tags = Column(ARRAY(String), default=lambda: [])  # e.g. Night-time, Weapons involved
+    incident_group_id = Column(UUID(as_uuid=True), ForeignKey("incident_groups.group_id", ondelete="SET NULL"))
 
     device = relationship("Device", backref="reports")
     incident_type = relationship("IncidentType", backref="reports")
@@ -48,3 +49,4 @@ class Report(Base):
     location = relationship("Location", foreign_keys=[location_id])
     handling_station = relationship("Station", backref="reports", foreign_keys=[handling_station_id])
     evidence_files = relationship("EvidenceFile", back_populates="report", cascade="all, delete-orphan")
+    incident_group = relationship("IncidentGroup", back_populates="reports")

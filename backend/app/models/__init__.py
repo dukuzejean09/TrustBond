@@ -13,7 +13,7 @@ from app.models.report_assignment import ReportAssignment
 from app.models.notification import Notification
 from app.models.audit_log import AuditLog
 from app.models.password_reset_code import PasswordResetCode
-from app.models.case import Case, CaseReport
+from app.models.case import Case, CaseReport, CaseHistory
 from app.models.user_session import UserSession
 from app.models.system_config import SystemConfig
 from app.models.station import Station
@@ -36,6 +36,7 @@ __all__ = [
     "PasswordResetCode",
     "Case",
     "CaseReport",
+    "CaseHistory",
     "UserSession",
     "SystemConfig",
     "Station",

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, SmallInteger, String, Text, DateTime, ForeignKey, Numeric
+from sqlalchemy import Column, Integer, SmallInteger, String, Text, DateTime, ForeignKey, Numeric, Boolean
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -29,12 +29,18 @@ class Case(Base):
 
     # Station this case belongs to (primary organisational anchor)
     station_id = Column(Integer, ForeignKey("stations.station_id"), nullable=True)
+    incident_group_id = Column(UUID(as_uuid=True), ForeignKey("incident_groups.group_id", ondelete="SET NULL"), nullable=True)
+    device_count = Column(Integer, nullable=False, default=1)
+    auto_created = Column(Boolean, nullable=False, default=False)
+    source = Column(String(30), nullable=False, default="manual")
+    auto_group_confidence = Column(Numeric(5, 2), nullable=True)
 
     location = relationship("Location", backref="cases")
     incident_type = relationship("IncidentType", backref="cases")
     assigned_to = relationship("PoliceUser", foreign_keys=[assigned_to_id])
     created_by_user = relationship("PoliceUser", foreign_keys=[created_by])
     station = relationship("Station", backref="cases", foreign_keys=[station_id])
+    incident_group = relationship("IncidentGroup", back_populates="case")
 
 
 class CaseReport(Base):

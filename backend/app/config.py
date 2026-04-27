@@ -61,6 +61,23 @@ class Settings(BaseSettings):
     impossible_travel_min_distance_km: float = 20.0
     max_plausible_speed_kmh: float = 250.0
 
+    @field_validator("debug", mode="before")
+    @classmethod
+    def normalize_debug_flag(cls, value):
+        if isinstance(value, bool) or value is None:
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on", "dev", "development", "debug"}:
+                return True
+            if normalized in {"0", "false", "no", "off", "prod", "production", "release", "staging"}:
+                return False
+
+        return value
+
     @field_validator("database_url", mode="before")
     @classmethod
     def normalize_database_url(cls, value: str) -> str:

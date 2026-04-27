@@ -15,8 +15,6 @@ import cloudinary.uploader
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
-from app.services.evidence_analysis import evidence_analysis_service
-
 from app.config import settings
 from app.database import get_db, SessionLocal
 from app.models.report import Report
@@ -81,6 +79,20 @@ _INCIDENT_VERIFICATION_DECISION_PRIORITY = {
     "SUSPICIOUS": 1,
     "REJECTED": 0,
 }
+
+
+def _get_evidence_analysis_service():
+    try:
+        from app.services.evidence_analysis import evidence_analysis_service
+
+        return evidence_analysis_service
+    except ModuleNotFoundError as exc:
+        if exc.name == "cv2":
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Evidence analysis is unavailable in this deployment.",
+            ) from exc
+        raise
 
 
 def _get_report_incident_verification(report: Report) -> Optional[Dict[str, Any]]:
@@ -1313,6 +1325,10 @@ def create_report(
         raise HTTPException(status_code=409, detail="Report already exists")
 
     # Evidence processing with content analysis
+    evidence_analysis_service = None
+    if report_data.evidence_files:
+        evidence_analysis_service = _get_evidence_analysis_service()
+
     evidence_metadata_list = []
     evidence_validations = []
     
