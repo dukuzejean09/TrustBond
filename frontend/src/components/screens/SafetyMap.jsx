@@ -271,7 +271,7 @@ const SafetyMap = ({ goToScreen, openModal, wsRefreshKey }) => {
           reports_in_clusters: 0,
           risk_counts: { critical: 0, warning: 0, normal: 0 },
           stage_counts: { emerging: 0, active: 0, intense: 0 },
-          avg_cluster_trust: 75,
+          avg_cluster_trust: null,
           latest_cluster_run: "Never"
         });
       });
@@ -441,14 +441,11 @@ const SafetyMap = ({ goToScreen, openModal, wsRefreshKey }) => {
   );
   const avgClusterTrust = useMemo(() => {
     const withTrust = historicalHotspots
-      .map((h) =>
-        Number(
-          h.boundary_points && h.boundary_points.length > 0
-            ? 85 + Math.random() * 15
-            : 70 + Math.random() * 20,
-        ),
-      )
-      .filter((v) => !Number.isNaN(v));
+      .map((h) => {
+        const v = h.avg_trust_score ?? h.trust_score ?? h.average_trust ?? null;
+        return v !== null ? Number(v) : NaN;
+      })
+      .filter((v) => !Number.isNaN(v) && Number.isFinite(v));
     return withTrust.length
       ? Math.round(withTrust.reduce((a, b) => a + b, 0) / withTrust.length)
       : null;
@@ -1976,8 +1973,6 @@ const SecurityRecommendations = ({ hotspots }) => {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-      {/* Security Recommendations Section - Hidden */}
-      {/* 
       {recommendations.map((rec, index) => (
         <div
           key={index}
@@ -2033,7 +2028,7 @@ const SecurityRecommendations = ({ hotspots }) => {
           </div>
         </div>
       ))}
-      
+
       {recommendations.length > 0 && (
         <div style={{
           padding: "8px 12px",
@@ -2046,25 +2041,11 @@ const SecurityRecommendations = ({ hotspots }) => {
             color: "var(--muted)",
             textAlign: "center",
           }}>
-            💡 Recommendations based on {hotspots.length} hotspot{hotspots.length !== 1 ? 's' : ''} analyzed
+            Recommendations based on {hotspots.length} hotspot{hotspots.length !== 1 ? "s" : ""} analyzed
             {hotspots.length > 0 && ` with ${hotspots.reduce((sum, h) => sum + h.incident_count, 0)} total incidents`}
           </div>
         </div>
       )}
-      */}
-      
-      {/* Empty placeholder when recommendations are hidden */}
-      <div style={{
-        padding: "20px",
-        backgroundColor: "var(--surface)",
-        borderRadius: "8px",
-        border: "1px solid var(--border)",
-        textAlign: "center",
-        color: "var(--muted)",
-        fontSize: "12px"
-      }}>
-        Security recommendations are currently hidden
-      </div>
     </div>
   );
 };

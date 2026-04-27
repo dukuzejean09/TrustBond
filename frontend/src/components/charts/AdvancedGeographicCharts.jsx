@@ -28,9 +28,11 @@ const AdvancedGeographicCharts = ({ data, type, timeWindow }) => {
 
     let chartConfig;
     
-    // Use fallback data if no data provided
-    const chartData = data || {};
-    
+    // No data available — skip rendering the chart
+    if (!data) return;
+
+    const chartData = data;
+
     switch (type) {
       case 'timeSeries':
         chartConfig = createTimeSeriesChart(chartData);
@@ -144,13 +146,7 @@ const AdvancedGeographicCharts = ({ data, type, timeWindow }) => {
   };
 
   const createPersonalPerformanceChart = (data) => {
-  const performanceData = data.performance_data || [
-    { date: 'Mon', reports_processed: 8, avg_response_time: 15 },
-    { date: 'Tue', reports_processed: 12, avg_response_time: 12 },
-    { date: 'Wed', reports_processed: 10, avg_response_time: 18 },
-    { date: 'Thu', reports_processed: 15, avg_response_time: 10 },
-    { date: 'Fri', reports_processed: 9, avg_response_time: 20 }
-  ];
+  const performanceData = data.performance_data || [];
   
   return {
     type: 'line',
@@ -250,11 +246,7 @@ const AdvancedGeographicCharts = ({ data, type, timeWindow }) => {
 };
 
   const createSectorPerformanceChart = (data) => {
-    const sectors = data.performance_data || data.sectors || [
-      { sector_name: 'Sector A', report_count: 15, device_count: 5, avg_trust_score: 75 },
-      { sector_name: 'Sector B', report_count: 23, device_count: 8, avg_trust_score: 82 },
-      { sector_name: 'Sector C', report_count: 8, device_count: 3, avg_trust_score: 68 }
-    ];
+    const sectors = data.performance_data || data.sectors || [];
     
     return {
       type: 'bar',
@@ -603,9 +595,27 @@ const AdvancedGeographicCharts = ({ data, type, timeWindow }) => {
     };
   };
 
+  if (!data) {
+    return (
+      <div style={{
+        height: '200px',
+        width: '100%',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        color: 'var(--muted)',
+        fontSize: '13px',
+        border: '1px dashed var(--border)',
+        borderRadius: '8px',
+      }}>
+        No data available for the selected time window
+      </div>
+    );
+  }
+
   return (
-    <div style={{ 
-      height: '400px', 
+    <div style={{
+      height: '400px',
       width: '100%',
       backgroundColor: '#fff',
       borderRadius: '8px',

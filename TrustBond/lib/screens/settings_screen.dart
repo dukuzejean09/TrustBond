@@ -457,6 +457,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  Future<void> _clearAllData() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      setState(() {
+        _locationSharing = true;
+        _dataEncryption = true;
+        _biometricAuth = false;
+        _secureStorage = true;
+        _autoBackup = false;
+        _pushNotif = true;
+        _hotspotAlerts = true;
+        _reportUpdates = true;
+      });
+      _showSuccess('All local data cleared. Your device identity has been reset.');
+    } catch (e) {
+      _showError('Failed to clear data. Please try again.');
+    }
+  }
+
   void _showClearDialog() {
     showDialog(
       context: context,
@@ -476,9 +496,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 style: TextStyle(color: AppColors.muted)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              // TODO: implement clear
+              await _clearAllData();
             },
             child: const Text('Clear',
                 style: TextStyle(color: AppColors.danger)),
