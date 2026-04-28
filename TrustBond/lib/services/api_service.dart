@@ -13,6 +13,8 @@ class ApiService {
 
   final http.Client _client = http.Client();
   static const Duration _timeout = Duration(seconds: 60);
+  static const Duration _catalogTimeout = Duration(seconds: 12);
+  static const Duration _reportsTimeout = Duration(seconds: 15);
   static const String _incidentTypesCacheKey = 'tb_cache_incident_types_v1';
   static const String _myReportsCachePrefix = 'tb_cache_my_reports_v1_';
   static const String _reportDetailCachePrefix = 'tb_cache_report_detail_v1_';
@@ -53,12 +55,17 @@ class ApiService {
     throw Exception('Failed to get device profile: ${response.statusCode}');
   }
 
+  Future<List<dynamic>> getCachedIncidentTypes() async {
+    final cached = await _readCache(_incidentTypesCacheKey);
+    return cached is List ? cached : const <dynamic>[];
+  }
+
   Future<List<dynamic>> getIncidentTypes() async {
     try {
       final response = await _client.get(
         Uri.parse('${ApiConfig.incidentTypesUrl}/'),
         headers: _getHeaders,
-      ).timeout(_timeout);
+      ).timeout(_catalogTimeout);
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body) as List<dynamic>;
@@ -82,7 +89,9 @@ class ApiService {
     );
     final cacheKey = '$_myReportsCachePrefix$deviceId';
     try {
-      final response = await _client.get(uri, headers: _getHeaders).timeout(_timeout);
+      final response = await _client
+          .get(uri, headers: _getHeaders)
+          .timeout(_reportsTimeout);
       if (response.statusCode == 200) {
         final decoded = jsonDecode(response.body);
         final data = decoded is List
@@ -102,6 +111,11 @@ class ApiService {
       }
       rethrow;
     }
+  }
+
+  Future<List<dynamic>> getCachedMyReports(String deviceId) async {
+    final cached = await _readCache('$_myReportsCachePrefix$deviceId');
+    return cached is List ? cached : const <dynamic>[];
   }
 
   Future<void> _cacheReportDetailStubs(String deviceId, List<dynamic> listData) async {

@@ -84,9 +84,28 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     try {
       final localQueue = await _queueService.getQueuedReports();
       final parsedReports = <ReportListItem>[];
+      if (deviceId != null && deviceId.isNotEmpty) {
+        final cachedList = await _apiService.getCachedMyReports(deviceId);
+        for (final item in cachedList) {
+          try {
+            parsedReports.add(
+              ReportListItem.fromJson(item as Map<String, dynamic>),
+            );
+          } catch (_) {}
+        }
+        if (parsedReports.isNotEmpty && mounted && showSpinner) {
+          setState(() {
+            _reports = List<ReportListItem>.from(parsedReports);
+            _queuedReports = localQueue;
+            _loading = false;
+            _error = null;
+          });
+        }
+      }
 
       if (deviceId != null && deviceId.isNotEmpty) {
         final list = await _apiService.getMyReports(deviceId);
+        parsedReports.clear();
         for (final item in list) {
           try {
             parsedReports.add(

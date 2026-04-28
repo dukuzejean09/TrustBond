@@ -259,8 +259,6 @@ def _process_report_background(
             logger.info(f"XGBoost ML scoring completed for report {report_id}")
         except Exception as e:
             logger.error(f"XGBoost ML scoring failed for report {report_id}: {e}")
-            # Don't rely on fallback - fix the root cause
-            raise HTTPException(status_code=500, detail=f"ML scoring failed during report creation: {str(e)}")
             
         try:
             update_device_ml_aggregates(db, device, window=30)
@@ -504,7 +502,7 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return 2 * r * math.asin(math.sqrt(a))
 
 
-def _log_blocked_device_action(
+def _log_blocked_attempt(
     db: Session,
     action_type: str,
     request: Optional[Request],
@@ -639,21 +637,37 @@ def _enforce_device_submission_guards(
                 detail="Impossible movement pattern detected for this device (large distance in short time). Report blocked for integrity checks.",
             )
 
-    # Professional rate limiting: Balance security with emergency reporting needs
-    
-    # Check for suspicious rapid submissions (last 10 minutes)
-    rate_limit_window = now_utc - timedelta(minutes=10)  # Last 10 minutes
-    recent_submissions = (
+    # Rate limiting: fetch the last 25 reports once and derive all counts from them.
+    rate_limit_window = now_utc - timedelta(minutes=10)
+    recent_reports_raw = (
         db.query(Report)
         .filter(
             Report.device_id == device.device_id,
             Report.reported_at >= rate_limit_window,
         )
-        .count()
+        .order_by(Report.reported_at.desc())
+        .limit(25)
+        .all()
     )
-    
-    # Allow max 8 reports per 10 minutes per device (reasonable for multiple incidents)
-    max_submissions_per_10min = 8
+
+    very_recent_window = now_utc - timedelta(minutes=2)
+    extreme_window = now_utc - timedelta(seconds=30)
+
+    recent_submissions = len(recent_reports_raw)
+    very_recent_submissions = sum(
+        1 for r in recent_reports_raw
+        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= very_recent_window
+    )
+    extreme_submissions = sum(
+        1 for r in recent_reports_raw
+        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= extreme_window
+    )
+    very_recent_reports = [
+        r for r in recent_reports_raw
+        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= very_recent_window
+    ]
+
+    max_submissions_per_10min = 2
     if recent_submissions >= max_submissions_per_10min:
         _log_blocked_attempt(
             db,
@@ -671,20 +685,8 @@ def _enforce_device_submission_guards(
             status_code=429,
             detail=f"Rate limit exceeded: Maximum {max_submissions_per_10min} reports allowed per 10 minutes. For emergency assistance, please contact authorities directly.",
         )
-    
-    # Check for very suspicious activity (multiple submissions in 2 minutes)
-    very_recent_window = now_utc - timedelta(minutes=2)  # Last 2 minutes
-    very_recent_submissions = (
-        db.query(Report)
-        .filter(
-            Report.device_id == device.device_id,
-            Report.reported_at >= very_recent_window,
-        )
-        .count()
-    )
-    
-    # Allow max 3 reports per 2 minutes per device (prevents spam but allows legitimate multiple reports)
-    max_submissions_per_2min = 3
+
+    max_submissions_per_2min = 2
     if very_recent_submissions >= max_submissions_per_2min:
         _log_blocked_attempt(
             db,
@@ -702,19 +704,7 @@ def _enforce_device_submission_guards(
             status_code=429,
             detail=f"Please wait at least 2 minutes before submitting additional reports. This helps ensure system stability for all users.",
         )
-    
-    # Check for extreme spam (multiple submissions in 30 seconds)
-    extreme_window = now_utc - timedelta(seconds=30)  # Last 30 seconds
-    extreme_submissions = (
-        db.query(Report)
-        .filter(
-            Report.device_id == device.device_id,
-            Report.reported_at >= extreme_window,
-        )
-        .count()
-    )
-    
-    # Allow max 1 report per 30 seconds per device (prevents automated spam)
+
     max_submissions_per_30sec = 1
     if extreme_submissions >= max_submissions_per_30sec:
         _log_blocked_attempt(
@@ -733,18 +723,6 @@ def _enforce_device_submission_guards(
             status_code=429,
             detail=f"Please wait at least 30 seconds between report submissions. Automated submissions are not allowed.",
         )
-    
-    # Additional check: Prevent obvious bot behavior (same incident type repeatedly)
-    very_recent_reports = (
-        db.query(Report)
-        .filter(
-            Report.device_id == device.device_id,
-            Report.reported_at >= very_recent_window,
-        )
-        .order_by(Report.reported_at.desc())
-        .limit(5)
-        .all()
-    )
     
     if len(very_recent_reports) >= 3:
         # Check if last 3 reports are all the same incident type (potential bot behavior)
@@ -1556,46 +1534,7 @@ def create_report(
     except Exception:
         pass
 
-    # === Apply rule-based + ML pipeline (sync, lightweight) ===
     evidence_count = len(evidence_metadata_list)
-    try:
-        from app.core.report_priority import apply_ai_enhanced_rules, calculate_report_priority
-
-        # Best-effort ML scoring before AI-enhanced rules (so it can influence priority/review).
-        # (score_report_credibility itself may be best-effort depending on configuration.)
-        try:
-            score_report_credibility(db, report, device, evidence_count)
-        except Exception as e:
-            logger.error(f"ML scoring failed during report creation for {report.report_id}: {e}")
-
-        ml_prediction_tmp = resolve_ml_prediction_for_report(report)
-        rule_status, is_flagged, flag_reason = apply_ai_enhanced_rules(
-            report, evidence_count, ml_prediction_tmp, db
-        )
-
-        # Preserve hard rejections (boundary) and existing flags unless the rule engine rejects.
-        if report.rule_status != "rejected":
-            report.rule_status = rule_status
-        if rule_status == "rejected":
-            report.status = "rejected"
-            report.verification_status = "rejected"
-            report.is_flagged = True
-        else:
-            report.is_flagged = bool(report.is_flagged or is_flagged)
-            if report.is_flagged:
-                report.verification_status = "under_review"
-            if report.flag_reason is None and flag_reason:
-                report.flag_reason = flag_reason
-
-        report.priority = calculate_report_priority(report, ml_prediction_tmp, evidence_count, db)
-
-        # Device aggregates (best-effort; doesn't block submission).
-        try:
-            update_device_ml_aggregates(db, device, window=30)
-        except Exception:
-            pass
-    except Exception as e:
-        logger.warning(f"AI-enhanced rules pipeline failed for report {report.report_id}: {e}")
 
     # Persist everything before responding
     try:
@@ -1604,6 +1543,15 @@ def create_report(
     except Exception as e:
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to save report: {e}")
+
+    if not out_of_boundary:
+        background_tasks.add_task(
+            _process_report_background,
+            str(report.report_id),
+            str(device.device_id),
+            evidence_count,
+            evidence_metadata_list,
+        )
 
     return _build_report_detail_response(
         report,
@@ -1642,14 +1590,9 @@ def list_reports(
             .options(
                 joinedload(Report.device),
                 joinedload(Report.incident_type),
-                joinedload(Report.village_location)
-                .joinedload(Location.parent),  # Load parent location (cell -> sector hierarchy)
+                joinedload(Report.village_location),
                 selectinload(Report.evidence_files),
-                selectinload(Report.assignments)
-                .joinedload(ReportAssignment.police_user)
-                .joinedload(PoliceUser.station),  # Load station through police user assignments
                 selectinload(Report.ml_predictions),
-                selectinload(Report.case_reports),
             )
             .filter(Report.device_id == device_id)
         )

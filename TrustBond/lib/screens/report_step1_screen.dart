@@ -26,18 +26,31 @@ class _ReportStep1ScreenState extends State<ReportStep1Screen> {
   }
 
   Future<void> _loadTypes() async {
+    final cached = await _apiService.getCachedIncidentTypes();
+    if (mounted && cached.isNotEmpty) {
+      setState(() {
+        _types = List<Map<String, dynamic>>.from(
+          cached.map((e) => Map<String, dynamic>.from(e as Map)),
+        );
+        _loading = false;
+      });
+    }
+
     try {
       final data = await _apiService.getIncidentTypes();
+      if (!mounted) return;
       setState(() {
         _types = List<Map<String, dynamic>>.from(
           data.map((e) => Map<String, dynamic>.from(e as Map)),
         );
         _loading = false;
+        _error = null;
       });
     } catch (e) {
       debugPrint('Failed to load incident types: $e');
+      if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _types.isEmpty ? e.toString() : null;
         _loading = false;
       });
     }
