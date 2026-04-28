@@ -637,37 +637,18 @@ def _enforce_device_submission_guards(
                 detail="Impossible movement pattern detected for this device (large distance in short time). Report blocked for integrity checks.",
             )
 
-    # Rate limiting: fetch the last 25 reports once and derive all counts from them.
+    # Rate limiting: max 1 report per device per 10 minutes.
     rate_limit_window = now_utc - timedelta(minutes=10)
-    recent_reports_raw = (
+    recent_submissions = (
         db.query(Report)
         .filter(
             Report.device_id == device.device_id,
             Report.reported_at >= rate_limit_window,
         )
-        .order_by(Report.reported_at.desc())
-        .limit(25)
-        .all()
+        .count()
     )
 
-    very_recent_window = now_utc - timedelta(minutes=2)
-    extreme_window = now_utc - timedelta(seconds=30)
-
-    recent_submissions = len(recent_reports_raw)
-    very_recent_submissions = sum(
-        1 for r in recent_reports_raw
-        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= very_recent_window
-    )
-    extreme_submissions = sum(
-        1 for r in recent_reports_raw
-        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= extreme_window
-    )
-    very_recent_reports = [
-        r for r in recent_reports_raw
-        if _to_utc(r.reported_at) is not None and _to_utc(r.reported_at) >= very_recent_window
-    ]
-
-    max_submissions_per_10min = 2
+    max_submissions_per_10min = 1
     if recent_submissions >= max_submissions_per_10min:
         _log_blocked_attempt(
             db,
@@ -686,66 +667,6 @@ def _enforce_device_submission_guards(
             detail=f"Rate limit exceeded: Maximum {max_submissions_per_10min} reports allowed per 10 minutes. For emergency assistance, please contact authorities directly.",
         )
 
-    max_submissions_per_2min = 2
-    if very_recent_submissions >= max_submissions_per_2min:
-        _log_blocked_attempt(
-            db,
-            action_type="report_blocked_suspicious_activity",
-            request=request,
-            device=device,
-            details={
-                "very_recent_submissions": very_recent_submissions,
-                "time_window_minutes": 2,
-                "max_allowed": max_submissions_per_2min,
-                "current_incident_type": int(report_data.incident_type_id),
-            },
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=f"Please wait at least 2 minutes before submitting additional reports. This helps ensure system stability for all users.",
-        )
-
-    max_submissions_per_30sec = 1
-    if extreme_submissions >= max_submissions_per_30sec:
-        _log_blocked_attempt(
-            db,
-            action_type="report_blocked_extreme_spam",
-            request=request,
-            device=device,
-            details={
-                "extreme_submissions": extreme_submissions,
-                "time_window_seconds": 30,
-                "max_allowed": max_submissions_per_30sec,
-                "current_incident_type": int(report_data.incident_type_id),
-            },
-        )
-        raise HTTPException(
-            status_code=429,
-            detail=f"Please wait at least 30 seconds between report submissions. Automated submissions are not allowed.",
-        )
-    
-    if len(very_recent_reports) >= 3:
-        # Check if last 3 reports are all the same incident type (potential bot behavior)
-        recent_incident_types = [r.incident_type_id for r in very_recent_reports[:3]]
-        current_incident_type = int(report_data.incident_type_id)
-        
-        if len(set(recent_incident_types)) == 1 and recent_incident_types[0] == current_incident_type:
-            _log_blocked_attempt(
-                db,
-                action_type="report_blocked_repetitive_bot_behavior",
-                request=request,
-                device=device,
-                details={
-                    "current_incident_type": current_incident_type,
-                    "recent_incident_types": recent_incident_types,
-                    "identical_count": 3,
-                    "time_window_minutes": 2,
-                },
-            )
-            raise HTTPException(
-                status_code=429,
-                detail=f"Multiple identical reports detected. Please ensure each report represents a unique incident. If this is an error, please wait 2 minutes.",
-            )
 
 
 def _ensure_fallback_ml_prediction_if_missing(db: Session, report: Report) -> None:

@@ -54,8 +54,8 @@ class Settings(BaseSettings):
     enable_semantic_match: bool = True
 
     # Device anti-abuse guardrails for report creation.
-    duplicate_report_time_window_seconds: int = 120
-    duplicate_report_radius_meters: int = 250
+    duplicate_report_time_window_seconds: int = 1200
+    duplicate_report_radius_meters: int = 400
     device_activity_window_minutes: int = 30
     impossible_travel_window_seconds: int = 300
     impossible_travel_min_distance_km: float = 20.0
