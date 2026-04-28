@@ -1,17 +1,77 @@
 """
 Point-in-polygon lookup: given (lat, lon), find the village (location_type='village')
 whose geometry contains the point. Used to set report.village_location_id.
+
+The mobile app uses a forgiving local GeoJSON lookup with a nearest-village fallback.
+To avoid false rejections near polygon edges or on slightly invalid geometries,
+the backend mirrors that behavior:
+- prefer an exact geometry match
+- accept boundary points
+- fall back to the nearest village centroid within a small tolerance
 """
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.location import Location
 
+_NEAREST_VILLAGE_FALLBACK_METERS = 750
+
+
+def _nearest_village_location_id(
+    db: Session,
+    latitude: float,
+    longitude: float,
+    max_distance_meters: int = _NEAREST_VILLAGE_FALLBACK_METERS,
+) -> int | None:
+    """
+    Return the closest active village by centroid when geometry matching misses.
+
+    This helps when:
+    - a device point lands exactly on a polygon boundary
+    - stored geometries are slightly invalid or simplified
+    - GPS drift places the point just outside the polygon even though the user is
+      practically inside the village
+    """
+    q = text(
+        """
+        SELECT location_id
+        FROM locations
+        WHERE location_type = 'village'
+          AND is_active = true
+          AND centroid_lat IS NOT NULL
+          AND centroid_long IS NOT NULL
+          AND ST_DWithin(
+              geography(ST_SetSRID(ST_MakePoint(centroid_long, centroid_lat), 4326)),
+              geography(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)),
+              :max_distance_meters
+          )
+        ORDER BY ST_Distance(
+            geography(ST_SetSRID(ST_MakePoint(centroid_long, centroid_lat), 4326)),
+            geography(ST_SetSRID(ST_MakePoint(:lon, :lat), 4326))
+        )
+        LIMIT 1
+        """
+    )
+    row = db.execute(
+        q,
+        {
+            "lat": latitude,
+            "lon": longitude,
+            "max_distance_meters": max_distance_meters,
+        },
+    ).fetchone()
+    return int(row[0]) if row else None
+
 
 def get_village_location_id(db: Session, latitude: float, longitude: float) -> int | None:
     """
     Return location_id of the village containing the point (lat, lon), or None if none.
-    Uses PostGIS ST_Contains with WGS84 (SRID 4326). ST_MakePoint(longitude, latitude).
+    Uses PostGIS with WGS84 (SRID 4326). ST_MakePoint(longitude, latitude).
+
+    Notes:
+    - ST_Covers accepts points on boundaries, unlike ST_Contains.
+    - ST_MakeValid reduces failures from imperfect multipolygons.
+    - If geometry lookup misses, use the nearest centroid within a modest radius.
     """
     q = text("""
         SELECT location_id
@@ -19,14 +79,16 @@ def get_village_location_id(db: Session, latitude: float, longitude: float) -> i
         WHERE location_type = 'village'
           AND is_active = true
           AND geometry IS NOT NULL
-          AND ST_Contains(
-              geometry,
+          AND ST_Covers(
+              ST_MakeValid(geometry),
               ST_SetSRID(ST_MakePoint(:lon, :lat), 4326)
           )
         LIMIT 1
     """)
     row = db.execute(q, {"lat": latitude, "lon": longitude}).fetchone()
-    return int(row[0]) if row else None
+    if row:
+        return int(row[0])
+    return _nearest_village_location_id(db, latitude, longitude)
 
 
 def get_village_location_info(db: Session, latitude: float, longitude: float) -> dict | None:
