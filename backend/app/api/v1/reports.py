@@ -1605,94 +1605,11 @@ def create_report(
         db.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to save report: {e}")
 
-    ml_prediction = resolve_ml_prediction_for_report(report)
-    trust_score = (
-        float(ml_prediction.trust_score)
-        if ml_prediction is not None and ml_prediction.trust_score is not None
-        else None
+    return _build_report_detail_response(
+        report,
+        db,
+        request_device_id=str(report.device_id),
     )
-    ml_prediction_label = None
-    if ml_prediction is not None:
-        raw_label = getattr(ml_prediction, "prediction_label", None)
-        if raw_label is not None and str(raw_label).strip():
-            ml_prediction_label = str(raw_label).strip().lower()
-    context_tags_list = getattr(report, "context_tags", None) or []
-
-    community_votes = {"real": 0, "false": 0, "unknown": 0}
-    user_vote = None
-    if getattr(report, "feature_vector", None) and isinstance(report.feature_vector, dict):
-        votes_dict = report.feature_vector.get("community_votes", {})
-        for dict_device_id, v in votes_dict.items():
-            if str(v) in community_votes:
-                community_votes[str(v)] += 1
-            if device_id and str(dict_device_id) == str(device_id):
-                user_vote = str(v)
-    incident_verification_payload = _get_report_incident_verification(report)
-
-    # Get device metadata and trust score
-    device_metadata = getattr(report.device, "metadata_json", {}) if report.device else {}
-    device_trust_score = getattr(report.device, "device_trust_score", None) if report.device else None
-    total_reports = getattr(report.device, "total_reports", None) if report.device else None
-    trusted_reports = getattr(report.device, "trusted_reports", None) if report.device else None
-
-    return ReportDetailResponse(
-        report_id=report.report_id,
-        report_number=getattr(report, "report_number", None),
-        device_id=report.device_id,
-        incident_type_id=report.incident_type_id,
-        description=report.description,
-        latitude=report.latitude,
-        longitude=report.longitude,
-        gps_accuracy=getattr(report, "gps_accuracy", None),
-        motion_level=getattr(report, "motion_level", None),
-        movement_speed=getattr(report, "movement_speed", None),
-        was_stationary=getattr(report, "was_stationary", None),
-        reported_at=report.reported_at,
-        rule_status=report.rule_status,
-        priority=getattr(report, "priority", "medium"),  # Include calculated priority
-        status=report.status,
-        verification_status=report.verification_status,
-        village_location_id=report.village_location_id,
-        incident_type_name=report.incident_type.type_name if report.incident_type else None,
-        trust_score=float(trust_score) if trust_score is not None else None,
-        incident_verification=incident_verification_payload,
-        ml_prediction_label=ml_prediction_label,
-        context_tags=context_tags_list,
-        is_flagged=getattr(report, "is_flagged", None),
-        flag_reason=getattr(report, "flag_reason", None),
-        incident_latitude=float(incident_lat) if incident_lat is not None else None,
-        incident_longitude=float(incident_lon) if incident_lon is not None else None,
-        incident_location_source=incident_source,
-        incident_village_name=incident_location_info["village_name"] if incident_location_info else None,
-        incident_cell_name=incident_location_info.get("cell_name") if incident_location_info else None,
-        incident_sector_name=incident_location_info.get("sector_name") if incident_location_info else None,
-        evidence_files=[
-            EvidenceFileResponse(
-                evidence_id=ef.evidence_id,
-                report_id=ef.report_id,
-                file_url=_absolute_evidence_url(getattr(ef, "file_url", None)) or "",
-                file_type=ef.file_type,
-                uploaded_at=ef.uploaded_at,
-                media_latitude=float(ef.media_latitude) if ef.media_latitude is not None else None,
-                media_longitude=float(ef.media_longitude) if ef.media_longitude is not None else None,
-                blur_score=float(ef.blur_score) if getattr(ef, "blur_score", None) is not None else None,
-                tamper_score=float(ef.tamper_score) if getattr(ef, "tamper_score", None) is not None else None,
-                quality_label=ef.quality_label.value if ef.quality_label else None,
-            )
-            for ef in report.evidence_files
-        ],
-        assignments=assignment_list,
-        reviews=review_list,
-        community_votes=community_votes,
-        user_vote=user_vote,
-        # Add device metadata fields
-        metadata_json=device_metadata,
-        device_trust_score=float(device_trust_score) if device_trust_score is not None else None,
-        total_reports=total_reports,
-        trusted_reports=trusted_reports,
-    )
-    
-    return response
 
 
 @router.get("/", response_model=Union[ReportListResponse, List[ReportResponse]])
