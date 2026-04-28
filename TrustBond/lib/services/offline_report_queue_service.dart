@@ -17,11 +17,22 @@ import 'device_status_service.dart';
 class OfflineSubmitResult {
   final String reportId;
   final bool queuedOffline;
+  final String? blockingError;
 
   const OfflineSubmitResult({
     required this.reportId,
     required this.queuedOffline,
+    this.blockingError,
   });
+}
+
+class ReportSubmissionBlockedException implements Exception {
+  final String message;
+
+  const ReportSubmissionBlockedException(this.message);
+
+  @override
+  String toString() => message;
 }
 
 class OfflineReportQueueService {
@@ -45,9 +56,11 @@ class OfflineReportQueueService {
   Future<List<OfflineReportQueueItem>> getQueuedReports() async {
     final queue = await _loadQueue();
     final recovered = queue
-        .map((item) => item.state == OfflineReportSyncState.syncing
-            ? item.copyWith(state: OfflineReportSyncState.pending)
-            : item)
+        .map(
+          (item) => item.state == OfflineReportSyncState.syncing
+              ? item.copyWith(state: OfflineReportSyncState.pending)
+              : item,
+        )
         .toList(growable: false);
     if (!_sameQueue(queue, recovered)) {
       await _saveQueue(recovered);
@@ -94,8 +107,9 @@ class OfflineReportQueueService {
       longitude: longitude,
       gpsAccuracy: gpsAccuracy,
       submittedAt: submittedAt.toIso8601String(),
-      networkTypeAtSubmit:
-          _isOfflineNetwork(currentNetworkType) ? 'Offline' : currentNetworkType!,
+      networkTypeAtSubmit: _isOfflineNetwork(currentNetworkType)
+          ? 'Offline'
+          : currentNetworkType!,
       batteryLevel: batteryLevel,
       motionLevel: motionLevel,
       movementSpeed: movementSpeed,
@@ -116,9 +130,16 @@ class OfflineReportQueueService {
     if (!_isOfflineNetwork(currentNetworkType)) {
       await syncNow(reason: 'submit');
       final remaining = await _findById(reportId);
+      if (remaining != null &&
+          remaining.state == OfflineReportSyncState.blocked) {
+        throw ReportSubmissionBlockedException(
+          remaining.lastError ?? 'This report was blocked before submission.',
+        );
+      }
       return OfflineSubmitResult(
         reportId: reportId,
         queuedOffline: remaining != null,
+        blockingError: remaining?.lastError,
       );
     }
 
@@ -127,21 +148,25 @@ class OfflineReportQueueService {
 
   Future<void> retry(String reportId) async {
     final queue = await _loadQueue();
-    final updated = queue.map((item) {
-      if (item.localReportId != reportId) return item;
-      return item.copyWith(
-        state: OfflineReportSyncState.pending,
-        retryCount: 0,
-        nextRetryAt: null,
-        lastError: null,
-      );
-    }).toList(growable: false);
+    final updated = queue
+        .map((item) {
+          if (item.localReportId != reportId) return item;
+          return item.copyWith(
+            state: OfflineReportSyncState.pending,
+            retryCount: 0,
+            nextRetryAt: null,
+            lastError: null,
+          );
+        })
+        .toList(growable: false);
     await _saveQueue(updated);
     AppRefreshBus.notify('offline_queue_retry');
     unawaited(syncNow(reason: 'manual_retry'));
   }
 
-  Future<int> removeItemsSyncedOnServer(Iterable<String> serverReportIds) async {
+  Future<int> removeItemsSyncedOnServer(
+    Iterable<String> serverReportIds,
+  ) async {
     final normalizedServerIds = serverReportIds
         .map(_normalizeId)
         .where((id) => id.isNotEmpty)
@@ -194,9 +219,11 @@ class OfflineReportQueueService {
   Future<void> _recoverInterruptedSyncItems() async {
     final queue = await _loadQueue();
     final recovered = queue
-        .map((item) => item.state == OfflineReportSyncState.syncing
-            ? item.copyWith(state: OfflineReportSyncState.pending)
-            : item)
+        .map(
+          (item) => item.state == OfflineReportSyncState.syncing
+              ? item.copyWith(state: OfflineReportSyncState.pending)
+              : item,
+        )
         .toList(growable: false);
     if (!_sameQueue(queue, recovered)) {
       await _saveQueue(recovered);
@@ -209,7 +236,7 @@ class OfflineReportQueueService {
     queue.sort((a, b) => a.submittedAtDate.compareTo(b.submittedAtDate));
     for (final item in queue) {
       if (item.state == OfflineReportSyncState.syncing) continue;
-      if (item.state == OfflineReportSyncState.failed) continue;
+      if (item.state == OfflineReportSyncState.blocked) continue;
       final nextRetryAt = item.nextRetryAtDate;
       if (nextRetryAt != null && nextRetryAt.isAfter(now)) continue;
       return item;
@@ -236,33 +263,72 @@ class OfflineReportQueueService {
       resolvedDeviceId = response['device_id']?.toString() ?? resolvedDeviceId;
       createdThisAttempt = true;
     } on ApiRequestException catch (e) {
-      if (e.statusCode == 409) {
+      if (_isExistingReportConflict(e)) {
         resolvedDeviceId ??= await _deviceService.ensureDeviceId();
+      } else if (e.statusCode == 404 && _looksLikeMissingDevice(e.message)) {
+        resolvedDeviceId = await _refreshDeviceRegistration();
+        if (resolvedDeviceId == null || resolvedDeviceId.isEmpty) {
+          return _handleBlockedItem(
+            item,
+            'Device registration could not be refreshed. Please reopen the app and try again.',
+          );
+        }
+        await _updateItem(
+          item.localReportId,
+          (current) => current.copyWith(deviceId: resolvedDeviceId),
+        );
+        try {
+          final response = await _api.submitReport(
+            _reportPayload(item).map(
+              (key, value) =>
+                  MapEntry(key, key == 'device_id' ? resolvedDeviceId : value),
+            ),
+          );
+          resolvedDeviceId =
+              response['device_id']?.toString() ?? resolvedDeviceId;
+          createdThisAttempt = true;
+        } on ApiRequestException catch (retryError) {
+          if (_isPermanentSubmitFailure(retryError.statusCode)) {
+            return _handleBlockedItem(item, retryError.message);
+          }
+          return _handleRetryableFailure(item, retryError.toString());
+        } catch (retryError) {
+          return _handleRetryableFailure(item, retryError.toString());
+        }
+      } else if (_isPermanentSubmitFailure(e.statusCode)) {
+        return _handleBlockedItem(item, e.message);
       } else {
-        return _handleSyncFailure(item, e.toString());
+        return _handleRetryableFailure(item, e.toString());
       }
+    } on EvidenceUploadException catch (e) {
+      if (_isPermanentEvidenceFailure(e.statusCode)) {
+        return _handleBlockedItem(item, e.message);
+      }
+      return _handleRetryableFailure(item, e.toString());
     } catch (e) {
-      return _handleSyncFailure(item, e.toString());
+      return _handleRetryableFailure(item, e.toString());
     }
 
     if (resolvedDeviceId == null || resolvedDeviceId.isEmpty) {
       resolvedDeviceId = await _deviceService.ensureDeviceId();
     }
     if (resolvedDeviceId == null || resolvedDeviceId.isEmpty) {
-      return _handleSyncFailure(item, 'Could not resolve device ID for upload.');
+      return _handleBlockedItem(
+        item,
+        'Could not resolve device ID for upload.',
+      );
     }
 
     // At this point, resolvedDeviceId is guaranteed to be non-null
     final deviceId = resolvedDeviceId;
 
     try {
-      // Upload evidence files in parallel for better performance
-      final uploadFutures = item.mediaItems.map((media) async {
+      for (final media in item.mediaItems) {
         final mediaFile = File(media.localPath);
         if (!await mediaFile.exists()) {
           throw Exception('Queued media file is missing: ${media.localPath}');
         }
-        return _api.uploadEvidence(
+        await _api.uploadEvidence(
           item.localReportId,
           deviceId,
           media.localPath,
@@ -271,17 +337,18 @@ class OfflineReportQueueService {
           capturedAt: DateTime.tryParse(media.capturedAt),
           isLiveCapture: media.isLiveCapture,
         );
-      });
-      
-      // Wait for all uploads to complete (parallel execution)
-      await Future.wait(uploadFutures);
+      }
     } catch (e) {
       if (createdThisAttempt) {
         try {
           await _api.deleteReport(item.localReportId, deviceId);
         } catch (_) {}
       }
-      return _handleSyncFailure(item, e.toString());
+      if (e is EvidenceUploadException &&
+          _isPermanentEvidenceFailure(e.statusCode)) {
+        return _handleBlockedItem(item, e.message);
+      }
+      return _handleRetryableFailure(item, e.toString());
     }
 
     await _removeItem(item.localReportId);
@@ -290,31 +357,47 @@ class OfflineReportQueueService {
     return await _hasInternet();
   }
 
-  Future<bool> _handleSyncFailure(
+  Future<bool> _handleRetryableFailure(
     OfflineReportQueueItem item,
     String error,
   ) async {
     final retryCount = item.retryCount + 1;
-    final exhausted = retryCount >= _maxAutomaticRetries;
-    final nextRetryAt = exhausted
-        ? null
-        : DateTime.now()
-            .add(Duration(seconds: min(60, 5 * retryCount * retryCount)))
-            .toIso8601String();
+    final cappedRetryCount = min(retryCount, _maxAutomaticRetries);
+    final nextRetryAt = DateTime.now()
+        .add(
+          Duration(seconds: min(300, 5 * cappedRetryCount * cappedRetryCount)),
+        )
+        .toIso8601String();
 
     await _updateItem(
       item.localReportId,
       (current) => current.copyWith(
         deviceId: current.deviceId ?? item.deviceId,
-        state: exhausted
-            ? OfflineReportSyncState.failed
-            : OfflineReportSyncState.pending,
+        state: OfflineReportSyncState.pending,
         retryCount: retryCount,
         nextRetryAt: nextRetryAt,
         lastError: error,
       ),
     );
     AppRefreshBus.notify('offline_queue_failed');
+    return await _hasInternet();
+  }
+
+  Future<bool> _handleBlockedItem(
+    OfflineReportQueueItem item,
+    String error,
+  ) async {
+    await _updateItem(
+      item.localReportId,
+      (current) => current.copyWith(
+        deviceId: current.deviceId ?? item.deviceId,
+        state: OfflineReportSyncState.blocked,
+        retryCount: current.retryCount + 1,
+        nextRetryAt: null,
+        lastError: error,
+      ),
+    );
+    AppRefreshBus.notify('offline_queue_blocked');
     return await _hasInternet();
   }
 
@@ -389,9 +472,10 @@ class OfflineReportQueueService {
     if (decoded is! List) return <OfflineReportQueueItem>[];
     return decoded
         .whereType<Map>()
-        .map((item) => OfflineReportQueueItem.fromJson(
-              Map<String, dynamic>.from(item),
-            ))
+        .map(
+          (item) =>
+              OfflineReportQueueItem.fromJson(Map<String, dynamic>.from(item)),
+        )
         .toList();
   }
 
@@ -408,10 +492,12 @@ class OfflineReportQueueService {
     OfflineReportQueueItem Function(OfflineReportQueueItem current) transform,
   ) async {
     final queue = await _loadQueue();
-    final updated = queue.map((item) {
-      if (item.localReportId != reportId) return item;
-      return transform(item);
-    }).toList(growable: false);
+    final updated = queue
+        .map((item) {
+          if (item.localReportId != reportId) return item;
+          return transform(item);
+        })
+        .toList(growable: false);
     await _saveQueue(updated);
   }
 
@@ -452,6 +538,43 @@ class OfflineReportQueueService {
         networkType.toLowerCase() == 'offline';
   }
 
+  bool _isPermanentSubmitFailure(int statusCode) {
+    return switch (statusCode) {
+      400 || 403 || 404 || 409 || 422 || 429 => true,
+      _ => false,
+    };
+  }
+
+  bool _isExistingReportConflict(ApiRequestException error) {
+    return error.statusCode == 409 &&
+        error.message.trim().toLowerCase() == 'report already exists';
+  }
+
+  bool _isPermanentEvidenceFailure(int statusCode) {
+    return switch (statusCode) {
+      400 || 403 || 404 || 409 || 422 => true,
+      _ => false,
+    };
+  }
+
+  bool _looksLikeMissingDevice(String message) {
+    final normalized = message.trim().toLowerCase();
+    return normalized == 'device not found' ||
+        normalized.contains('device not found');
+  }
+
+  Future<String?> _refreshDeviceRegistration() async {
+    final deviceHash = await _deviceService.getDeviceHash();
+    if (deviceHash.trim().isEmpty) return null;
+
+    final response = await _api.registerDevice(deviceHash);
+    final deviceId = response['device_id']?.toString();
+    if (deviceId == null || deviceId.isEmpty) return null;
+
+    await _deviceService.saveDeviceId(deviceId);
+    return deviceId;
+  }
+
   String _inferFileType(String path) {
     final lower = path.toLowerCase();
     if (lower.endsWith('.mp4') ||
@@ -474,9 +597,9 @@ class OfflineReportQueueService {
     return [
       for (int i = 0; i < bytes.length; i++) hex(bytes[i]),
     ].join().replaceFirstMapped(
-          RegExp(r'^(.{8})(.{4})(.{4})(.{4})(.{12})$'),
-          (m) => '${m[1]}-${m[2]}-${m[3]}-${m[4]}-${m[5]}',
-        );
+      RegExp(r'^(.{8})(.{4})(.{4})(.{4})(.{12})$'),
+      (m) => '${m[1]}-${m[2]}-${m[3]}-${m[4]}-${m[5]}',
+    );
   }
 
   String _normalizeId(String value) {

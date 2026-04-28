@@ -1,5 +1,5 @@
 import logging
-from typing import Annotated, Optional, List, Tuple, Dict, Any
+from typing import Annotated, Optional, List, Tuple, Dict, Any, Union
 from decimal import Decimal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, UploadFile, File, Form, Query, status, Request
 from sqlalchemy.orm import Session, joinedload, selectinload
@@ -1217,8 +1217,6 @@ def create_report(
     device = None
     if report_data.device_id:
         device = db.query(Device).filter(Device.device_id == report_data.device_id).first()
-        if not device:
-            raise HTTPException(status_code=404, detail="Device not found")
     if device is None and report_data.device_hash and str(report_data.device_hash).strip():
         device = (
             db.query(Device)
@@ -1232,8 +1230,20 @@ def create_report(
             )
             db.add(device)
             db.flush()
+    if report_data.device_id and device is None:
+        raise HTTPException(status_code=404, detail="Device not found")
     if not device:
         raise HTTPException(status_code=400, detail="Either device_id or device_hash is required")
+    incoming_report_id = report_data.report_id or uuid4()
+    if report_data.report_id:
+        existing_report = (
+            db.query(Report)
+            .filter(Report.report_id == report_data.report_id)
+            .first()
+        )
+        if existing_report:
+            raise HTTPException(status_code=409, detail="Report already exists")
+
     # Block reporting from banned devices (admin action)
     if getattr(device, "is_banned", False):
         raise HTTPException(status_code=403, detail="This device is banned from submitting reports")
@@ -1280,16 +1290,6 @@ def create_report(
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Location validation failed: {e}")
     
-    incoming_report_id = report_data.report_id or uuid4()
-    if report_data.report_id:
-        existing_report = (
-            db.query(Report)
-            .filter(Report.report_id == report_data.report_id)
-            .first()
-        )
-        if existing_report:
-            raise HTTPException(status_code=409, detail="Report already exists")
-
     report_num = _generate_report_number(db) if hasattr(Report, "report_number") else None
     report = Report(
         report_id=incoming_report_id,
@@ -1695,7 +1695,7 @@ def create_report(
     return response
 
 
-@router.get("/", response_model=ReportListResponse)
+@router.get("/", response_model=Union[ReportListResponse, List[ReportResponse]])
 def list_reports(
     device_id: Optional[UUID] = Query(None, description="Device ID (mobile owner). If omitted, auth required."),
     current_user: Annotated[Optional[PoliceUser], Depends(get_optional_user)] = None,
@@ -1744,7 +1744,13 @@ def list_reports(
             )
 
         reports = mobile_query.order_by(Report.reported_at.desc()).all()
-        return [_build_report_response(r, db, request_device_id=device_id) for r in reports]
+        items = [_build_report_response(r, db, request_device_id=device_id) for r in reports]
+        return ReportListResponse(
+            items=items,
+            total=len(items),
+            limit=len(items),
+            offset=0,
+        )
     
     if current_user is None:
         raise HTTPException(status_code=401, detail="Authentication required")
@@ -2238,10 +2244,14 @@ def add_review(
     )
 
 
-@router.get("/{report_id}", response_model=ReportResponse)
+@router.get("/{report_id}", response_model=ReportDetailResponse)
 def get_report(
     report_id: UUID,
-    current_user: Annotated[PoliceUser, Depends(get_current_user)],
+    device_id: Optional[UUID] = Query(
+        None,
+        description="Device ID (mobile owner). If omitted, auth required.",
+    ),
+    current_user: Annotated[Optional[PoliceUser], Depends(get_optional_user)] = None,
     db: Session = Depends(get_db),
 ):
     """Get a single report by ID."""
@@ -2253,8 +2263,10 @@ def get_report(
             joinedload(Report.device),
             joinedload(Report.incident_type),
             joinedload(Report.village_location),
-            joinedload(Report.evidence_files),
+            selectinload(Report.evidence_files),
+            selectinload(Report.assignments).joinedload(ReportAssignment.police_user),
             joinedload(Report.police_reviews).joinedload(PoliceReview.police_user),
+            selectinload(Report.ml_predictions),
         )
         .filter(Report.report_id == report_id)
         .first()
@@ -2262,8 +2274,16 @@ def get_report(
     
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
-    
-    return _build_report_response(report, db)
+
+    if device_id is not None:
+        if report.device_id != device_id:
+            raise HTTPException(status_code=403, detail="Not authorized to view this report")
+        return _build_report_detail_response(report, db, request_device_id=device_id)
+
+    if current_user is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    return _build_report_detail_response(report, db)
 
 
 @router.get("/{report_id}/reviews", response_model=List[ReviewResponse])
@@ -4506,17 +4526,17 @@ def _build_report_response(report: Report, db: Session, request_device_id: Optio
     ]
     
     return ReportResponse(
-        report_id=str(report.report_id),
+        report_id=report.report_id,
         report_number=report.report_number,
         title=None,  # Report model doesn't have title field
         description=report.description,
-        incident_type_id=str(report.incident_type_id) if report.incident_type_id else None,
+        incident_type_id=report.incident_type_id,
         incident_type=report.incident_type,
         status=report.status,
         verification_status=report.verification_status,
         rule_status=report.rule_status,
         reported_at=report.reported_at,
-        village_location_id=str(report.village_location_id) if report.village_location_id else None,
+        village_location_id=report.village_location_id,
         village_location=report.village_location,
         reporter_name=None,  # Report model doesn't have reporter_name field
         reporter_contact=None,  # Report model doesn't have reporter_contact field
@@ -4534,9 +4554,9 @@ def _build_report_response(report: Report, db: Session, request_device_id: Optio
         incident_verification=incident_verification_payload,
         ml_prediction_label=ml_prediction_label,
         # Add missing required fields
-        device_id=str(report.device_id),
-        latitude=float(report.latitude) if report.latitude else None,
-        longitude=float(report.longitude) if report.longitude else None,
+        device_id=report.device_id,
+        latitude=float(report.latitude) if report.latitude is not None else 0.0,
+        longitude=float(report.longitude) if report.longitude is not None else 0.0,
         # Add fields needed by frontend reports table
         incident_type_name=report.incident_type.type_name if report.incident_type else None,
         village_name=report.village_location.location_name if report.village_location else None,
@@ -4546,6 +4566,99 @@ def _build_report_response(report: Report, db: Session, request_device_id: Optio
             'prediction_label': ml_prediction.prediction_label if ml_prediction else None,
             'evaluated_at': ml_prediction.evaluated_at.isoformat() if ml_prediction and ml_prediction.evaluated_at else None
         }] if ml_prediction else [],
+    )
+
+
+def _build_report_detail_response(
+    report: Report,
+    db: Session,
+    request_device_id: Optional[str] = None,
+) -> ReportDetailResponse:
+    summary = _build_report_response(
+        report,
+        db,
+        request_device_id=request_device_id,
+    )
+
+    community_votes = {"real": 0, "false": 0, "unknown": 0}
+    user_vote = None
+    feature_vector = report.feature_vector if isinstance(report.feature_vector, dict) else {}
+    votes_dict = feature_vector.get("community_votes", {})
+    if isinstance(votes_dict, dict):
+        for dict_device_id, vote in votes_dict.items():
+            normalized_vote = str(vote).lower()
+            if normalized_vote in community_votes:
+                community_votes[normalized_vote] += 1
+            if request_device_id is not None and str(dict_device_id) == str(request_device_id):
+                user_vote = normalized_vote
+
+    assignment_list = []
+    for assignment in getattr(report, "assignments", []) or []:
+        officer_name = None
+        if assignment.police_user:
+            officer_name = (
+                f"{assignment.police_user.first_name or ''} {assignment.police_user.last_name or ''}".strip()
+                or assignment.police_user.email
+            )
+        assignment_list.append(
+            AssignmentResponse(
+                assignment_id=assignment.assignment_id,
+                report_id=assignment.report_id,
+                police_user_id=assignment.police_user_id,
+                status=assignment.status,
+                priority=assignment.priority,
+                assignment_note=getattr(assignment, "assignment_note", None),
+                assigned_at=assignment.assigned_at,
+                completed_at=assignment.completed_at,
+                officer_name=officer_name,
+            )
+        )
+
+    review_list = []
+    for review in getattr(report, "police_reviews", []) or []:
+        reviewer_name = None
+        if review.police_user:
+            reviewer_name = (
+                f"{review.police_user.first_name or ''} {review.police_user.last_name or ''}".strip()
+                or review.police_user.email
+            )
+        review_list.append(
+            ReviewResponse(
+                review_id=review.review_id,
+                report_id=review.report_id,
+                police_user_id=review.police_user_id,
+                decision=review.decision,
+                review_note=review.review_note,
+                reviewed_at=review.reviewed_at,
+                reviewer_name=reviewer_name,
+            )
+        )
+
+    return ReportDetailResponse(
+        **summary.model_dump(),
+        incident_latitude=float(report.latitude) if report.latitude is not None else None,
+        incident_longitude=float(report.longitude) if report.longitude is not None else None,
+        incident_location_source="reporter_only",
+        incident_village_name=report.village_location.location_name if report.village_location else None,
+        evidence_files=[
+            EvidenceFileResponse(
+                evidence_id=ef.evidence_id,
+                report_id=ef.report_id,
+                file_url=_absolute_evidence_url(getattr(ef, "file_url", None)) or "",
+                file_type=ef.file_type,
+                uploaded_at=ef.uploaded_at,
+                media_latitude=float(ef.media_latitude) if ef.media_latitude is not None else None,
+                media_longitude=float(ef.media_longitude) if ef.media_longitude is not None else None,
+                blur_score=float(ef.blur_score) if getattr(ef, "blur_score", None) is not None else None,
+                tamper_score=float(ef.tamper_score) if getattr(ef, "tamper_score", None) is not None else None,
+                quality_label=ef.quality_label.value if ef.quality_label else None,
+            )
+            for ef in (report.evidence_files or [])
+        ],
+        assignments=assignment_list,
+        reviews=review_list,
+        community_votes=community_votes,
+        user_vote=user_vote,
     )
 
 

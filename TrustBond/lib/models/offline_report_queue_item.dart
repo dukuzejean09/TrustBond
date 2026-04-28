@@ -1,4 +1,4 @@
-enum OfflineReportSyncState { pending, syncing, failed }
+enum OfflineReportSyncState { pending, syncing, blocked }
 
 class OfflineReportMediaItem {
   final String localPath;
@@ -18,7 +18,8 @@ class OfflineReportMediaItem {
       localPath: json['local_path'] as String? ?? '',
       fileType: json['file_type'] as String? ?? 'photo',
       isLiveCapture: json['is_live_capture'] as bool? ?? false,
-      capturedAt: json['captured_at'] as String? ?? DateTime.now().toIso8601String(),
+      capturedAt:
+          json['captured_at'] as String? ?? DateTime.now().toIso8601String(),
     );
   }
 
@@ -92,8 +93,10 @@ class OfflineReportQueueItem {
       latitude: (json['latitude'] as num?)?.toDouble() ?? 0,
       longitude: (json['longitude'] as num?)?.toDouble() ?? 0,
       gpsAccuracy: (json['gps_accuracy'] as num?)?.toDouble(),
-      submittedAt: json['submitted_at'] as String? ?? DateTime.now().toIso8601String(),
-      networkTypeAtSubmit: json['network_type_at_submit'] as String? ?? 'Offline',
+      submittedAt:
+          json['submitted_at'] as String? ?? DateTime.now().toIso8601String(),
+      networkTypeAtSubmit:
+          json['network_type_at_submit'] as String? ?? 'Offline',
       batteryLevel: (json['battery_level'] as num?)?.toDouble(),
       motionLevel: json['motion_level'] as String?,
       movementSpeed: (json['movement_speed'] as num?)?.toDouble(),
@@ -103,9 +106,11 @@ class OfflineReportQueueItem {
           .toList(growable: false),
       mediaItems: (json['media_items'] as List<dynamic>? ?? const [])
           .whereType<Map>()
-          .map((item) => OfflineReportMediaItem.fromJson(
-                Map<String, dynamic>.from(item),
-              ))
+          .map(
+            (item) => OfflineReportMediaItem.fromJson(
+              Map<String, dynamic>.from(item),
+            ),
+          )
           .toList(growable: false),
       state: _stateFromJson(json['state'] as String?),
       retryCount: json['retry_count'] as int? ?? 0,
@@ -117,7 +122,8 @@ class OfflineReportQueueItem {
   static OfflineReportSyncState _stateFromJson(String? value) {
     return switch (value) {
       'syncing' => OfflineReportSyncState.syncing,
-      'failed' => OfflineReportSyncState.failed,
+      'failed' => OfflineReportSyncState.blocked,
+      'blocked' => OfflineReportSyncState.blocked,
       _ => OfflineReportSyncState.pending,
     };
   }
@@ -145,7 +151,9 @@ class OfflineReportQueueItem {
       'movement_speed': movementSpeed,
       'was_stationary': wasStationary,
       'context_tags': contextTags,
-      'media_items': mediaItems.map((item) => item.toJson()).toList(growable: false),
+      'media_items': mediaItems
+          .map((item) => item.toJson())
+          .toList(growable: false),
       'state': state.name,
       'retry_count': retryCount,
       'next_retry_at': nextRetryAt,
@@ -162,7 +170,9 @@ class OfflineReportQueueItem {
   }) {
     return OfflineReportQueueItem(
       localReportId: localReportId,
-      deviceId: identical(deviceId, _unset) ? this.deviceId : deviceId as String?,
+      deviceId: identical(deviceId, _unset)
+          ? this.deviceId
+          : deviceId as String?,
       deviceHash: deviceHash,
       incidentTypeId: incidentTypeId,
       incidentTypeName: incidentTypeName,

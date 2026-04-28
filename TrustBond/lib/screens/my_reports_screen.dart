@@ -132,7 +132,9 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     final entries = <_HistoryEntry>[
       ..._reports.map(_HistoryEntry.remote),
       ..._queuedReports
-          .where((item) => !remoteIds.contains(_normalizeId(item.localReportId)))
+          .where(
+            (item) => !remoteIds.contains(_normalizeId(item.localReportId)),
+          )
           .map(_HistoryEntry.local),
     ];
 
@@ -142,7 +144,9 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       filtered = entries.where((entry) {
         if (entry.local != null) return true;
         final status = entry.remote!.workflowStatus;
-        return status == 'pending' || status == 'processing' || status == 'under_review';
+        return status == 'pending' ||
+            status == 'processing' ||
+            status == 'under_review';
       }).toList();
     } else if (key == 'verified') {
       filtered = entries.where((entry) {
@@ -282,7 +286,10 @@ class _MyReportsScreenState extends State<MyReportsScreen>
               color: AppColors.muted.withValues(alpha: 0.5),
             ),
             const SizedBox(height: 12),
-            const Text('No reports found', style: TextStyle(color: AppColors.muted)),
+            const Text(
+              'No reports found',
+              style: TextStyle(color: AppColors.muted),
+            ),
           ],
         ),
       );
@@ -310,8 +317,9 @@ class _MyReportsScreenState extends State<MyReportsScreen>
       children: [
         ReportItemCard(
           icon: iconForIncidentType(report.incidentTypeName ?? ''),
-          iconBg: colorForIncidentType(report.incidentTypeName ?? '')
-              .withValues(alpha: 0.1),
+          iconBg: colorForIncidentType(
+            report.incidentTypeName ?? '',
+          ).withValues(alpha: 0.1),
           typeName: report.incidentTypeName ?? 'Incident',
           description: report.description ?? 'No description',
           timeLabel: timeAgo(report.reportedAt),
@@ -388,17 +396,35 @@ class _MyReportsScreenState extends State<MyReportsScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      report.description.isEmpty ? 'No description' : report.description,
+                      report.description.isEmpty
+                          ? 'No description'
+                          : report.description,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12, color: AppColors.muted),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                      ),
                     ),
-                    if (report.state == OfflineReportSyncState.failed) ...[
+                    if (report.lastError != null &&
+                        report.lastError!.trim().isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        report.lastError!,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
+                    if (report.state == OfflineReportSyncState.blocked) ...[
                       const SizedBox(height: 6),
                       GestureDetector(
                         onTap: () => _queueService.retry(report.localReportId),
                         child: const Text(
-                          'Tap to retry',
+                          'Blocked. Tap to retry after fixing it.',
                           style: TextStyle(
                             fontSize: 11,
                             color: AppColors.muted,
@@ -433,28 +459,28 @@ class _MyReportsScreenState extends State<MyReportsScreen>
           bottom: 24,
           child: switch (state) {
             DeliveryUiState.pending => const Icon(
-                Icons.access_time,
-                size: 12,
-                color: AppColors.muted,
-              ),
+              Icons.access_time,
+              size: 12,
+              color: AppColors.muted,
+            ),
             DeliveryUiState.syncing => const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 1.6,
-                  color: AppColors.accent,
-                ),
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                strokeWidth: 1.6,
+                color: AppColors.accent,
               ),
+            ),
             DeliveryUiState.failed => const Icon(
-                Icons.access_time,
-                size: 12,
-                color: AppColors.muted,
-              ),
+              Icons.error_outline,
+              size: 12,
+              color: AppColors.warn,
+            ),
             DeliveryUiState.sent => const Icon(
-                Icons.check,
-                size: 12,
-                color: AppColors.ok,
-              ),
+              Icons.check,
+              size: 12,
+              color: AppColors.ok,
+            ),
           },
         ),
       ],
@@ -465,7 +491,7 @@ class _MyReportsScreenState extends State<MyReportsScreen>
     return switch (state) {
       OfflineReportSyncState.pending => DeliveryUiState.pending,
       OfflineReportSyncState.syncing => DeliveryUiState.syncing,
-      OfflineReportSyncState.failed => DeliveryUiState.failed,
+      OfflineReportSyncState.blocked => DeliveryUiState.failed,
     };
   }
 }

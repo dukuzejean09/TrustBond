@@ -84,7 +84,12 @@ class ApiService {
     try {
       final response = await _client.get(uri, headers: _getHeaders).timeout(_timeout);
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as List<dynamic>;
+        final decoded = jsonDecode(response.body);
+        final data = decoded is List
+            ? decoded
+            : decoded is Map<String, dynamic>
+                ? (decoded['items'] as List<dynamic>? ?? const <dynamic>[])
+                : const <dynamic>[];
         await _saveCache(cacheKey, data);
         await _cacheReportDetailStubs(deviceId, data);
         return data;
