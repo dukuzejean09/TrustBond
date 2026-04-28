@@ -1280,11 +1280,11 @@ def create_report(
             out_of_boundary_reason = (
                 f"out_of_musanze_boundary: ({lat_f:.4f}, {lon_f:.4f})"
             )
-
-        district_name = (village_info.get("district_name") or "").strip().lower()
-        if district_name and district_name != "musanze":
-            out_of_boundary = True
-            out_of_boundary_reason = f"out_of_musanze_boundary: district={district_name}"
+        else:
+            district_name = (village_info.get("district_name") or "").strip().lower()
+            if district_name and district_name != "musanze":
+                out_of_boundary = True
+                out_of_boundary_reason = f"out_of_musanze_boundary: district={district_name}"
     except (ValueError, TypeError) as e:
         raise HTTPException(status_code=400, detail=f"Invalid coordinates: {e}")
     except Exception as e:
